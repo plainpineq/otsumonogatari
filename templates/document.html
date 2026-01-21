@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>{{ document.title }}</title>
+</head>
+<body>
+
+<h1>{{ document.title }}</h1>
+
+<form method="post">
+
+{% for unit in document.units %}
+    <h3>{{ unit.title }}</h3>
+    <textarea
+        name="unit_{{ loop.index0 }}"
+        rows="6"
+        cols="100"
+    >{{ unit.content }}</textarea>
+{% endfor %}
+
+<br><br>
+<button type="submit">保存</button>
+
+</form>
+
+<p><a href="/dashboard">← ダッシュボードへ</a></p>
+
+</body>
+</html>

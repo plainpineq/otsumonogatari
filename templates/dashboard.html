@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>ダッシュボード</h2>
+
+{% if not data_loaded %}
+
+  <p><strong>前回の作業データをアップロードしてください。</strong></p>
+
+  <form action="/upload" method="post" enctype="multipart/form-data">
+      <input type="file" name="file" required>
+      <button type="submit">データアップロード</button>
+  </form>
+
+{% else %}
+
+  <h3>作品一覧</h3>
+
+  {% if documents %}
+    <ul>
+    {% for d in documents %}
+      <li>
+        <a href="/document/{{ d.id }}">{{ d.title }}</a>
+      </li>
+    {% endfor %}
+    </ul>
+  {% else %}
+    <p>まだ作品がありません。</p>
+  {% endif %}
+
+  <h3>新規作成</h3>
+  <form action="/document/create" method="post">
+      <input name="title" placeholder="タイトル" required>
+      <select name="doc_type">
+          <option value="novel">小説</option>
+          <option value="paper">論文</option>
+          <option value="blog">技術ブログ</option>
+      </select>
+      <button type="submit">新規作成</button>
+  </form>
+
+{% endif %}
+
+<hr>
+<a href="/logout">ログアウト（作業データをダウンロード）</a>
+
+{% endblock %}
