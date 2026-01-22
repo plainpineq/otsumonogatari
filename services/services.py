@@ -102,7 +102,7 @@ def optimize_document_units(document: dict) -> None:
 # services.py（末尾に追記）
 
 from domain_mapper import json_to_intent
-from scoring import score_intent_unit_alignment
+from services.scoring import score_intent_unit_alignment
 from connection_scoring import score_unit_connection
 
 

@@ -2,7 +2,7 @@
 from typing import Dict
 
 from models import Document, Unit, Entity, Intent
-from services import (
+from services.services import (
     get_document,
     list_units,
     list_entities,

@@ -9,90 +9,73 @@
 <h1>{{ document.title }}</h1>
 
 <!-- ========================= -->
-<!-- Intent 編集 -->
+<!-- 作者の意図（Intent） -->
 <!-- ========================= -->
+
 <h2>作者の意図（Intent）</h2>
 
 <form method="post" action="/document/{{ document.id }}/intent">
 
-  <label>ジャンル</label><br>
-  <input type="text" name="genre"
-         value="{{ document.intent.genre if document.intent else '' }}"
-         style="width:100%"><br><br>
+  {% for field in document.intent.fields %}
+    <div style="margin-bottom:10px;">
+      <input type="hidden" name="intent_key" value="{{ field.key }}">
 
-  <label>テーマ・主張</label><br>
-  <textarea name="theme_or_claim" rows="2" style="width:100%">{{ document.intent.theme_or_claim if document.intent else '' }}</textarea><br><br>
+      <label>{{ field.label }}</label><br>
+      <input
+        type="text"
+        name="intent_value_{{ field.key }}"
+        value="{{ field.value }}"
+        style="width:90%;"
+      >
 
-  <label>価値観・肯定するもの</label><br>
-  <textarea name="core_values" rows="3" style="width:100%">{{ document.intent.core_values if document.intent else '' }}</textarea><br><br>
+      <button name="remove_intent" value="{{ field.key }}">削除</button>
+    </div>
+  {% endfor %}
 
-  <label>制約条件（1行＝1制約）</label><br>
-  <textarea name="constraints" rows="4" style="width:100%">{% if document.intent %}{{ document.intent.constraints | join('\n') }}{% endif %}</textarea><br><br>
+  <hr>
 
+  <h4>Intent項目を追加</h4>
+  <input type="text" name="new_intent_label" placeholder="項目名">
+  <input type="text" name="new_intent_value" placeholder="内容">
+
+  <br><br>
   <button type="submit">Intentを保存</button>
 </form>
 
 <hr>
 
 <!-- ========================= -->
-<!-- Unit 編集 -->
+<!-- シーン（Unit）編集 -->
 <!-- ========================= -->
-<form method="post" action="/document/{{ document.id }}">
 
-{% for unit in document.units %}
+<h2>シーン</h2>
 
-  <hr>
-  <h3>{{ unit.title }}</h3>
+<form method="post">
 
-  {% if unit._score %}
-    <div style="font-size:0.9em; margin-bottom:6px;">
-      Intent整合:
-      <b style="color: {{ unit._score.intent_color }};">
-        {{ unit._score.intent }}
-      </b>
+  {% for category in document.categories %}
+    {% if category.name == "シーン" %}
 
-      {% if unit._score.prev is not none %}
-        ｜前との接続:
-        <b style="color: {{ unit._score.prev_color }};">
-          {{ unit._score.prev }}
-        </b>
-      {% endif %}
+      {% for element in category.elements %}
+        <h3>{{ element.name }}</h3>
 
-      {% if unit._score.next is not none %}
-        ｜次との接続:
-        <b style="color: {{ unit._score.next_color }};">
-          {{ unit._score.next }}
-        </b>
-      {% endif %}
-    </div>
+        {% for unit in element.instances %}
+          <textarea
+            name="unit_{{ loop.index0 }}"
+            rows="6"
+            style="width:100%;"
+          >{{ unit.content }}</textarea>
+        {% endfor %}
 
-    {% if unit._score.intent_color == "red" %}
-      <form method="post"
-            action="/document/{{ document.id }}/improve/{{ loop.index0 }}">
-        <button type="submit" style="color:red;">
-          🔴 このシーンを改善させる
-        </button>
-      </form>
+      {% endfor %}
+
     {% endif %}
-  {% endif %}
+  {% endfor %}
 
-  <textarea
-      name="unit_{{ loop.index0 }}"
-      rows="6"
-      cols="100"
-  >{{ unit.content }}</textarea>
-
-{% endfor %}
-
-<br><br>
-<button type="submit">保存</button>
+  <br>
+  <button type="submit">保存</button>
 </form>
 
 <hr>
-
-<form method="post" action="/document/{{ document.id }}/optimize">
-  <button type="submit">構成を最適化</button>
-</form>
 
 <p><a href="/dashboard">← ダッシュボードへ</a></p>
 

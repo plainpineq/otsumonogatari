@@ -9,15 +9,20 @@ from security import hash_password
 from user_files import load_user_data, save_user_data
 from ui_labels import UI_LABELS
 
-from services import (
+from services.services import (
     create_document,
     find_document,
     update_units_content
 )
 
-from services import update_intent
-from services import attach_unit_scores
-from services import extract_red_units, build_llm_prompt
+from services.domain_bridge import (
+    document_to_domain,
+    domain_to_document
+)
+
+from services.services import update_intent
+from services.services import attach_unit_scores
+from services.services import extract_red_units, build_llm_prompt
 
 
 app = Flask(__name__)
@@ -133,19 +138,20 @@ def view_document(doc_id):
     if document is None:
         return redirect("/dashboard")
 
+    # ★ ここが必須
+    domain = document_to_domain(document)
+
     if request.method == "POST":
         update_units_content(document, request.form)
+        domain_to_document(domain, document)
         save_user_data(session["user_id"], data)
         return redirect(f"/document/{doc_id}")
-
-    # ★ ここでスコアを付与（GET時のみ）
-    attach_unit_scores(document)
 
     labels = UI_LABELS[document["doc_type"]]
 
     return render_template(
         "document.html",
-        document=document,
+        document=domain,   # ← Domain
         labels=labels
     )
 
@@ -160,7 +166,37 @@ def edit_intent(doc_id):
     if document is None:
         return redirect("/dashboard")
 
-    update_intent(document, request.form)
+    # JSON → Domain
+    domain = document_to_domain(document)
+
+    fields = domain["intent"]["fields"]
+
+    # 削除
+    remove_key = request.form.get("remove_intent")
+    if remove_key:
+        fields[:] = [f for f in fields if f["key"] != remove_key]
+
+    # 既存更新
+    for f in fields:
+        f["value"] = request.form.get(
+            f"intent_value_{f['key']}",
+            f["value"]
+        )
+
+    # 追加
+    new_label = request.form.get("new_intent_label", "").strip()
+    new_value = request.form.get("new_intent_value", "").strip()
+
+    if new_label:
+        new_key = f"custom_{len(fields)+1}"
+        fields.append({
+            "key": new_key,
+            "label": new_label,
+            "value": new_value
+        })
+
+    # Domain → JSON
+    domain_to_document(domain, document)
     save_user_data(session["user_id"], data)
 
     return redirect(f"/document/{doc_id}")

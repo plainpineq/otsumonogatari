@@ -4,7 +4,7 @@ import random
 from typing import List
 
 from models import Intent
-from scoring import score_intent_unit_alignment
+from services.scoring import score_intent_unit_alignment
 from connection_scoring import total_connection_score
 
 
