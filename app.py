@@ -8,7 +8,17 @@ from auth import login
 from security import hash_password
 from user_files import load_user_data, save_user_data
 from ui_labels import UI_LABELS
-from structure_templates import STRUCTURE_TEMPLATES
+
+from services import (
+    create_document,
+    find_document,
+    update_units_content
+)
+
+from services import update_intent
+from services import attach_unit_scores
+from services import extract_red_units, build_llm_prompt
+
 
 app = Flask(__name__)
 app.secret_key = "storyforge-secret"
@@ -93,33 +103,22 @@ def upload():
 
     return redirect("/dashboard")
 
-
 # ---------- ドキュメント ----------
 
 @app.route("/document/create", methods=["POST"])
-def create_document():
+def document_create():
     if "user_id" not in session or not session.get("data_loaded"):
         return redirect("/dashboard")
 
     data = load_user_data(session["user_id"])
 
-    doc_type = request.form["doc_type"]
+    create_document(
+        data=data,
+        title=request.form["title"],
+        doc_type=request.form["doc_type"]
+    )
 
-    doc = {
-        "id": os.urandom(4).hex(),
-        "title": request.form["title"],
-        "doc_type": doc_type,
-        "intent": {},
-        "units": [
-            {"title": t, "content": ""}
-            for t in STRUCTURE_TEMPLATES[doc_type]
-        ],
-        "entities": []
-    }
-
-    data["documents"].append(doc)
     save_user_data(session["user_id"], data)
-
     return redirect("/dashboard")
 
 
@@ -129,22 +128,18 @@ def view_document(doc_id):
         return redirect("/dashboard")
 
     data = load_user_data(session["user_id"])
-
-    document = next(
-        (d for d in data.get("documents", []) if d["id"] == doc_id),
-        None
-    )
+    document = find_document(data, doc_id)
 
     if document is None:
         return redirect("/dashboard")
 
-    # ---- 保存処理（POST）----
     if request.method == "POST":
-        for i, unit in enumerate(document["units"]):
-            unit["content"] = request.form.get(f"unit_{i}", "")
-
+        update_units_content(document, request.form)
         save_user_data(session["user_id"], data)
         return redirect(f"/document/{doc_id}")
+
+    # ★ ここでスコアを付与（GET時のみ）
+    attach_unit_scores(document)
 
     labels = UI_LABELS[document["doc_type"]]
 
@@ -154,6 +149,44 @@ def view_document(doc_id):
         labels=labels
     )
 
+@app.route("/document/<doc_id>/intent", methods=["POST"])
+def edit_intent(doc_id):
+    if "user_id" not in session or not session.get("data_loaded"):
+        return redirect("/dashboard")
+
+    data = load_user_data(session["user_id"])
+    document = find_document(data, doc_id)
+
+    if document is None:
+        return redirect("/dashboard")
+
+    update_intent(document, request.form)
+    save_user_data(session["user_id"], data)
+
+    return redirect(f"/document/{doc_id}")
+
+@app.route("/document/<doc_id>/improve/<int:unit_index>", methods=["POST"])
+def improve_unit(doc_id, unit_index):
+    if "user_id" not in session or not session.get("data_loaded"):
+        return redirect("/dashboard")
+
+    data = load_user_data(session["user_id"])
+    document = find_document(data, doc_id)
+    if document is None:
+        return redirect("/dashboard")
+
+    units = document.get("units", [])
+    if unit_index < 0 or unit_index >= len(units):
+        return redirect(f"/document/{doc_id}")
+
+    unit = units[unit_index]
+
+    prompt = build_llm_prompt(document, unit)
+
+    # 🔽 今は LLM を呼ばず、そのまま表示
+    return f"<pre>{prompt}</pre>"
+
 
 if __name__ == "__main__":
     app.run(debug=True)
+

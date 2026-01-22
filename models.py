@@ -54,14 +54,12 @@ class Entity:
     description: str
 
 
-@dataclass
+@dataclass(frozen=True)
 class Intent:
     """
-    作者の意図・思想・制約を表す。
-    LLMや最適化は「判断せず、従う」対象。
+    作者の判断・価値観を表すドメインモデル
     """
-    document_id: str
     genre: str
     theme_or_claim: str
-    values: str
+    core_values: str
     constraints: List[str]
