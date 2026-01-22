@@ -2,18 +2,20 @@ import json, os
 
 BASE_DIR = "user_data"
 
-def user_dir(user_id):
-    path = os.path.join(BASE_DIR, user_id)
-    os.makedirs(path, exist_ok=True)
-    return path
+def get_user_data_path(user_id):
+    """ユーザーのデータディレクトリのパスを返す"""
+    return os.path.join(BASE_DIR, str(user_id))
 
 def save_user_data(user_id, data):
-    with open(os.path.join(user_dir(user_id), "working.json"),
-              "w", encoding="utf-8") as f:
+    """ユーザーデータを保存する。ディレクトリがなければ作成する"""
+    user_path = get_user_data_path(user_id)
+    os.makedirs(user_path, exist_ok=True)
+    with open(os.path.join(user_path, "working.json"), "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 def load_user_data(user_id):
-    path = os.path.join(user_dir(user_id), "working.json")
+    """ユーザーデータを読み込む"""
+    path = os.path.join(get_user_data_path(user_id), "working.json")
     if not os.path.exists(path):
         return {"documents": []}
     with open(path, "r", encoding="utf-8") as f:

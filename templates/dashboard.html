@@ -3,16 +3,12 @@
 
 <h2>ダッシュボード</h2>
 
-{% if not data_loaded %}
-
-  <p><strong>前回の作業データをアップロードしてください。</strong></p>
+  <p><strong>作業データをアップロードする</strong></p>
 
   <form action="/upload" method="post" enctype="multipart/form-data">
       <input type="file" name="file" required>
       <button type="submit">データアップロード</button>
   </form>
-
-{% else %}
 
   <h3>作品一覧</h3>
 
@@ -39,9 +35,7 @@
       <button type="submit">新規作成</button>
   </form>
 
-{% endif %}
-
 <hr>
-<a href="/logout">ログアウト（作業データをダウンロード）</a>
+<a href="/logout">ログアウト</a>
 
 {% endblock %}

@@ -61,18 +61,7 @@ def register():
 
 @app.route("/logout")
 def logout():
-    user_id = session.get("user_id")
-    path = f"user_data/{user_id}/working.json"
-
     session.clear()
-
-    if user_id and os.path.exists(path):
-        return send_file(
-            path,
-            as_attachment=True,
-            download_name="storyforge_data.json"
-        )
-
     return redirect("/login")
 
 # ---------- ダッシュボード ----------
@@ -82,18 +71,13 @@ def dashboard():
     if "user_id" not in session:
         return redirect("/login")
 
-    documents = []
-
-    if session.get("data_loaded"):
-        data = load_user_data(session["user_id"])
-        documents = data.get("documents", [])
+    data = load_user_data(session["user_id"])
+    documents = data.get("documents", [])
 
     return render_template(
         "dashboard.html",
         documents=documents,
-        data_loaded=session.get("data_loaded", False)
     )
-
 
 @app.route("/upload", methods=["POST"])
 def upload():
@@ -104,15 +88,13 @@ def upload():
     data = json.load(file)
 
     save_user_data(session["user_id"], data)
-    session["data_loaded"] = True
-
     return redirect("/dashboard")
 
 # ---------- ドキュメント ----------
 
 @app.route("/document/create", methods=["POST"])
 def document_create():
-    if "user_id" not in session or not session.get("data_loaded"):
+    if "user_id" not in session: # Removed data_loaded check
         return redirect("/dashboard")
 
     data = load_user_data(session["user_id"])
@@ -128,7 +110,7 @@ def document_create():
 
 @app.route("/document/<doc_id>", methods=["GET", "POST"])
 def view_document(doc_id):
-    if "user_id" not in session or not session.get("data_loaded"):
+    if "user_id" not in session: # Removed data_loaded check
         return redirect("/dashboard")
 
     data = load_user_data(session["user_id"])
@@ -156,7 +138,7 @@ def view_document(doc_id):
 
 @app.route("/document/<doc_id>/intent", methods=["POST"])
 def edit_intent(doc_id):
-    if "user_id" not in session or not session.get("data_loaded"):
+    if "user_id" not in session: # Removed data_loaded check
         return redirect("/dashboard")
 
     data = load_user_data(session["user_id"])
@@ -176,13 +158,13 @@ def edit_intent(doc_id):
 
 @app.route("/document/<doc_id>/improve/<int:unit_index>", methods=["POST"])
 def improve_unit(doc_id, unit_index):
-    if "user_id" not in session or not session.get("data_loaded"):
+    if "user_id" not in session: # Removed data_loaded check
         return redirect("/dashboard")
 
     data = load_user_data(session["user_id"])
     document = find_document(data, doc_id)
     if document is None:
-        return redirect("/dashboard")
+        return redirect(f"/document/{doc_id}")
 
     units = document.get("units", [])
     if unit_index < 0 or unit_index >= len(units):
