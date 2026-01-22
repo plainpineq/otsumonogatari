@@ -1,4 +1,8 @@
-from flask import Flask, render_template, request, redirect, session, send_file
+from flask import Flask, render_template, request, redirect, session, send_file, make_response, flash
+from datetime import timedelta
+import os
+import json
+import io
 from datetime import timedelta
 import os
 import json
@@ -89,10 +93,45 @@ def upload():
     if "user_id" not in session:
         return redirect("/login")
 
-    file = request.files["file"]
-    data = json.load(file)
+    if 'file' not in request.files:
+        flash("ファイルがありません")
+        return redirect("/dashboard")
 
-    save_user_data(session["user_id"], data)
+    file = request.files["file"]
+
+    if file.filename == '':
+        flash("ファイルが選択されていません")
+        return redirect("/dashboard")
+
+    # Assuming 'file' is not empty at this point, if it passes previous checks.
+    # The 'if not file:' check is now less critical given the above.
+
+    # Load the uploaded JSON data
+    try:
+        uploaded_json_content = json.load(file)
+    except json.JSONDecodeError:
+        flash("無効なJSONファイルです")
+        return redirect("/dashboard")
+
+    # Validate that the uploaded content is a dictionary and looks like a document
+    # (e.g., has a 'title' key)
+    if not isinstance(uploaded_json_content, dict) or "title" not in uploaded_json_content:
+        flash("アップロードされたファイルは有効なドキュメント形式ではありません。'title'キーが見つかりません。")
+        return redirect("/dashboard")
+
+    # Load existing user data
+    existing_data = load_user_data(session["user_id"])
+    
+    # Ensure 'documents' key exists and is a list
+    if "documents" not in existing_data or not isinstance(existing_data["documents"], list):
+        existing_data["documents"] = []
+
+    # Append the new document to the existing list
+    existing_data["documents"].append(uploaded_json_content)
+
+    # Save the updated user data
+    save_user_data(session["user_id"], existing_data)
+    flash("ファイルをアップロードしました。")
     return redirect("/dashboard")
 
 # ---------- ドキュメント ----------
@@ -182,6 +221,33 @@ def improve_unit(doc_id, unit_index):
     # 🔽 今は LLM を呼ばず、そのまま表示
     return f"<pre>{prompt}</pre>"
 
+@app.route("/document/<doc_id>/download", methods=["GET"])
+def download_document(doc_id):
+    if "user_id" not in session:
+        return redirect("/login")
+
+    data = load_user_data(session["user_id"])
+    document = find_document(data, doc_id)
+
+    if document is None:
+        return redirect("/dashboard")
+
+    document_json = json.dumps(document, ensure_ascii=False, indent=2)
+    
+    # Use io.BytesIO to create an in-memory file
+    file_data = io.BytesIO(document_json.encode('utf-8'))
+    
+    # Use send_file for robust downloading
+    response = send_file(
+        file_data,
+        mimetype='application/json',
+        as_attachment=True,
+        download_name=f"{document['title']}.json"
+    )
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 if __name__ == "__main__":
     app.run(debug=True)

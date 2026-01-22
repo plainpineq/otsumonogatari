@@ -17,6 +17,9 @@
     {% for d in documents %}
       <li>
         <a href="/document/{{ d.id }}">{{ d.title }}</a>
+        <form action="/document/{{ d.id }}/download" method="GET" style="display:inline; margin-left: 10px;">
+            <button type="submit">ダウンロード</button>
+        </form>
       </li>
     {% endfor %}
     </ul>
