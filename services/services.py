@@ -3,6 +3,7 @@ import os
 from typing import Dict, List
 
 from structure_templates import STRUCTURE_TEMPLATES
+import uuid
 
 
 # =========================
@@ -64,20 +65,62 @@ def find_document(data: Dict, doc_id: str) -> Dict | None:
 
 def update_intent(document: dict, form_data) -> None:
     """
-    Intent（作者の思想・制約）を更新する
+    Intent（作者の意図）を更新・追加・削除する
     """
-    constraints_text = form_data.get("constraints", "")
 
-    document["intent"] = {
-        "genre": form_data.get("genre", ""),
-        "theme_or_claim": form_data.get("theme_or_claim", ""),
-        "core_values": form_data.get("core_values", ""),
-        "constraints": [
-            line.strip()
-            for line in form_data.get("constraints", "").splitlines()
-            if line.strip()
-        ]
-    }
+    intent = document.get("intent")
+    # ---- ここが重要 ----
+    if not intent:
+        intent = {"fields": {}}
+
+    # list → dict 変換（過去データ救済）
+    if isinstance(intent.get("fields"), list):
+        intent["fields"] = {
+            f.get("key", f"intent_{i}"): {
+                "label": f.get("label", ""),
+                "value": f.get("value", "")
+            }
+            for i, f in enumerate(intent["fields"])
+        }
+
+    fields = intent["fields"]
+
+
+    # -------------------------
+    # Intent削除
+    # -------------------------
+    remove_key = form_data.get("remove_intent")
+    if remove_key:
+        fields.pop(remove_key, None)
+        document["intent"] = intent
+        return
+
+    # -------------------------
+    # Intent追加
+    # -------------------------
+    if "add_intent" in form_data:
+        label = form_data.get("new_intent_label", "").strip()
+        value = form_data.get("new_intent_value", "").strip()
+
+        if label:
+            key = f"intent_{uuid.uuid4().hex[:8]}"
+            fields[key] = {
+                "label": label,
+                "value": value
+            }
+
+        document["intent"] = intent
+        return
+
+    # -------------------------
+    # Intent保存（通常更新）
+    # -------------------------
+    for key in fields:
+        value_key = f"intent_value_{key}"
+        if value_key in form_data:
+            fields[key]["value"] = form_data.get(value_key, "")
+
+    document["intent"] = intent
 
 # services.py（末尾に追記）
 
@@ -261,3 +304,39 @@ def calc_intent_score(document: dict, unit: dict) -> float:
 def calc_unit_connection(unit_a: dict, unit_b: dict) -> float:
     # 仮：とりあえず全部 0.5
     return 0.5
+
+def normalize_intent(document: dict) -> None:
+    """
+    Intent を必ず
+    document["intent"]["fields"] = dict
+    の形に正規化する
+    """
+    intent = document.get("intent")
+
+    # intent 自体が無い
+    if not intent:
+        document["intent"] = {"fields": {}}
+        return
+
+    # fields が無い（最初期JSON）
+    if "fields" not in intent:
+        fields = {}
+        for k, v in intent.items():
+            if k == "fields":
+                continue
+            fields[k] = {
+                "label": k,
+                "value": v if not isinstance(v, list) else "\n".join(v)
+            }
+        document["intent"] = {"fields": fields}
+        return
+
+    # fields が list（中期JSON）
+    if isinstance(intent["fields"], list):
+        intent["fields"] = {
+            f.get("key", f"intent_{i}"): {
+                "label": f.get("label", ""),
+                "value": f.get("value", "")
+            }
+            for i, f in enumerate(intent["fields"])
+        }

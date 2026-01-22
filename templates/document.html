@@ -16,59 +16,78 @@
 
 <form method="post" action="/document/{{ document.id }}/intent">
 
-  {% for field in document.intent.fields %}
-    <div style="margin-bottom:10px;">
-      <input type="hidden" name="intent_key" value="{{ field.key }}">
+  <!-- 既存Intent -->
+{% for key, field in document.intent.fields.items() %}
+  <div style="margin-bottom:10px;">
+    <label>{{ field.label }}</label><br>
 
-      <label>{{ field.label }}</label><br>
-      <input
-        type="text"
-        name="intent_value_{{ field.key }}"
-        value="{{ field.value }}"
-        style="width:90%;"
-      >
+    <input
+      type="text"
+      name="intent_value_{{ key }}"
+      value="{{ field.value }}"
+      style="width:85%;"
+    >
 
-      <button name="remove_intent" value="{{ field.key }}">削除</button>
-    </div>
-  {% endfor %}
+    <button type="submit"
+            name="remove_intent"
+            value="{{ key }}">
+      削除
+    </button>
+  </div>
+{% endfor %}
+
 
   <hr>
 
+  <!-- Intent追加 -->
   <h4>Intent項目を追加</h4>
-  <input type="text" name="new_intent_label" placeholder="項目名">
-  <input type="text" name="new_intent_value" placeholder="内容">
+
+  <input
+    type="text"
+    name="new_intent_label"
+    placeholder="項目名（例：世界観）"
+    style="width:30%;"
+  >
+
+  <input
+    type="text"
+    name="new_intent_value"
+    placeholder="内容"
+    style="width:55%;"
+  >
 
   <br><br>
-  <button type="submit">Intentを保存</button>
+
+  <button type="submit" name="add_intent" value="1">
+    ＋ Intentを追加
+  </button>
+
+  <br><br>
+
+  <button type="submit" name="save_intent" value="1">
+    Intentを保存
+  </button>
+
 </form>
 
 <hr>
 
 <!-- ========================= -->
-<!-- シーン（Unit）編集 -->
+<!-- シーン（Unit） -->
 <!-- ========================= -->
 
-<h2>シーン</h2>
+<<h2>シーン</h2>
 
 <form method="post">
 
-  {% for category in document.categories %}
-    {% if category.name == "シーン" %}
+  {% for unit in document.units %}
+    <h3>{{ unit.title }}</h3>
 
-      {% for element in category.elements %}
-        <h3>{{ element.name }}</h3>
-
-        {% for unit in element.instances %}
-          <textarea
-            name="unit_{{ loop.index0 }}"
-            rows="6"
-            style="width:100%;"
-          >{{ unit.content }}</textarea>
-        {% endfor %}
-
-      {% endfor %}
-
-    {% endif %}
+    <textarea
+      name="unit_{{ loop.index0 }}"
+      rows="6"
+      style="width:100%;"
+    >{{ unit.content }}</textarea>
   {% endfor %}
 
   <br>

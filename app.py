@@ -23,7 +23,7 @@ from services.domain_bridge import (
 from services.services import update_intent
 from services.services import attach_unit_scores
 from services.services import extract_red_units, build_llm_prompt
-
+from services.services import normalize_intent
 
 app = Flask(__name__)
 app.secret_key = "storyforge-secret"
@@ -126,7 +126,6 @@ def document_create():
     save_user_data(session["user_id"], data)
     return redirect("/dashboard")
 
-
 @app.route("/document/<doc_id>", methods=["GET", "POST"])
 def view_document(doc_id):
     if "user_id" not in session or not session.get("data_loaded"):
@@ -138,22 +137,22 @@ def view_document(doc_id):
     if document is None:
         return redirect("/dashboard")
 
-    # ★ ここが必須
-    domain = document_to_domain(document)
-
     if request.method == "POST":
         update_units_content(document, request.form)
-        domain_to_document(domain, document)
         save_user_data(session["user_id"], data)
         return redirect(f"/document/{doc_id}")
+
+    if request.method == "GET":
+        normalize_intent(document)
 
     labels = UI_LABELS[document["doc_type"]]
 
     return render_template(
         "document.html",
-        document=domain,   # ← Domain
+        document=document,
         labels=labels
     )
+
 
 @app.route("/document/<doc_id>/intent", methods=["POST"])
 def edit_intent(doc_id):
@@ -166,39 +165,13 @@ def edit_intent(doc_id):
     if document is None:
         return redirect("/dashboard")
 
-    # JSON → Domain
-    domain = document_to_domain(document)
+    # ★ ここで正規化（重要）
+    normalize_intent(document)
 
-    fields = domain["intent"]["fields"]
+    # ★ Intent更新（削除・追加・保存すべて）
+    update_intent(document, request.form)
 
-    # 削除
-    remove_key = request.form.get("remove_intent")
-    if remove_key:
-        fields[:] = [f for f in fields if f["key"] != remove_key]
-
-    # 既存更新
-    for f in fields:
-        f["value"] = request.form.get(
-            f"intent_value_{f['key']}",
-            f["value"]
-        )
-
-    # 追加
-    new_label = request.form.get("new_intent_label", "").strip()
-    new_value = request.form.get("new_intent_value", "").strip()
-
-    if new_label:
-        new_key = f"custom_{len(fields)+1}"
-        fields.append({
-            "key": new_key,
-            "label": new_label,
-            "value": new_value
-        })
-
-    # Domain → JSON
-    domain_to_document(domain, document)
     save_user_data(session["user_id"], data)
-
     return redirect(f"/document/{doc_id}")
 
 @app.route("/document/<doc_id>/improve/<int:unit_index>", methods=["POST"])
