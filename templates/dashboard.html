@@ -28,12 +28,13 @@
   <form action="/document/create" method="post">
       <input name="title" placeholder="タイトル" required>
       <select name="doc_type">
-          <option value="novel">小説</option>
-          <option value="paper">論文</option>
-          <option value="blog">技術ブログ</option>
+          {% for doc_type in doc_types %}
+          <option value="{{ doc_type }}">{{ doc_type }}</option>
+          {% endfor %}
       </select>
       <button type="submit">新規作成</button>
   </form>
+
 
 <hr>
 <a href="/logout">ログアウト</a>

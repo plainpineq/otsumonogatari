@@ -8,6 +8,10 @@ from auth import login
 from security import hash_password
 from user_files import load_user_data, save_user_data
 from ui_labels import UI_LABELS
+from intent_templates import COMMON_INTENTS, DOC_TYPE_INTENTS
+
+
+
 
 from services.services import (
     create_document,
@@ -23,7 +27,7 @@ from services.domain_bridge import (
 from services.services import update_intent
 from services.services import attach_unit_scores
 from services.services import extract_red_units, build_llm_prompt
-from services.services import normalize_intent
+from intent_service import normalize_intent
 
 app = Flask(__name__)
 app.secret_key = "storyforge-secret"
@@ -77,6 +81,7 @@ def dashboard():
     return render_template(
         "dashboard.html",
         documents=documents,
+        doc_types=DOC_TYPE_INTENTS.keys()
     )
 
 @app.route("/upload", methods=["POST"])
@@ -99,14 +104,14 @@ def document_create():
 
     data = load_user_data(session["user_id"])
 
-    create_document(
+    document = create_document(
         data=data,
         title=request.form["title"],
         doc_type=request.form["doc_type"]
     )
 
     save_user_data(session["user_id"], data)
-    return redirect("/dashboard")
+    return redirect(f"/document/{document['id']}")
 
 @app.route("/document/<doc_id>", methods=["GET", "POST"])
 def view_document(doc_id):
