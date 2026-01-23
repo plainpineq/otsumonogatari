@@ -170,6 +170,7 @@ def view_document(doc_id):
 
     if request.method == "GET":
         normalize_intent(document)
+        print(f"DEBUG: Document Intent for doc_id {doc_id}: {document.get('intent')}")
 
     labels = UI_LABELS[document["doc_type"]]
 
