@@ -53,18 +53,23 @@
                                     {% endif %}
                                 {% else %}
                                     {# multiple: true の場合、各インスタンスのラベルと削除ボタンを表示 #}
-                                    {% if elements %}
-                                        {% for instance in elements %}
-                                            <div class="mb-2 p-2 border rounded bg-light d-flex justify-content-between align-items-center">
-                                                <span>{{ category_meta.label }} #{{ loop.index + 1 }}</span>
-                                                <button type="submit" name="remove_element_{{ category_id }}" value="{{ loop.index0 }}" class="btn btn-danger btn-sm">削除</button>
-                                            </div>
-                                        {% endfor %}
-                                    {% else %}
-                                        <p>まだ項目がありません。</p>
-                                    {% endif %}
-                                    <button type="submit" name="add_element_{{ category_id }}" value="1" class="btn btn-success btn-sm mt-2">＋ {{ category_meta.label }}を追加</button>
-                                {% endif %}
+                                                                    {% if elements %}
+                                                                        {% for instance in elements %}
+                                                                            <div class="mb-2 d-flex align-items-center">
+                                                                                <input
+                                                                                    type="text"
+                                                                                    name="element_{{ category_id }}_{{ loop.index0 }}_value"
+                                                                                    value="{{ instance.value }}"
+                                                                                    class="form-control me-2"
+                                                                                    placeholder="{{ category_meta.label }} {{ loop.index + 1 }}"
+                                                                                >
+                                                                                <button type="submit" name="remove_element_{{ category_id }}" value="{{ loop.index0 }}" class="btn btn-danger btn-sm">削除</button>
+                                                                            </div>
+                                                                        {% endfor %}
+                                                                    {% else %}
+                                                                        <p>まだ項目がありません。</p>
+                                                                    {% endif %}
+                                                                    <button type="submit" name="add_element_{{ category_id }}" value="1" class="btn btn-success btn-sm mt-2">＋ {{ category_meta.label }}を追加</button>                                {% endif %}
                             </div>
                         {% endfor %}
                     {% endif %}
@@ -89,18 +94,23 @@
                                     {% endif %}
                                 {% else %}
                                     {# multiple: true の場合、各インスタンスのラベルと削除ボタンを表示 #}
-                                    {% if elements %}
-                                        {% for instance in elements %}
-                                            <div class="mb-2 p-2 border rounded bg-light d-flex justify-content-between align-items-center">
-                                                <span>{{ category_meta.label }} #{{ loop.index + 1 }}</span>
-                                                <button type="submit" name="remove_element_{{ category_id }}" value="{{ loop.index0 }}" class="btn btn-danger btn-sm">削除</button>
-                                            </div>
-                                        {% endfor %}
-                                    {% else %}
-                                        <p>まだ項目がありません。</p>
-                                    {% endif %}
-                                    <button type="submit" name="add_element_{{ category_id }}" value="1" class="btn btn-success btn-sm mt-2">＋ {{ category_meta.label }}を追加</button>
-                                {% endif %}
+                                                                    {% if elements %}
+                                                                        {% for instance in elements %}
+                                                                            <div class="mb-2 d-flex align-items-center">
+                                                                                <input
+                                                                                    type="text"
+                                                                                    name="element_{{ category_id }}_{{ loop.index0 }}_value"
+                                                                                    value="{{ instance.value }}"
+                                                                                    class="form-control me-2"
+                                                                                    placeholder="{{ category_meta.label }} {{ loop.index + 1 }}"
+                                                                                >
+                                                                                <button type="submit" name="remove_element_{{ category_id }}" value="{{ loop.index0 }}" class="btn btn-danger btn-sm">削除</button>
+                                                                            </div>
+                                                                        {% endfor %}
+                                                                    {% else %}
+                                                                        <p>まだ項目がありません。</p>
+                                                                    {% endif %}
+                                                                    <button type="submit" name="add_element_{{ category_id }}" value="1" class="btn btn-success btn-sm mt-2">＋ {{ category_meta.label }}を追加</button>                                {% endif %}
                             </div>
                         {% endfor %}
                     {% endif %}

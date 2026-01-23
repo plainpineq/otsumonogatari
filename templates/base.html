@@ -35,38 +35,29 @@
             
             if (triggerEl) {
                 // BootstrapのTab APIを使用してタブをアクティブ化
-                if (typeof bootstrap !== 'undefined' && bootstrap.Tab) {
-                    const tab = new bootstrap.Tab(triggerEl);
-                    tab.show();
-                    console.log(`DEBUG JS: Tab activated by Bootstrap API for hash: ${urlHash}`);
-                } else {
-                    // Bootstrap APIが利用できない場合のフォールバック
-                    console.log(`DEBUG JS: Bootstrap Tab API not found, falling back to manual DOM manipulation for hash: ${urlHash}`);
-                    const activeTab = document.querySelector('.nav-tabs .nav-link.active');
-                    const activePane = document.querySelector('.tab-content .tab-pane.show.active');
-                    if (activeTab) {
-                        activeTab.classList.remove('active');
-                        activeTab.setAttribute('aria-selected', 'false');
-                    }
-                    if (activePane) {
-                        activePane.classList.remove('show', 'active');
-                    }
-
-                    triggerEl.classList.add('active');
-                    triggerEl.setAttribute('aria-selected', 'true');
-                    const targetPaneId = triggerEl.getAttribute('data-bs-target');
-                    const targetPane = document.querySelector(targetPaneId);
-                    if (targetPane) {
-                        targetPane.classList.add('show', 'active');
-                    }
-                }
-            } else {
-                console.log(`DEBUG JS: No tab button found for hash: ${urlHash}`);
-            }
-        } else {
-            console.log("DEBUG JS: No URL hash found.");
-        }
-    });
+                            if (typeof bootstrap !== 'undefined' && bootstrap.Tab) {
+                                const tab = new bootstrap.Tab(triggerEl);
+                                tab.show();
+                            } else {
+                                // Bootstrap APIが利用できない場合のフォールバック
+                                const activeTab = document.querySelector('.nav-tabs .nav-link.active');
+                                const activePane = document.querySelector('.tab-content .tab-pane.show.active');
+                                if (activeTab) {
+                                    activeTab.classList.remove('active');
+                                    activeTab.setAttribute('aria-selected', 'false');
+                                }
+                                if (activePane) {
+                                    activePane.classList.remove('show', 'active');
+                                }
+                
+                                triggerEl.classList.add('active');
+                                triggerEl.setAttribute('aria-selected', 'true');
+                                const targetPaneId = triggerEl.getAttribute('data-bs-target');
+                                const targetPane = document.querySelector(targetPaneId);
+                                if (targetPane) {
+                                    targetPane.classList.add('show', 'active');
+                                }
+                            }    });
     </script>
 </footer>
 </body>

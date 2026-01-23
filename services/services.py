@@ -46,7 +46,6 @@ def _get_default_element_instance(category_meta: dict) -> dict:
     if "instance_structure" in category_meta:
         instance = {}
         for field_id, field_meta in category_meta["instance_structure"].items():
-            print(f"DEBUG (get_default): field_id={field_id}, field_meta={field_meta}, field_meta.get('values')={field_meta.get('values')}") # 追加
             if field_meta["type"] == "text":
                 instance[field_id] = ""
             elif field_meta["type"] == "enum" and field_meta["values"]:
