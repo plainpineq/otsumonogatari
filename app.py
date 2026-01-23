@@ -28,10 +28,11 @@ from services.domain_bridge import (
     domain_to_document
 )
 
-from services.services import update_intent
+from services.services import update_intent, normalize_composition_elements, update_composition_elements
 from services.services import attach_unit_scores
 from services.services import extract_red_units, build_llm_prompt
-from intent_service import normalize_intent
+from intent_service import normalize_intent as normalize_intent_service # Rename to avoid conflict with services.py version
+from structure_templates import COMPOSITION_ELEMENTS_META # 追加
 
 app = Flask(__name__)
 app.secret_key = "storyforge-secret"
@@ -76,8 +77,8 @@ def logout():
 
 @app.route("/dashboard")
 def dashboard():
-    if "user_id" not in session:
-        return redirect("/login")
+    if "user_id" not in session: # Removed data_loaded check
+        return redirect("/dashboard")
 
     data = load_user_data(session["user_id"])
     documents = data.get("documents", [])
@@ -90,8 +91,8 @@ def dashboard():
 
 @app.route("/upload", methods=["POST"])
 def upload():
-    if "user_id" not in session:
-        return redirect("/login")
+    if "user_id" not in session: # Removed data_loaded check
+        return redirect("/dashboard")
 
     if 'file' not in request.files:
         flash("ファイルがありません")
@@ -164,20 +165,34 @@ def view_document(doc_id):
         return redirect("/dashboard")
 
     if request.method == "POST":
-        update_units_content(document, request.form)
+        # composition_elements の更新を処理
+        if request.form.get("update_composition_elements"):
+            update_composition_elements(document, request.form)
+        else: # 既存の unit content 更新も残しておく
+            update_units_content(document, request.form)
         save_user_data(session["user_id"], data)
         return redirect(f"/document/{doc_id}")
 
     if request.method == "GET":
-        normalize_intent(document)
-        print(f"DEBUG: Document Intent for doc_id {doc_id}: {document.get('intent')}")
+        normalize_intent_service(document) # services.py の normalize_intent との衝突を避けるためリネーム
+        normalize_composition_elements(document) # 追加
+        print(f"DEBUG: Document Intent for doc_id {doc_id}: {document.get('intent')}") # デバッグ用はそのまま残す
+        print(f"DEBUG: Document doc_type: {document.get('doc_type')}")
+        print(f"DEBUG: COMPOSITION_ELEMENTS_META doc_types keys: {COMPOSITION_ELEMENTS_META.get('doc_types').keys() if COMPOSITION_ELEMENTS_META.get('doc_types') else 'None'}")
+        print(f"DEBUG: Document composition_elements: {document.get('composition_elements')}")
 
     labels = UI_LABELS[document["doc_type"]]
+
+    # 日本語の doc_type を英語のキーにマッピング
+    doc_type_mapping = {meta["label"]: doc_id for doc_id, meta in COMPOSITION_ELEMENTS_META["doc_types"].items()}
+    mapped_doc_type_id = doc_type_mapping.get(document["doc_type"])
 
     return render_template(
         "document.html",
         document=document,
-        labels=labels
+        labels=labels,
+        COMPOSITION_ELEMENTS_META=COMPOSITION_ELEMENTS_META,
+        mapped_doc_type_id=mapped_doc_type_id # 追加
     )
 
 
@@ -193,7 +208,7 @@ def edit_intent(doc_id):
         return redirect("/dashboard")
 
     # ★ ここで正規化（重要）
-    normalize_intent(document)
+    normalize_intent_service(document) # services.py の normalize_intent との衝突を避けるためリネーム
 
     # ★ Intent更新（削除・追加・保存すべて）
     update_intent(document, request.form)

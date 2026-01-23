@@ -2,7 +2,7 @@
 import os
 from typing import Dict, List
 
-from structure_templates import STRUCTURE_TEMPLATES
+from structure_templates import STRUCTURE_TEMPLATES, COMPOSITION_ELEMENTS_META
 import uuid
 
 
@@ -29,11 +29,160 @@ def create_document(
             {"title": t, "content": ""}
             for t in STRUCTURE_TEMPLATES[doc_type]
         ],
-        "entities": []
+        "entities": [],
+        "composition_elements": {} # 新しい構成要素の格納場所
     }
 
     data.setdefault("documents", []).append(document)
     return document
+
+
+# =========================
+# Composition Elements Service
+# =========================
+
+def _get_default_element_instance(category_meta: dict) -> dict:
+    """カテゴリのメタ情報に基づいてデフォルトの要素インスタンスを生成する"""
+    if "instance_structure" in category_meta:
+        instance = {}
+        for field_id, field_meta in category_meta["instance_structure"].items():
+            print(f"DEBUG (get_default): field_id={field_id}, field_meta={field_meta}, field_meta.get('values')={field_meta.get('values')}") # 追加
+            if field_meta["type"] == "text":
+                instance[field_id] = ""
+            elif field_meta["type"] == "enum" and field_meta["values"]:
+                instance[field_id] = field_meta["values"][0] # 最初のenum値をデフォルトとする
+            else:
+                instance[field_id] = ""
+        return instance
+    else:
+        # instance_structure がない場合は単一のテキストフィールドとして扱う
+        return {"value": ""}
+
+
+def normalize_composition_elements(document: dict) -> None:
+    """
+    Document の composition_elements を初期化・正規化する
+    """
+    composition_elements = document.setdefault("composition_elements", {
+        "common": {},
+        "doc_type_specific": {}
+    })
+
+    # 共通構成要素の正規化
+    for category_meta in COMPOSITION_ELEMENTS_META["common_categories"]:
+        category_id = category_meta["id"]
+        if category_meta["multiple"]:
+            composition_elements["common"].setdefault(category_id, [])
+            if not composition_elements["common"][category_id]: # リストが空なら初期要素を追加
+                 composition_elements["common"][category_id].append(_get_default_element_instance(category_meta))
+        else:
+            if category_id not in composition_elements["common"]:
+                composition_elements["common"][category_id] = _get_default_element_instance(category_meta)
+
+    # doc_type 固有の構成要素の正規化
+    # 日本語の doc_type を英語のキーにマッピング
+    doc_type_mapping = {meta["label"]: doc_id for doc_id, meta in COMPOSITION_ELEMENTS_META["doc_types"].items()}
+    mapped_doc_type = doc_type_mapping.get(document["doc_type"])
+    
+    doc_type_meta = COMPOSITION_ELEMENTS_META["doc_types"].get(mapped_doc_type)
+    if doc_type_meta and "categories" in doc_type_meta:
+        for category_meta in doc_type_meta["categories"]:
+            category_id = category_meta["id"]
+            if category_meta["multiple"]:
+                composition_elements["doc_type_specific"].setdefault(category_id, [])
+                if not composition_elements["doc_type_specific"][category_id]: # リストが空なら初期要素を追加
+                    composition_elements["doc_type_specific"][category_id].append(_get_default_element_instance(category_meta))
+            else:
+                if category_id not in composition_elements["doc_type_specific"]:
+                    composition_elements["doc_type_specific"][category_id] = _get_default_element_instance(category_meta)
+
+
+def update_composition_elements(document: dict, form_data) -> None:
+    """
+    Composition Elements を更新・追加・削除する
+    """
+    normalize_composition_elements(document) # まず正規化しておく
+
+    elements_data = document["composition_elements"]
+
+    # --- 共通構成要素の処理 ---
+    for category_meta in COMPOSITION_ELEMENTS_META["common_categories"]:
+        category_id = category_meta["id"]
+        is_multiple = category_meta["multiple"]
+
+        # 追加
+        if f"add_element_{category_id}" in form_data:
+            new_instance = _get_default_element_instance(category_meta)
+            if is_multiple:
+                elements_data["common"].setdefault(category_id, []).append(new_instance)
+            else:
+                elements_data["common"][category_id] = new_instance
+            continue # 他の処理はスキップして次のカテゴリへ
+
+        # 削除
+        remove_index_str = form_data.get(f"remove_element_{category_id}")
+        if remove_index_str and is_multiple:
+            remove_index = int(remove_index_str)
+            if category_id in elements_data["common"] and len(elements_data["common"][category_id]) > remove_index:
+                elements_data["common"][category_id].pop(remove_index)
+            continue # 他の処理はスキップして次のカテゴリへ
+
+        # 保存（更新）
+        if is_multiple:
+            if category_id in elements_data["common"]:
+                for i, instance in enumerate(elements_data["common"][category_id]):
+                    for field_id in instance: # instance_structure のフィールドを更新
+                        form_field_name = f"element_{category_id}_{i}_{field_id}"
+                        if form_field_name in form_data:
+                            instance[field_id] = form_data.get(form_field_name, "")
+        else: # multipleでない場合
+            instance = elements_data["common"].get(category_id)
+            if instance:
+                for field_id in instance:
+                    form_field_name = f"element_{category_id}_{field_id}"
+                    if form_field_name in form_data:
+                        instance[field_id] = form_data.get(form_field_name, "")
+
+
+    # --- doc_type 固有構成要素の処理 ---
+    doc_type_meta = COMPOSITION_ELEMENTS_META["doc_types"].get(document["doc_type"])
+    if doc_type_meta and "categories" in doc_type_meta:
+        for category_meta in doc_type_meta["categories"]:
+            category_id = category_meta["id"]
+            is_multiple = category_meta["multiple"]
+
+            # 追加
+            if f"add_element_{category_id}" in form_data:
+                new_instance = _get_default_element_instance(category_meta)
+                if is_multiple:
+                    elements_data["doc_type_specific"].setdefault(category_id, []).append(new_instance)
+                else:
+                    elements_data["doc_type_specific"][category_id] = new_instance
+                continue
+
+            # 削除
+            remove_index_str = form_data.get(f"remove_element_{category_id}")
+            if remove_index_str and is_multiple:
+                remove_index = int(remove_index_str)
+                if category_id in elements_data["doc_type_specific"] and len(elements_data["doc_type_specific"][category_id]) > remove_index:
+                    elements_data["doc_type_specific"][category_id].pop(remove_index)
+                continue
+
+            # 保存（更新）
+            if is_multiple:
+                if category_id in elements_data["doc_type_specific"]:
+                    for i, instance in enumerate(elements_data["doc_type_specific"][category_id]):
+                        for field_id in instance:
+                            form_field_name = f"element_{category_id}_{i}_{field_id}"
+                            if form_field_name in form_data:
+                                instance[field_id] = form_data.get(form_field_name, "")
+            else: # multipleでない場合
+                instance = elements_data["doc_type_specific"].get(category_id)
+                if instance:
+                    for field_id in instance:
+                        form_field_name = f"element_{category_id}_{field_id}"
+                        if form_field_name in form_data:
+                                instance[field_id] = form_data.get(form_field_name, "")
 
 
 # =========================

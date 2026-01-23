@@ -13,30 +13,158 @@
         <button class="nav-link active" id="intent-tab" data-bs-toggle="tab" data-bs-target="#intent" type="button" role="tab" aria-controls="intent" aria-selected="true">作者の意図</button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="units-tab" data-bs-toggle="tab" data-bs-target="#units" type="button" role="tab" aria-controls="units" aria-selected="false">構成要素 (シーン)</button>
+        <button class="nav-link" id="units-tab" data-bs-toggle="tab" data-bs-target="#units" type="button" role="tab" aria-controls="units" aria-selected="false">構成要素</button>
     </li>
 </ul>
 
 <div class="tab-content" id="documentTabContent">
-        <div class="tab-pane fade" id="units" role="tabpanel" aria-labelledby="units-tab">
-            <div class="card p-4 shadow-sm mt-3">
-                <h2>シーン</h2>
-                <form method="post">
-                    {% for unit in document.units %}
-                        <h3 class="mt-4">{{ unit.title }}</h3>
-                        <textarea
-                          name="unit_{{ loop.index0 }}"
-                          rows="6"
-                          class="form-control"
-                        >{{ unit.content }}</textarea>
-                        <button type="submit" formaction="/document/{{ document.id }}/improve/{{ loop.index0 }}" class="btn btn-sm btn-secondary mt-2">LLMに改善提案を求める</button>
-                    {% endfor %}
-                                                    <br>
-                                                    <button type="submit" class="btn btn-primary mt-3 me-2">構成要素を保存</button>
-                                                    <a href="/dashboard" class="btn btn-secondary mt-3">← ダッシュボードへ</a>
-                                                </form>            </div>
-        </div>
-        <div class="tab-pane fade show active" id="intent" role="tabpanel" aria-labelledby="intent-tab">
+            <div class="tab-pane fade" id="units" role="tabpanel" aria-labelledby="units-tab">
+                <div class="card p-4 shadow-sm mt-3">
+                    <form method="post" action="/document/{{ document.id }}">
+                        <input type="hidden" name="update_composition_elements" value="1">
+                        
+                        <h2>構成要素</h2>
+        
+                        {# 共通構成要素 #}
+                        {% if COMPOSITION_ELEMENTS_META.common_categories %}
+                            <h3 class="mt-4">共通構成要素</h3>
+                            {% for category_meta in COMPOSITION_ELEMENTS_META.common_categories %}
+                                <div class="border p-3 mb-3 rounded">
+                                    <h4 class="mb-3">{{ category_meta.label }}</h4>
+                                    {% set category_id = category_meta.id %}
+                                    {% set is_multiple = category_meta.multiple %}
+                                    {% set elements = document.composition_elements.common.get(category_id, []) %}
+        
+                                                                {% if not is_multiple %}
+                                                                    {# multiple: false の場合、単一のインスタンス #}
+                                                                    {% set instance = elements %}
+                                                                    {% if instance %}
+                                                                        <div class="mb-3">
+                                                                            {% if category_meta.instance_structure %}
+                                                                                {% for field_id, field_meta in category_meta.instance_structure.items() %}
+                                                                                    <label for="element_{{ category_id }}_{{ field_id }}" class="form-label">{{ field_meta.label if field_meta.label else field_id }}</label>
+                                                                                    {% if field_meta.type == "enum" %}
+                                                                                        <select name="element_{{ category_id }}_{{ field_id }}" id="element_{{ category_id }}_{{ field_id }}" class="form-select mb-2">
+                                                                                            {% for value in field_meta['values'] %}
+                                                                                                <option value="{{ value }}" {% if instance[field_id] == value %}selected{% endif %}>{{ value }}</option>
+                                                                                            {% endfor %}
+                                                                                        </select>
+                                                                                    {% else %}
+                                                                                        <textarea name="element_{{ category_id }}_{{ field_id }}" id="element_{{ category_id }}_{{ field_id }}" class="form-control mb-2" rows="3">{{ instance[field_id] }}</textarea>
+                                                                                    {% endif %}
+                                                                                {% endfor %}
+                                                                            {% else %} {# instance_structure がない場合 #}
+                                                                                <label for="element_{{ category_id }}_value" class="form-label">{{ category_meta.label }}</label>
+                                                                                <textarea name="element_{{ category_id }}_value" id="element_{{ category_id }}_value" class="form-control mb-2" rows="3">{{ instance.value }}</textarea>
+                                                                            {% endif %}
+                                                                        </div>
+                                                                    {% endif %}
+                                                                {% else %}
+                                                                    {# multiple: true の場合、リストとしてインスタンスを表示 #}
+                                                                    {% if elements %}
+                                                                        {% for instance in elements %}
+                                                                            <div class="mb-3 p-3 border rounded bg-light position-relative">
+                                                                                {% if category_meta.instance_structure %}
+                                                                                    {% for field_id, field_meta in category_meta.instance_structure.items() %}
+                                                                                        <label for="element_{{ category_id }}_{{ loop.index0 }}_{{ field_id }}" class="form-label">{{ field_meta.label if field_meta.label else field_id }}</label>
+                                                                                        {% if field_meta.type == "enum" %}
+                                                                                            <select name="element_{{ category_id }}_{{ loop.index0 }}_{{ field_id }}" id="element_{{ category_id }}_{{ loop.index0 }}_{{ field_id }}" class="form-select mb-2">
+                                                                                                {% for value in field_meta['values'] %}
+                                                                                                    <option value="{{ value }}" {% if instance[field_id] == value %}selected{% endif %}>{{ value }}</option>
+                                                                                                {% endfor %}
+                                                                                            </select>
+                                                                                        {% else %}
+                                                                                            <textarea name="element_{{ category_id }}_{{ loop.index0 }}_{{ field_id }}" id="element_{{ category_id }}_{{ loop.index0 }}_{{ field_id }}" class="form-control mb-2" rows="3">{{ instance[field_id] }}</textarea>
+                                                                                        {% endif %}
+                                                                                    {% endfor %}
+                                                                                {% else %} {# instance_structure がない場合 #}
+                                                                                    <label for="element_{{ category_id }}_{{ loop.index0 }}_value" class="form-label">{{ category_meta.label }}</label>
+                                                                                    <textarea name="element_{{ category_id }}_{{ loop.index0 }}_value" id="element_{{ category_id }}_{{ loop.index0 }}_value" class="form-control mb-2" rows="3">{{ instance.value }}</textarea>
+                                                                                {% endif %}
+                                                                                <button type="submit" name="remove_element_{{ category_id }}" value="{{ loop.index0 }}" class="btn btn-danger btn-sm position-absolute top-0 end-0 mt-2 me-2">削除</button>
+                                                                            </div>
+                                                                        {% endfor %}
+                                                                    {% else %}
+                                                                        <p>まだ項目がありません。</p>
+                                                                    {% endif %}
+                                                                    <button type="submit" name="add_element_{{ category_id }}" value="1" class="btn btn-success btn-sm mt-2">＋ {{ category_meta.label }}を追加</button>
+                                                                {% endif %}                                </div>
+                            {% endfor %}
+                        {% endif %}
+        
+                                        {# doc_type 固有構成要素 #}
+                                        {% set doc_type_meta = COMPOSITION_ELEMENTS_META.doc_types.get(mapped_doc_type_id) %}
+                                        {% if doc_type_meta and doc_type_meta.categories %}
+                                            <h3 class="mt-5">主構成要素 ({{ doc_type_meta.label }})</h3>                            {% for category_meta in doc_type_meta.categories %}
+                                <div class="border p-3 mb-3 rounded">
+                                    <h4 class="mb-3">{{ category_meta.label }}</h4>
+                                    {% set category_id = category_meta.id %}
+                                    {% set is_multiple = category_meta.multiple %}
+                                    {% set elements = document.composition_elements.doc_type_specific.get(category_id, []) %}
+        
+                                                                {% if not is_multiple %}
+                                                                    {# multiple: false の場合、単一のインスタンス #}
+                                                                    {% set instance = elements %}
+                                                                    {% if instance %}
+                                                                        <div class="mb-3">
+                                                                            {% if category_meta.instance_structure %}
+                                                                                {% for field_id, field_meta in category_meta.instance_structure.items() %}
+                                                                                    <label for="element_{{ category_id }}_{{ field_id }}" class="form-label">{{ field_meta.label if field_meta.label else field_id }}</label>
+                                                                                    {% if field_meta.type == "enum" %}
+                                                                                        <select name="element_{{ category_id }}_{{ field_id }}" id="element_{{ category_id }}_{{ field_id }}" class="form-select mb-2">
+                                                                                            {% for value in field_meta['values'] %}
+                                                                                                <option value="{{ value }}" {% if instance[field_id] == value %}selected{% endif %}>{{ value }}</option>
+                                                                                            {% endfor %}
+                                                                                        </select>
+                                                                                    {% else %}
+                                                                                        <textarea name="element_{{ category_id }}_{{ field_id }}" id="element_{{ category_id }}_{{ field_id }}" class="form-control mb-2" rows="3">{{ instance[field_id] }}</textarea>
+                                                                                    {% endif %}
+                                                                                {% endfor %}
+                                                                            {% else %} {# instance_structure がない場合 #}
+                                                                                <label for="element_{{ category_id }}_value" class="form-label">{{ category_meta.label }}</label>
+                                                                                <textarea name="element_{{ category_id }}_value" id="element_{{ category_id }}_value" class="form-control mb-2" rows="3">{{ instance.value }}</textarea>
+                                                                            {% endif %}
+                                                                        </div>
+                                                                    {% endif %}
+                                                                {% else %}
+                                                                    {# multiple: true の場合、リストとしてインスタンスを表示 #}
+                                                                    {% if elements %}
+                                                                        {% for instance in elements %}
+                                                                            <div class="mb-3 p-3 border rounded bg-light position-relative">
+                                                                                {% if category_meta.instance_structure %}
+                                                                                    {% for field_id, field_meta in category_meta.instance_structure.items() %}
+                                                                                        <label for="element_{{ category_id }}_{{ loop.index0 }}_{{ field_id }}" class="form-label">{{ field_meta.label if field_meta.label else field_id }}</label>
+                                                                                        {% if field_meta.type == "enum" %}
+                                                                                            <select name="element_{{ category_id }}_{{ loop.index0 }}_{{ field_id }}" id="element_{{ category_id }}_{{ loop.index0 }}_{{ field_id }}" class="form-select mb-2">
+                                                                                                {% for value in field_meta['values'] %}
+                                                                                                    <option value="{{ value }}" {% if instance[field_id] == value %}selected{% endif %}>{{ value }}</option>
+                                                                                                {% endfor %}
+                                                                                            </select>
+                                                                                        {% else %}
+                                                                                            <textarea name="element_{{ category_id }}_{{ loop.index0 }}_{{ field_id }}" id="element_{{ category_id }}_{{ loop.index0 }}_{{ field_id }}" class="form-control mb-2" rows="3">{{ instance[field_id] }}</textarea>
+                                                                                        {% endif %}
+                                                                                    {% endfor %}
+                                                                                {% else %} {# instance_structure がない場合 #}
+                                                                                    <label for="element_{{ category_id }}_{{ loop.index0 }}_value" class="form-label">{{ category_meta.label }}</label>
+                                                                                    <textarea name="element_{{ category_id }}_{{ loop.index0 }}_value" id="element_{{ category_id }}_{{ loop.index0 }}_value" class="form-control mb-2" rows="3">{{ instance.value }}</textarea>
+                                                                                {% endif %}
+                                                                                <button type="submit" name="remove_element_{{ category_id }}" value="{{ loop.index0 }}" class="btn btn-danger btn-sm position-absolute top-0 end-0 mt-2 me-2">削除</button>
+                                                                            </div>
+                                                                        {% endfor %}
+                                                                    {% else %}
+                                                                        <p>まだ項目がありません。</p>
+                                                                    {% endif %}
+                                                                    <button type="submit" name="add_element_{{ category_id }}" value="1" class="btn btn-success btn-sm mt-2">＋ {{ category_meta.label }}を追加</button>
+                                                                {% endif %}                                </div>
+                            {% endfor %}
+                        {% endif %}
+        
+                        <hr class="my-4">
+                        <button type="submit" class="btn btn-primary mt-3 me-2">構成要素を保存</button>
+                        <a href="/dashboard" class="btn btn-secondary mt-3">← ダッシュボードへ</a>
+                    </form>
+                </div>
+            </div>        <div class="tab-pane fade show active" id="intent" role="tabpanel" aria-labelledby="intent-tab">
             <div class="card p-4 shadow-sm mt-3">
                 <h2>作者の意図（Intent）</h2>            <form method="post" action="/document/{{ document.id }}/intent">
                 {% if document.intent and document.intent.fields %}
