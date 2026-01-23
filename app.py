@@ -171,15 +171,11 @@ def view_document(doc_id):
         else: # 既存の unit content 更新も残しておく
             update_units_content(document, request.form)
         save_user_data(session["user_id"], data)
-        return redirect(f"/document/{doc_id}")
+        return redirect(f"/document/{doc_id}#units") # 常に構成要素タブにリダイレクト
 
     if request.method == "GET":
         normalize_intent_service(document) # services.py の normalize_intent との衝突を避けるためリネーム
         normalize_composition_elements(document) # 追加
-        print(f"DEBUG: Document Intent for doc_id {doc_id}: {document.get('intent')}") # デバッグ用はそのまま残す
-        print(f"DEBUG: Document doc_type: {document.get('doc_type')}")
-        print(f"DEBUG: COMPOSITION_ELEMENTS_META doc_types keys: {COMPOSITION_ELEMENTS_META.get('doc_types').keys() if COMPOSITION_ELEMENTS_META.get('doc_types') else 'None'}")
-        print(f"DEBUG: Document composition_elements: {document.get('composition_elements')}")
 
     labels = UI_LABELS[document["doc_type"]]
 
