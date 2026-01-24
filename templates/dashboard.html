@@ -1,45 +1,62 @@
 {% extends "base.html" %}
 {% block content %}
 
-<h2>ダッシュボード</h2>
+<h2 class="mb-4">ダッシュボード</h2>
 
-  <p><strong>作業データをアップロードする</strong></p>
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <div class="card p-4">
+            <h3 class="card-title">作業データをアップロードする</h3>
+            <form action="/upload" method="post" enctype="multipart/form-data">
+                <div class="mb-3">
+                    <input type="file" class="form-control" name="file" required>
+                </div>
+                <button type="submit" class="btn btn-primary">データアップロード</button>
+            </form>
+        </div>
+    </div>
 
-  <form action="/upload" method="post" enctype="multipart/form-data">
-      <input type="file" name="file" required>
-      <button type="submit">データアップロード</button>
-  </form>
+    <div class="col-md-6 mb-4">
+        <div class="card p-4">
+            <h3 class="card-title">新規作成</h3>
+            <form action="/document/create" method="post">
+                <div class="mb-3">
+                    <input name="title" class="form-control" placeholder="タイトル" required>
+                </div>
+                <div class="mb-3">
+                    <select name="doc_type" class="form-select">
+                        {% for doc_type in doc_types %}
+                        <option value="{{ doc_type }}">{{ doc_type }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary">新規作成</button>
+            </form>
+        </div>
+    </div>
+</div>
 
-  <h3>作品一覧</h3>
-
-  {% if documents %}
-    <ul>
-    {% for d in documents %}
-      <li>
-        <a href="/document/{{ d.id }}">{{ d.title }}</a>
-        <form action="/document/{{ d.id }}/download" method="GET" style="display:inline; margin-left: 10px;">
-            <button type="submit">ダウンロード</button>
-        </form>
-      </li>
-    {% endfor %}
-    </ul>
-  {% else %}
-    <p>まだ作品がありません。</p>
-  {% endif %}
-
-  <h3>新規作成</h3>
-  <form action="/document/create" method="post">
-      <input name="title" placeholder="タイトル" required>
-      <select name="doc_type">
-          {% for doc_type in doc_types %}
-          <option value="{{ doc_type }}">{{ doc_type }}</option>
-          {% endfor %}
-      </select>
-      <button type="submit">新規作成</button>
-  </form>
-
-
-<hr>
-<a href="/logout">ログアウト</a>
+<div class="card p-4 mb-4">
+    <h3 class="card-title">作品一覧</h3>
+    {% if documents %}
+        <div class="row row-cols-1 row-cols-md-3 g-4">
+        {% for d in documents %}
+            <div class="col">
+                <a href="/document/{{ d.id }}" class="card h-100 dashboard-card">
+                    <div class="card-body">
+                        <h5 class="card-title">{{ d.title }}</h5>
+                        <p class="card-text"><small class="text-muted">{{ d.doc_type }}</small></p>
+                        <form action="/document/{{ d.id }}/download" method="GET" style="display:inline-block;">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary mt-2">ダウンロード</button>
+                        </form>
+                    </div>
+                </a>
+            </div>
+        {% endfor %}
+        </div>
+    {% else %}
+        <p>まだ作品がありません。</p>
+    {% endif %}
+</div>
 
 {% endblock %}

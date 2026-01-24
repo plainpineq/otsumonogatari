@@ -1,130 +1,154 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h1>{{ document.title }}</h1>
-    <div>
-        <a href="/dashboard" class="btn btn-outline-secondary">ダッシュボード</a>
+<div class="card p-4 mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="h2 mb-0">{{ document.title }}</h1>
+        <div>
+            <a href="/dashboard" class="btn btn-outline-secondary me-2">ダッシュボード</a>
+            <form action="/document/{{ document.id }}/download" method="GET" style="display:inline-block;">
+                <button type="submit" class="btn btn-info">ダウンロード</button>
+            </form>
+        </div>
     </div>
-</div>
-
-{% set active_tab_id = 'intent' %} {# デフォルトは作者の意図 #}
-{% set url_hash = request.url.split('#')[-1] if '#' in request.url else '' %}
-
-{% if url_hash == 'units' %}
-    {% set active_tab_id = 'units' %}
-{% elif url_hash == 'intent' %}
-    {% set active_tab_id = 'intent' %}
-{% endif %}
 
 <ul class="nav nav-tabs" id="documentTab" role="tablist">
     <li class="nav-item" role="presentation">
-        <button class="nav-link {% if active_tab_id == 'intent' %}active{% endif %}" id="intent-tab" data-bs-toggle="tab" data-bs-target="#intent" type="button" role="tab" aria-controls="intent" aria-selected="{% if active_tab_id == 'intent' %}true{% else %}false{% endif %}">作者の意図</button>
+        <button class="nav-link" id="intent-tab" data-bs-toggle="tab" data-bs-target="#intent" type="button" role="tab" aria-controls="intent" aria-selected="false">作者の意図</button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link {% if active_tab_id == 'units' %}active{% endif %}" id="units-tab" data-bs-toggle="tab" data-bs-target="#units" type="button" role="tab" aria-controls="units" aria-selected="{% if active_tab_id == 'units' %}true{% else %}false{% endif %}">構成要素</button>
+        <button class="nav-link" id="composition-tab" data-bs-toggle="tab" data-bs-target="#composition" type="button" role="tab" aria-controls="composition" aria-selected="false">構成要素</button>
     </li>
 </ul>
 
 <div class="tab-content" id="documentTabContent">
-        <div class="tab-pane fade {% if active_tab_id == 'units' %}show active{% endif %}" id="units" role="tabpanel" aria-labelledby="units-tab">
-            <div class="card p-4 shadow-sm mt-3">
-                <form method="post" action="/document/{{ document.id }}">
-                    <input type="hidden" name="update_composition_elements" value="1">
-                    
-                    <h2>構成要素の定義</h2> {# 見出しを「定義」に変更 #}
+    <div class="tab-pane fade" id="composition" role="tabpanel" aria-labelledby="composition-tab">
+        <div class="card p-4 shadow-sm mt-3">
+            <form method="post" action="/document/{{ document.id }}">
+                <input type="hidden" name="update_composition_elements" value="1">
 
-                    {# 共通構成要素 #}
-                    {% if COMPOSITION_ELEMENTS_META.common_categories %}
-                        <h3 class="mt-4">共通構成要素</h3>
-                        {% for category_meta in COMPOSITION_ELEMENTS_META.common_categories %}
-                            <div class="border p-3 mb-3 rounded">
-                                <h4 class="mb-3">{{ category_meta.label }}</h4>
-                                {% set category_id = category_meta.id %}
-                                {% set is_multiple = category_meta.multiple %}
-                                {% set elements = document.composition_elements.common.get(category_id, []) %}
+                <h2 class="h4 mb-3">構成要素の定義</h2> {# 見出しを「定義」に変更 #}
 
-                                {% if not is_multiple %}
-                                    {# multiple: false の場合、単一のインスタンスはラベルのみ表示 #}
-                                    {% set instance = elements %}
-                                    {% if instance %}
-                                        <p class="mb-0"><strong>{{ category_meta.label }}</strong></p>
-                                        {# ここでは内容の表示・入力は行わない #}
-                                    {% endif %}
-                                {% else %}
-                                    {# multiple: true の場合、各インスタンスのラベルと削除ボタンを表示 #}
-                                                                    {% if elements %}
-                                                                        {% for instance in elements %}
-                                                                            <div class="mb-2 d-flex align-items-center">
-                                                                                <input
-                                                                                    type="text"
-                                                                                    name="element_{{ category_id }}_{{ loop.index0 }}_value"
-                                                                                    value="{{ instance.value }}"
-                                                                                    class="form-control me-2"
-                                                                                    placeholder="{{ category_meta.label }} {{ loop.index + 1 }}"
-                                                                                >
-                                                                                <button type="submit" name="remove_element_{{ category_id }}" value="{{ loop.index0 }}" class="btn btn-danger btn-sm">削除</button>
-                                                                            </div>
-                                                                        {% endfor %}
-                                                                    {% else %}
-                                                                        <p>まだ項目がありません。</p>
-                                                                    {% endif %}
-                                                                    <button type="submit" name="add_element_{{ category_id }}" value="1" class="btn btn-success btn-sm mt-2">＋ {{ category_meta.label }}を追加</button>                                {% endif %}
-                            </div>
-                        {% endfor %}
+                {# 共通構成要素 #}
+                {% set common_meta_data = document.composition_meta.common_categories %}
+                {% set common_categories_data = document.composition_elements.common.categories %}
+                {% if common_meta_data.categories %}
+                    <h3 class="h5 mt-4">{{ common_meta_data.label }}</h3>
+                    {% if common_meta_data.editable %}
+                        <div class="mb-3 d-flex">
+                            <input type="text" name="new_common_category_label" placeholder="新しい共通構成要素のラベル" class="form-control me-2">
+                            <button type="submit" name="add_common_category" value="1" class="btn btn-primary">追加</button>
+                        </div>
                     {% endif %}
 
-                    {# doc_type 固有構成要素 #}
-                    {% set doc_type_meta = COMPOSITION_ELEMENTS_META.doc_types.get(mapped_doc_type_id) %}
-                    {% if doc_type_meta and doc_type_meta.categories %}
-                        <h3 class="mt-5">主構成要素 ({{ doc_type_meta.label }})</h3>
-                        {% for category_meta in doc_type_meta.categories %}
-                            <div class="border p-3 mb-3 rounded">
-                                <h4 class="mb-3">{{ category_meta.label }}</h4>
-                                {% set category_id = category_meta.id %}
-                                {% set is_multiple = category_meta.multiple %}
-                                {% set elements = document.composition_elements.doc_type_specific.get(category_id, []) %}
-
-                                {% if not is_multiple %}
-                                    {# multiple: false の場合、単一のインスタンスはラベルのみ表示 #}
-                                    {% set instance = elements %}
-                                    {% if instance %}
-                                        <p class="mb-0"><strong>{{ category_meta.label }}</strong></p>
-                                        {# ここでは内容の表示・入力は行わない #}
+                    {% for category_meta in common_meta_data.categories %}
+                        {% set current_category_data = common_categories_data | selectattr("id", "equalto", category_meta.id) | first %}
+                        {% if current_category_data %}
+                            <div class="card p-3 mb-3">
+                                <h4 class="h6 mb-3 d-flex justify-content-between align-items-center">
+                                    {% if category_meta.editable %}
+                                        <input type="text" name="category_{{ category_meta.id }}_label" value="{{ category_meta.label }}" class="form-control me-2">
+                                    {% else %}
+                                        <span>{{ category_meta.label }}</span>
                                     {% endif %}
-                                {% else %}
-                                    {# multiple: true の場合、各インスタンスのラベルと削除ボタンを表示 #}
-                                                                    {% if elements %}
-                                                                        {% for instance in elements %}
-                                                                            <div class="mb-2 d-flex align-items-center">
-                                                                                <input
-                                                                                    type="text"
-                                                                                    name="element_{{ category_id }}_{{ loop.index0 }}_value"
-                                                                                    value="{{ instance.value }}"
-                                                                                    class="form-control me-2"
-                                                                                    placeholder="{{ category_meta.label }} {{ loop.index + 1 }}"
-                                                                                >
-                                                                                <button type="submit" name="remove_element_{{ category_id }}" value="{{ loop.index0 }}" class="btn btn-danger btn-sm">削除</button>
-                                                                            </div>
-                                                                        {% endfor %}
-                                                                    {% else %}
-                                                                        <p>まだ項目がありません。</p>
-                                                                    {% endif %}
-                                                                    <button type="submit" name="add_element_{{ category_id }}" value="1" class="btn btn-success btn-sm mt-2">＋ {{ category_meta.label }}を追加</button>                                {% endif %}
+                                    {% if common_meta_data.editable and category_meta.editable %}
+                                        <button type="submit" name="remove_common_category" value="{{ category_meta.id }}" class="btn btn-danger btn-sm ms-2">削除</button>
+                                    {% endif %}
+                                </h4>
+                                {% set category_id = category_meta.id %}
+                                {% set elements = current_category_data.elements %}
+
+                                {% if elements %}
+                                    {% for element in elements %}
+                                        <div class="mb-2 d-flex align-items-center">
+                                            {# ユーザーが追加した項目のみ編集・削除可能 #}
+                                            {% if element.editable %}
+                                                <input
+                                                    type="text"
+                                                    name="element_{{ category_id }}_{{ loop.index0 }}_label" {# ラベル編集用 #}
+                                                    value="{{ element.label }}"
+                                                    class="form-control me-2"
+                                                    placeholder="{{ category_meta.label }} #{{ loop.index + 1 }}"
+                                                >
+                                                <button type="submit" name="remove_element_{{ category_id }}" value="{{ loop.index0 }}" class="btn btn-danger btn-sm">削除</button>
+                                            {% else %}
+                                                {# 編集不可の項目はラベルのみ表示 #}
+                                                <span class="form-control-plaintext flex-grow-1 me-2">{{ element.label }}</span>
+                                            {% endif %}
+                                        </div>
+                                    {% endfor %}
+                                {% endif %}
+                                {% if category_meta.get('editable') %} {# カテゴリ自体がeditableなら要素の追加ボタン #}
+                                    <button type="submit" name="add_element_{{ category_id }}" value="1" class="btn btn-success btn-sm mt-2">＋ {{ category_meta.label }}を追加</button>
+                                {% endif %}
                             </div>
-                        {% endfor %}
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
+
+                {# doc_type 固有構成要素 #}
+                {% set doc_type_meta_data = document.composition_meta.doc_types.get(mapped_doc_type_id) %}
+                {% if doc_type_meta_data and doc_type_meta_data.categories %}
+                    <h3 class="h5 mt-5">主構成要素 ({{ doc_type_meta_data.label }})</h3>
+                    {% if doc_type_meta_data.editable %}
+                        <div class="mb-3 d-flex">
+                            <input type="text" name="new_doc_type_category_label" placeholder="新しい分類のラベル" class="form-control me-2">
+                            <button type="submit" name="add_doc_type_category" value="1" class="btn btn-primary">分類追加</button>
+                        </div>
                     {% endif %}
 
-                    <hr class="my-4">
-                    {# 内容を保存するボタンは削除、構成要素の構造を保存するボタンは必要 #}
-                    <button type="submit" class="btn btn-primary mt-3 me-2">構成要素の構造を保存</button>
-                    <a href="/dashboard" class="btn btn-secondary mt-3">← ダッシュボードへ</a>
-                </form>
-            </div>
+                    {% for category_meta in doc_type_meta_data.categories %}
+                        {% set current_category_data = document.composition_elements.doc_type_specific.categories | selectattr("id", "equalto", category_meta.id) | first %}
+                        {% if current_category_data %}
+                            <div class="card p-3 mb-3">
+                                <h4 class="h6 mb-3 d-flex justify-content-between align-items-center">
+                                    {% if category_meta.editable %}
+                                        <input type="text" name="category_{{ category_meta.id }}_label" value="{{ category_meta.label }}" class="form-control me-2">
+                                    {% else %}
+                                        <span>{{ category_meta.label }}</span>
+                                    {% endif %}
+                                    {% if doc_type_meta_data.editable and category_meta.editable %}
+                                        <button type="submit" name="remove_doc_type_category" value="{{ category_meta.id }}" class="btn btn-danger btn-sm ms-2">分類削除</button>
+                                    {% endif %}
+                                </h4>
+                                {% set category_id = category_meta.id %}
+                                {% set elements = current_category_data.elements %}
+
+                                {% if elements %}
+                                    {% for element in elements %}
+                                        <div class="mb-2 d-flex align-items-center">
+                                            {% if element.editable %}
+                                                <input
+                                                    type="text"
+                                                    name="element_{{ category_id }}_{{ loop.index0 }}_label" {# ラベル編集用 #}
+                                                    value="{{ element.label }}"
+                                                    class="form-control me-2"
+                                                    placeholder="{{ category_meta.label }} #{{ loop.index + 1 }}"
+                                                >
+                                                <button type="submit" name="remove_element_{{ category_id }}" value="{{ loop.index0 }}" class="btn btn-danger btn-sm">削除</button>
+                                            {% else %}
+                                                <span class="form-control-plaintext flex-grow-1 me-2">{{ element.label }}</span>
+                                            {% endif %}
+                                        </div>
+                                    {% endfor %}
+                                {% endif %}
+                                {% if category_meta.get('editable') %} {# カテゴリ自体がeditableなら要素の追加ボタン #}
+                                    <button type="submit" name="add_element_{{ category_id }}" value="1" class="btn btn-success btn-sm mt-2">＋ {{ category_meta.label }}を追加</button>
+                                {% endif %}
+                            </div>
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
+
+                <hr class="my-4">
+                <button type="submit" class="btn btn-primary mt-3 me-2">構成要素の構造を保存</button>
+                <a href="/dashboard" class="btn btn-secondary mt-3">← ダッシュボードへ</a>
+            </form>
         </div>
-        <div class="tab-pane fade {% if active_tab_id == 'intent' %}show active{% endif %}" id="intent" role="tabpanel" aria-labelledby="intent-tab">
-            <div class="card p-4 shadow-sm mt-3">
-                <h2>作者の意図（Intent）</h2>            <form method="post" action="/document/{{ document.id }}/intent">
+    </div>
+    <div class="tab-pane fade" id="intent" role="tabpanel" aria-labelledby="intent-tab">
+        <div class="card p-4">
+            <h2 class="h4 mb-3">作者の意図（Intent）</h2>            <form method="post" action="/document/{{ document.id }}/intent">
                 {% if document.intent and document.intent.fields %}
                     {% for key, field in document.intent.fields.items() %}
                         <div class="mb-3 d-flex align-items-center">
@@ -139,7 +163,7 @@
                                     name="remove_intent"
                                     value="{{ key }}"
                                     class="btn btn-danger btn-sm">
-                                削除
+                                退避
                             </button>
                         </div>
                     {% endfor %}
@@ -147,9 +171,9 @@
                     <p>このドキュメントには意図が設定されていません。</p>
                 {% endif %}
 
-                <hr>
+                <hr class="my-4">
 
-                <h4>Intent項目を追加</h4>
+                <h4 class="h5 mb-3">Intent項目を追加</h4>
                 <div class="mb-3 d-flex">
                     <input
                         type="text"
@@ -170,12 +194,36 @@
                     </button>
                 </div>
 
-                <button type="submit" name="save_intent" value="1" class="btn btn-primary mt-3 me-2">
-                    Intentを保存
-                </button>
-                <a href="/dashboard" class="btn btn-secondary mt-3">← ダッシュボードへ</a>
+                <div class="d-flex justify-content-between">
+                    <button type="submit" name="save_intent" value="1" class="btn btn-primary">
+                        Intentを保存
+                    </button>
+                    <a href="/dashboard" class="btn btn-secondary">← ダッシュボードへ</a>
+                </div>
             </form>
         </div>
     </div>
 </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Activate tab based on URL hash
+        let hash = window.location.hash;
+        let tabToActivate;
+
+        if (hash) {
+            tabToActivate = document.querySelector('.nav-tabs button[data-bs-target="' + hash + '"]');
+        }
+
+        if (tabToActivate) {
+            new bootstrap.Tab(tabToActivate).show();
+        } else {
+            // Activate the default tab ('intent') if no hash or hash is invalid
+            let defaultTab = document.getElementById('intent-tab');
+            if (defaultTab) {
+                new bootstrap.Tab(defaultTab).show();
+            }
+        }
+    });
+</script>
 {% endblock %}

@@ -1,10 +1,118 @@
 # services.py
 import os
 from typing import Dict, List
-
-from structure_templates import STRUCTURE_TEMPLATES, COMPOSITION_ELEMENTS_META
+import copy # copyモジュールを追加
 import uuid
+import json
 
+from structure_templates import STRUCTURE_TEMPLATES
+
+# =========================
+# Default Composition Meta (V2 from 構成要素2.txt)
+# =========================
+
+DEFAULT_COMPOSITION_META = {
+  "version": "2.0",
+  "description": "構成要素カテゴリのメタ定義（完全ユーザ拡張型）",
+
+  "common_categories": {
+    "label": "共通構成要素",
+    "editable": True,
+    "categories": [
+      {
+        "id": "theme",
+        "label": "テーマ・問い",
+        "description": "作品全体を貫く問い",
+        "multiple": True # 後方互換性のため
+      },
+      {
+        "id": "value",
+        "label": "価値観",
+        "description": "肯定・否定される価値",
+        "multiple": True
+      },
+      {
+        "id": "constraint",
+        "label": "制約条件",
+        "description": "表現上・設定上の制約",
+        "multiple": True
+      }
+    ]
+  },
+
+  "doc_types": {
+    "novel": {
+      "label": "小説",
+      "editable": True,
+      "categories": [
+        {
+          "id": "scene",
+          "label": "シーン案",
+          "editable": True,
+          "elements": [
+            {
+              "id": "intro",
+              "label": "導入",
+              "editable": True
+            },
+            {
+              "id": "daily_life",
+              "label": "日常",
+              "editable": True
+            },
+            {
+              "id": "incident",
+              "label": "事件",
+              "editable": True
+            },
+            {
+              "id": "conflict",
+              "label": "葛藤",
+              "editable": True
+            },
+            {
+              "id": "turning_point",
+              "label": "転機",
+              "editable": True
+            },
+            {
+              "id": "climax",
+              "label": "クライマックス",
+              "editable": True
+            },
+            {
+              "id": "ending",
+              "label": "結末",
+              "editable": True
+            }
+          ]
+        },
+        {
+          "id": "character",
+          "label": "キャラ案",
+          "editable": True,
+          "elements": [
+            {
+              "id": "protagonist",
+              "label": "主人公",
+              "editable": True
+            },
+            {
+              "id": "heroine",
+              "label": "ヒロイン",
+              "editable": True
+            },
+            {
+              "id": "antagonist",
+              "label": "対立者",
+              "editable": True
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
 
 # =========================
 # Document Service
@@ -30,7 +138,8 @@ def create_document(
             for t in STRUCTURE_TEMPLATES[doc_type]
         ],
         "entities": [],
-        "composition_elements": {} # 新しい構成要素の格納場所
+        "composition_elements": {}, # 新しい構成要素の格納場所
+        "composition_meta": copy.deepcopy(DEFAULT_COMPOSITION_META) # デフォルトのメタ定義を追加
     }
 
     data.setdefault("documents", []).append(document)
@@ -41,147 +150,352 @@ def create_document(
 # Composition Elements Service
 # =========================
 
-def _get_default_element_instance(category_meta: dict) -> dict:
-    """カテゴリのメタ情報に基づいてデフォルトの要素インスタンスを生成する"""
-    if "instance_structure" in category_meta:
-        instance = {}
-        for field_id, field_meta in category_meta["instance_structure"].items():
-            if field_meta["type"] == "text":
-                instance[field_id] = ""
-            elif field_meta["type"] == "enum" and field_meta["values"]:
-                instance[field_id] = field_meta["values"][0] # 最初のenum値をデフォルトとする
-            else:
-                instance[field_id] = ""
-        return instance
-    else:
-        # instance_structure がない場合は単一のテキストフィールドとして扱う
-        return {"value": ""}
+def _get_default_element_instance(element_meta: dict) -> dict:
+    """要素のメタ情報に基づいてデフォルトの要素インスタンスを生成する"""
+    return {
+        "id": element_meta["id"],
+        "label": element_meta["label"],
+        "value": ""
+    }
+
+
+def _normalize_categories(current_categories: list, meta_categories: list):
+
+
+    """カテゴリとその要素をメタ定義に基づいて初期化・正規化するヘルパー関数"""
+
+
+    # メタ定義にないカテゴリを削除（古いデータをクリーンアップ）
+
+
+    # ただし、ユーザーが追加した編集可能なカテゴリは残す
+
+
+    meta_category_ids = {cat["id"] for cat in meta_categories}
+
+
+    current_categories[:] = [
+
+
+        cat for cat in current_categories if cat["id"] in meta_category_ids or cat.get("editable")
+
+
+    ]
+
+
+
+
+
+    for category_meta in meta_categories:
+
+
+        category_id = category_meta["id"]
+
+
+        category_found = False
+
+
+
+
+
+        for existing_category in current_categories:
+
+
+            if existing_category["id"] == category_id:
+
+
+                # カテゴリが見つかったら、そのメタ情報を更新し、中の要素を正規化
+
+
+                existing_category["label"] = category_meta["label"]
+
+
+                existing_category["editable"] = category_meta.get("editable", False)
+
+
+
+
+
+                existing_elements = existing_category.setdefault("elements", [])
+
+
+
+
+
+                # メタ定義にない要素を削除（ただし、ユーザーが追加した編集可能なものは残す）
+
+
+                if 'elements' in category_meta:
+
+
+                    meta_element_ids = {elem["id"] for elem in category_meta.get("elements", [])}
+
+
+                    existing_category["elements"][:] = [
+
+
+                        elem for elem in existing_elements if elem["id"] in meta_element_ids or elem.get("editable")
+
+
+                    ]
+
+
+
+
+
+                # メタ定義に基づいて不足している要素を追加 (idで比較)
+
+
+                for element_meta in category_meta.get("elements", []):
+
+
+                    element_found = False
+
+
+                    for existing_element in existing_elements:
+
+
+                        if existing_element["id"] == element_meta["id"]:
+
+
+                            element_found = True
+
+
+                            existing_element["label"] = element_meta["label"] # labelも更新される可能性があるのでここで上書き
+
+
+                            existing_element.setdefault("value", "") # valueがなければ追加
+
+
+                            break
+
+
+                    if not element_found:
+
+
+                        existing_elements.append(_get_default_element_instance(element_meta))
+
+
+
+
+
+                category_found = True
+
+
+                break
+
+
+
+
+
+        if not category_found:
+
+
+            # カテゴリが見つからなかった場合、メタ定義から追加
+
+
+            new_category = {
+
+
+                "id": category_meta["id"],
+
+
+                "label": category_meta["label"],
+
+
+                "editable": category_meta.get("editable", False),
+
+
+                "elements": []
+
+
+            }
+
+
+            for element_meta in category_meta.get("elements", []):
+
+
+                new_category["elements"].append(_get_default_element_instance(element_meta))
+
+
+            current_categories.append(new_category)
 
 
 def normalize_composition_elements(document: dict) -> None:
     """
-    Document の composition_elements を初期化・正規化する
+    document["composition_elements"] を初期化・正規化する
     """
-    composition_elements = document.setdefault("composition_elements", {
-        "common": {},
-        "doc_type_specific": {}
-    })
+    # composition_elements がなければ初期化
+    if "composition_elements" not in document:
+        document["composition_elements"] = {
+            "common": {"categories": []},
+            "doc_type_specific": {"categories": []}
+        }
+
+    # composition_meta がなければデフォルトをコピー
+    if "composition_meta" not in document:
+        document["composition_meta"] = copy.deepcopy(DEFAULT_COMPOSITION_META)
+
+    elements_data = document["composition_elements"]
+    composition_meta = document["composition_meta"]
 
     # 共通構成要素の正規化
-    for category_meta in COMPOSITION_ELEMENTS_META["common_categories"]:
-        category_id = category_meta["id"]
-        if category_meta["multiple"]:
-            composition_elements["common"].setdefault(category_id, [])
-            if not composition_elements["common"][category_id]: # リストが空なら初期要素を追加
-                 composition_elements["common"][category_id].append(_get_default_element_instance(category_meta))
-        else:
-            if category_id not in composition_elements["common"]:
-                composition_elements["common"][category_id] = _get_default_element_instance(category_meta)
+    common_meta_def = composition_meta["common_categories"]
+    _normalize_categories(
+        elements_data["common"].setdefault("categories", []),
+        common_meta_def["categories"]
+    )
 
-    # doc_type 固有の構成要素の正規化
-    # 日本語の doc_type を英語のキーにマッピング
-    doc_type_mapping = {meta["label"]: doc_id for doc_id, meta in COMPOSITION_ELEMENTS_META["doc_types"].items()}
+    # doc_type 固有構成要素の正規化
+    doc_type_mapping = {meta["label"]: doc_id for doc_id, meta in composition_meta["doc_types"].items()}
     mapped_doc_type = doc_type_mapping.get(document["doc_type"])
-    
-    doc_type_meta = COMPOSITION_ELEMENTS_META["doc_types"].get(mapped_doc_type)
-    if doc_type_meta and "categories" in doc_type_meta:
-        for category_meta in doc_type_meta["categories"]:
-            category_id = category_meta["id"]
-            if category_meta["multiple"]:
-                composition_elements["doc_type_specific"].setdefault(category_id, [])
-                if not composition_elements["doc_type_specific"][category_id]: # リストが空なら初期要素を追加
-                    composition_elements["doc_type_specific"][category_id].append(_get_default_element_instance(category_meta))
-            else:
-                if category_id not in composition_elements["doc_type_specific"]:
-                    composition_elements["doc_type_specific"][category_id] = _get_default_element_instance(category_meta)
+
+    if mapped_doc_type:
+        doc_type_meta_def = composition_meta["doc_types"].get(mapped_doc_type)
+        if doc_type_meta_def and "categories" in doc_type_meta_def:
+            _normalize_categories(
+                elements_data["doc_type_specific"].setdefault("categories", []),
+                doc_type_meta_def["categories"]
+            )
 
 
 def update_composition_elements(document: dict, form_data) -> None:
     """
-    Composition Elements を更新・追加・削除する
+    Composition Elements を更新・追加・削除する (v2)
     """
-    normalize_composition_elements(document) # まず正規化しておく
-
+    # normalize_composition_elements はすでに app.py のGETリクエスト時に呼ばれている前提
     elements_data = document["composition_elements"]
+    composition_meta = document["composition_meta"] # documentからcomposition_metaを取得
+
+    # 日本語の doc_type を英語のキーにマッピング
+    doc_type_mapping = {meta["label"]: doc_id for doc_id, meta in composition_meta["doc_types"].items()}
+    mapped_doc_type = doc_type_mapping.get(document["doc_type"])
 
     # --- 共通構成要素の処理 ---
-    for category_meta in COMPOSITION_ELEMENTS_META["common_categories"]:
-        category_id = category_meta["id"]
-        is_multiple = category_meta["multiple"]
+    common_categories = elements_data["common"].setdefault("categories", [])
+    common_meta_def = composition_meta["common_categories"] # メタ定義もcomposition_metaから取得
 
-        # 追加
+    # --- 共通カテゴリ自体を追加・削除する処理 ---
+    if common_meta_def.get("editable", False):
+        # カテゴリ追加
+        if "add_common_category" in form_data:
+            new_category_id = str(uuid.uuid4().hex[:8])
+            new_category = {
+                "id": new_category_id,
+                "label": form_data.get("new_common_category_label", "新しいカテゴリ"),
+                "editable": True,
+                "elements": []
+            }
+            common_categories.append(new_category)
+        # カテゴリ削除
+        remove_category_id = form_data.get("remove_common_category")
+        if remove_category_id:
+            elements_data["common"]["categories"][:] = [
+                cat for cat in common_categories if not (cat["id"] == remove_category_id and cat.get("editable", False))
+            ]
+
+    # 共通カテゴリ内の要素の追加・削除・更新
+    for category_meta_def in common_meta_def["categories"]: # メタ定義のカテゴリをループ
+        category_id = category_meta_def["id"]
+
+        # 該当カテゴリのデータを取得
+        current_category_data = next((cat for cat in common_categories if cat["id"] == category_id), None)
+        if not current_category_data: continue
+
+        elements = current_category_data.setdefault("elements", [])
+
+        # --- 要素の追加 ---
         if f"add_element_{category_id}" in form_data:
-            new_instance = _get_default_element_instance(category_meta)
-            if is_multiple:
-                elements_data["common"].setdefault(category_id, []).append(new_instance)
-            else:
-                elements_data["common"][category_id] = new_instance
-            continue # 他の処理はスキップして次のカテゴリへ
+            # multiple はカテゴリのeditableに統合されたので、常に新しい要素を追加
+            new_element = {
+                "id": str(uuid.uuid4().hex[:8]), # 一時的なユニークID
+                "label": "新しい項目", # デフォルトラベル
+                "value": "",
+                "editable": True
+            }
+            elements.append(new_element)
 
-        # 削除
+        # --- 要素の削除 ---
         remove_index_str = form_data.get(f"remove_element_{category_id}")
-        if remove_index_str and is_multiple:
+        if remove_index_str:
             remove_index = int(remove_index_str)
-            if category_id in elements_data["common"] and len(elements_data["common"][category_id]) > remove_index:
-                elements_data["common"][category_id].pop(remove_index)
-            continue # 他の処理はスキップして次のカテゴリへ
+            # メタ定義にない（ユーザーが追加した）editableなものだけ削除可能
+            if 0 <= remove_index < len(elements) and elements[remove_index].get("editable", False):
+                elements.pop(remove_index)
 
-        # 保存（更新）
-        if is_multiple:
-            if category_id in elements_data["common"]:
-                for i, instance in enumerate(elements_data["common"][category_id]):
-                    for field_id in instance: # instance_structure のフィールドを更新
-                        form_field_name = f"element_{category_id}_{i}_{field_id}"
-                        if form_field_name in form_data:
-                            instance[field_id] = form_data.get(form_field_name, "")
-        else: # multipleでない場合
-            instance = elements_data["common"].get(category_id)
-            if instance:
-                for field_id in instance:
-                    form_field_name = f"element_{category_id}_{field_id}"
-                    if form_field_name in form_data:
-                        instance[field_id] = form_data.get(form_field_name, "")
+        # --- 要素の更新 ---
+        for i, element in enumerate(elements):
+            # valueの更新
+            form_value_name = f"element_{category_id}_{i}_value"
+            if form_value_name in form_data:
+                element["value"] = form_data.get(form_value_name, "")
 
+            # labelの更新 (editableなものだけ)
+            form_label_name = f"element_{category_id}_{i}_label"
+            if form_label_name in form_data and element.get("editable", False):
+                element["label"] = form_data.get(form_label_name, "")
 
     # --- doc_type 固有構成要素の処理 ---
-    doc_type_meta = COMPOSITION_ELEMENTS_META["doc_types"].get(document["doc_type"])
-    if doc_type_meta and "categories" in doc_type_meta:
-        for category_meta in doc_type_meta["categories"]:
-            category_id = category_meta["id"]
-            is_multiple = category_meta["multiple"]
+    doc_type_specific_categories = elements_data["doc_type_specific"].setdefault("categories", [])
+    doc_type_meta_def = composition_meta["doc_types"].get(mapped_doc_type) # メタ定義もcomposition_metaから取得
 
-            # 追加
+    if doc_type_meta_def:
+        # doc_type 固有カテゴリの追加・削除 (doc_type自体がeditableな場合)
+        if doc_type_meta_def.get("editable", False):
+            # --- カテゴリ自体を追加する処理 ---
+            if "add_doc_type_category" in form_data:
+                new_category_id = str(uuid.uuid4().hex[:8])
+                new_category = {
+                    "id": new_category_id,
+                    "label": form_data.get("new_doc_type_category_label", "新しい分類"),
+                    "editable": True,
+                    "elements": []
+                }
+                doc_type_specific_categories.append(new_category)
+
+            # --- カテゴリ自体を削除する処理 ---
+            remove_category_id = form_data.get("remove_doc_type_category")
+            if remove_category_id:
+                elements_data["doc_type_specific"]["categories"][:] = [
+                    cat for cat in doc_type_specific_categories if not (cat["id"] == remove_category_id and cat.get("editable", False))
+                ]
+
+        for category_meta_def in doc_type_meta_def["categories"]:
+            category_id = category_meta_def["id"]
+
+            # 該当カテゴリのデータを取得
+            current_category_data = next((cat for cat in doc_type_specific_categories if cat["id"] == category_id), None)
+            if not current_category_data: continue
+
+            elements = current_category_data.setdefault("elements", [])
+
+            # --- 要素の追加 ---
             if f"add_element_{category_id}" in form_data:
-                new_instance = _get_default_element_instance(category_meta)
-                if is_multiple:
-                    elements_data["doc_type_specific"].setdefault(category_id, []).append(new_instance)
-                else:
-                    elements_data["doc_type_specific"][category_id] = new_instance
-                continue
+                new_element = {
+                    "id": str(uuid.uuid4().hex[:8]),
+                    "label": "新しい項目",
+                    "value": "",
+                    "editable": True
+                }
+                elements.append(new_element)
 
-            # 削除
+            # --- 要素の削除 ---
             remove_index_str = form_data.get(f"remove_element_{category_id}")
-            if remove_index_str and is_multiple:
+            if remove_index_str:
                 remove_index = int(remove_index_str)
-                if category_id in elements_data["doc_type_specific"] and len(elements_data["doc_type_specific"][category_id]) > remove_index:
-                    elements_data["doc_type_specific"][category_id].pop(remove_index)
-                continue
+                # メタ定義にない（ユーザーが追加した）editableなものだけ削除可能
+                if 0 <= remove_index < len(elements) and elements[remove_index].get("editable", False):
+                    elements.pop(remove_index)
 
-            # 保存（更新）
-            if is_multiple:
-                if category_id in elements_data["doc_type_specific"]:
-                    for i, instance in enumerate(elements_data["doc_type_specific"][category_id]):
-                        for field_id in instance:
-                            form_field_name = f"element_{category_id}_{i}_{field_id}"
-                            if form_field_name in form_data:
-                                instance[field_id] = form_data.get(form_field_name, "")
-            else: # multipleでない場合
-                instance = elements_data["doc_type_specific"].get(category_id)
-                if instance:
-                    for field_id in instance:
-                        form_field_name = f"element_{category_id}_{field_id}"
-                        if form_field_name in form_data:
-                                instance[field_id] = form_data.get(form_field_name, "")
+            # --- 要素の更新 ---
+            for i, element in enumerate(elements):
+                form_value_name = f"element_{category_id}_{i}_value"
+                if form_value_name in form_data:
+                    element["value"] = form_data.get(form_value_name, "")
+
+                form_label_name = f"element_{category_id}_{i}_label"
+                if form_label_name in form_data and element.get("editable", False):
+                    element["label"] = form_data.get(form_label_name, "")
 
 
 # =========================
@@ -352,7 +666,7 @@ def score_to_color(score: float | None) -> str:
 def extract_red_units(document: dict) -> list[tuple[int, dict]]:
     """
     intent スコアが低い Unit を抽出
-    戻り値: [(index, unit_dict), ...]
+    戻り値: [(index, unit_dict), ...] 
     """
     result = []
     for i, unit in enumerate(document.get("units", [])):
@@ -385,7 +699,6 @@ def build_llm_prompt(document: dict, unit: dict) -> str:
         prompt += f"- {c}\n"
 
     prompt += f"""
-
 【対象シーン】
 タイトル: {unit.get('title', '')}
 内容:

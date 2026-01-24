@@ -20,7 +20,8 @@ from intent_templates import COMMON_INTENTS, DOC_TYPE_INTENTS
 from services.services import (
     create_document,
     find_document,
-    update_units_content
+    update_units_content,
+    DEFAULT_COMPOSITION_META # Add this line
 )
 
 from services.domain_bridge import (
@@ -32,7 +33,6 @@ from services.services import update_intent, normalize_composition_elements, upd
 from services.services import attach_unit_scores
 from services.services import extract_red_units, build_llm_prompt
 from intent_service import normalize_intent as normalize_intent_service # Rename to avoid conflict with services.py version
-from structure_templates import COMPOSITION_ELEMENTS_META # 追加
 
 app = Flask(__name__)
 app.secret_key = "storyforge-secret"
@@ -52,20 +52,27 @@ def login_view():
     return login()
 
 
-@app.route("/register", methods=["POST"])
+@app.route("/register", methods=["GET", "POST"])
 def register():
-    email = request.form["email"]
-    password = hash_password(request.form["password"])
+    if request.method == "POST":
+        email = request.form["email"]
+        password = hash_password(request.form["password"])
 
-    with get_user_conn() as conn:
-        conn.execute(
-            "INSERT INTO users (email, password_hash, created_at) "
-            "VALUES (?, ?, datetime('now'))",
-            (email, password)
-        )
-        conn.commit()
+        with get_user_conn() as conn:
+            try:
+                conn.execute(
+                    "INSERT INTO users (email, password_hash, created_at) "
+                    "VALUES (?, ?, datetime('now'))",
+                    (email, password)
+                )
+                conn.commit()
+                flash("登録が完了しました。ログインしてください。", "success")
+                return redirect("/login")
+            except conn.IntegrityError:
+                flash("このメールアドレスは既に使用されています。", "error")
+                return render_template("register.html"), 400
 
-    return redirect("/login")
+    return render_template("register.html")
 
 
 @app.route("/logout")
@@ -164,30 +171,30 @@ def view_document(doc_id):
     if document is None:
         return redirect("/dashboard")
 
+    # Normalize document for both GET and POST requests
+    normalize_intent_service(document)
+    normalize_composition_elements(document)
+
     if request.method == "POST":
         # composition_elements の更新を処理
         if request.form.get("update_composition_elements"):
             update_composition_elements(document, request.form)
         else: # 既存の unit content 更新も残しておく
             update_units_content(document, request.form)
+        
         save_user_data(session["user_id"], data)
-        return redirect(f"/document/{doc_id}#units") # 常に構成要素タブにリダイレクト
-
-    if request.method == "GET":
-        normalize_intent_service(document) # services.py の normalize_intent との衝突を避けるためリネーム
-        normalize_composition_elements(document) # 追加
+        return redirect(f"/document/{doc_id}#composition") # 常に構成要素タブにリダイレクト
 
     labels = UI_LABELS[document["doc_type"]]
 
     # 日本語の doc_type を英語のキーにマッピング
-    doc_type_mapping = {meta["label"]: doc_id for doc_id, meta in COMPOSITION_ELEMENTS_META["doc_types"].items()}
+    doc_type_mapping = {meta["label"]: doc_id for doc_id, meta in DEFAULT_COMPOSITION_META["doc_types"].items()}
     mapped_doc_type_id = doc_type_mapping.get(document["doc_type"])
 
     return render_template(
         "document.html",
         document=document,
         labels=labels,
-        COMPOSITION_ELEMENTS_META=COMPOSITION_ELEMENTS_META,
         mapped_doc_type_id=mapped_doc_type_id # 追加
     )
 
