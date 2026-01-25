@@ -395,12 +395,8 @@ def update_composition_elements(document: dict, form_data) -> None:
             ]
 
     # 共通カテゴリ内の要素の追加・削除・更新
-    for category_meta_def in common_meta_def["categories"]: # メタ定義のカテゴリをループ
-        category_id = category_meta_def["id"]
-
-        # 該当カテゴリのデータを取得
-        current_category_data = next((cat for cat in common_categories if cat["id"] == category_id), None)
-        if not current_category_data: continue
+    for current_category_data in common_categories: # データ内のカテゴリをループ
+        category_id = current_category_data["id"]
 
         elements = current_category_data.setdefault("elements", [])
 

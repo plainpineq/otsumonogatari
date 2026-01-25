@@ -41,48 +41,48 @@
                         </div>
                     {% endif %}
 
-                    {% for category_meta in common_meta_data.categories %}
-                        {% set current_category_data = common_categories_data | selectattr("id", "equalto", category_meta.id) | first %}
-                        {% if current_category_data %}
-                            <div class="card p-3 mb-3">
-                                <h4 class="h6 mb-3 d-flex justify-content-between align-items-center">
-                                    {% if category_meta.editable %}
-                                        <input type="text" name="category_{{ category_meta.id }}_label" value="{{ category_meta.label }}" class="form-control me-2">
-                                    {% else %}
-                                        <span>{{ category_meta.label }}</span>
-                                    {% endif %}
-                                    {% if common_meta_data.editable and category_meta.editable %}
-                                        <button type="submit" name="remove_common_category" value="{{ category_meta.id }}" class="btn btn-danger btn-sm ms-2">削除</button>
-                                    {% endif %}
-                                </h4>
-                                {% set category_id = category_meta.id %}
-                                {% set elements = current_category_data.elements %}
+                    {% for category in common_categories_data %}
+                        {# Get meta for default categories, for user-added ones it will be none #}
+                        {% set category_meta = common_meta_data.categories | selectattr("id", "equalto", category.id) | first %}
+                        <div class="card p-3 mb-3">
+                            <h4 class="h6 mb-3 d-flex justify-content-between align-items-center">
+                                {% if category.editable %}
+                                    {# Editable categories (default or user-added) have an input for the label #}
+                                    <input type="text" name="category_{{ category.id }}_label" value="{{ category.label }}" class="form-control me-2">
+                                    <button type="submit" name="remove_common_category" value="{{ category.id }}" class="btn btn-danger btn-sm ms-2">削除</button>
+                                {% else %}
+                                    {# Non-editable default categories just show the label #}
+                                    <span>{{ category.label }}</span>
+                                {% endif %}
+                            </h4>
+                            {% set category_id = category.id %}
+                            {% set elements = category.elements %}
 
-                                {% if elements %}
-                                    {% for element in elements %}
-                                        <div class="mb-2 d-flex align-items-center">
-                                            {# ユーザーが追加した項目のみ編集・削除可能 #}
-                                            {% if element.editable %}
-                                                <input
-                                                    type="text"
-                                                    name="element_{{ category_id }}_{{ loop.index0 }}_label" {# ラベル編集用 #}
-                                                    value="{{ element.label }}"
-                                                    class="form-control me-2"
-                                                    placeholder="{{ category_meta.label }} #{{ loop.index + 1 }}"
-                                                >
-                                                <button type="submit" name="remove_element_{{ category_id }}" value="{{ loop.index0 }}" class="btn btn-danger btn-sm">削除</button>
-                                            {% else %}
-                                                {# 編集不可の項目はラベルのみ表示 #}
-                                                <span class="form-control-plaintext flex-grow-1 me-2">{{ element.label }}</span>
-                                            {% endif %}
-                                        </div>
-                                    {% endfor %}
-                                {% endif %}
-                                {% if category_meta.get('editable') %} {# カテゴリ自体がeditableなら要素の追加ボタン #}
-                                    <button type="submit" name="add_element_{{ category_id }}" value="1" class="btn btn-success btn-sm mt-2">＋ {{ category_meta.label }}を追加</button>
-                                {% endif %}
-                            </div>
-                        {% endif %}
+                            {% if elements %}
+                                {% for element in elements %}
+                                    <div class="mb-2 d-flex align-items-center">
+                                        {% if element.editable %}
+                                            <input
+                                                type="text"
+                                                name="element_{{ category_id }}_{{ loop.index0 }}_label"
+                                                value="{{ element.label }}"
+                                                class="form-control me-2"
+                                                placeholder="{{ category.label }} #{{ loop.index + 1 }}"
+                                            >
+                                            <button type="submit" name="remove_element_{{ category_id }}" value="{{ loop.index0 }}" class="btn btn-danger btn-sm">削除</button>
+                                        {% else %}
+                                            {# Default elements within a default category #}
+                                            <span class="form-control-plaintext flex-grow-1 me-2">{{ element.label }}</span>
+                                        {% endif %}
+                                    </div>
+                                {% endfor %}
+                            {% endif %}
+                            
+                            {# If the category itself is editable, you can add elements to it #}
+                            {% if category.editable %}
+                                <button type="submit" name="add_element_{{ category_id }}" value="1" class="btn btn-success btn-sm mt-2">＋ {{ category.label }}を追加</button>
+                            {% endif %}
+                        </div>
                     {% endfor %}
                 {% endif %}
 
