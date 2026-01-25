@@ -15,27 +15,29 @@
 <body>
 
 <nav class="navbar navbar-expand-lg bg-body-tertiary">
-  <div class="container-fluid d-flex justify-content-between align-items-center">
+  <div class="container-fluid d-flex align-items-center">
     <!-- Left: Image -->
     <a class="navbar-brand" href="{{ '/dashboard' if session.user_id else '/login' }}">
         <img src="/static/Otsumonogatari.png" alt="乙物語" style="max-height: 80px;">
     </a>
 
     <!-- Center: Text -->
-    <span class="centered-brand-text d-none d-lg-block mx-auto">乙物語 ～ Otsumonogatari ～</span>
+    <span class="centered-brand-text d-none d-lg-block">乙物語 ～ Otsumonogatari ～</span>
 
     <!-- Right: Toggler and Nav items -->
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-    <div class="collapse navbar-collapse" id="navbarNav">
-      <ul class="navbar-nav ms-auto">
-        {% if session.user_id %}
-        <li class="nav-item">
-          <a class="nav-link" href="/logout">ログアウト</a>
-        </li>
-        {% endif %}
-      </ul>
+    <div class="d-flex align-items-center ms-auto">
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav">
+          {% if session.user_id %}
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">ログアウト</a>
+          </li>
+          {% endif %}
+        </ul>
+      </div>
     </div>
   </div>
 </nav>
