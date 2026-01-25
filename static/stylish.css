@@ -99,3 +99,15 @@ body {
 .dashboard-card:hover {
     color: #fff;
 }
+
+.centered-brand-text {
+    font-family: 'Hina Mincho', cursive;
+    font-size: 1.8rem;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.6);
+    letter-spacing: 0.1rem;
+    color: #e0f7fa !important; /* A light, contrasting color */
+    line-height: 1; /* Adjust line height to align with image */
+}
+
+
+

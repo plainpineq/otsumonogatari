@@ -342,7 +342,7 @@ def normalize_composition_elements(document: dict) -> None:
     # 共通構成要素の正規化
     common_meta_def = composition_meta["common_categories"]
     _normalize_categories(
-        elements_data["common"].setdefault("categories", []),
+        elements_data.setdefault("common", {"categories": []}).setdefault("categories", []),
         common_meta_def["categories"]
     )
 
@@ -354,7 +354,7 @@ def normalize_composition_elements(document: dict) -> None:
         doc_type_meta_def = composition_meta["doc_types"].get(mapped_doc_type)
         if doc_type_meta_def and "categories" in doc_type_meta_def:
             _normalize_categories(
-                elements_data["doc_type_specific"].setdefault("categories", []),
+                elements_data.setdefault("doc_type_specific", {"categories": []}).setdefault("categories", []),
                 doc_type_meta_def["categories"]
             )
 

@@ -8,15 +8,23 @@
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700&family=Noto+Sans+JP:wght@400;700&family=Hina+Mincho&display=swap" rel="stylesheet">
     <!-- Custom CSS -->
     <link rel="stylesheet" href="/static/stylish.css">
 </head>
 <body>
 
 <nav class="navbar navbar-expand-lg bg-body-tertiary">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="{{ '/dashboard' if session.user_id else '/login' }}">乙物語</a>
+  <div class="container-fluid d-flex justify-content-between align-items-center">
+    <!-- Left: Image -->
+    <a class="navbar-brand" href="{{ '/dashboard' if session.user_id else '/login' }}">
+        <img src="/static/Otsumonogatari.png" alt="乙物語" style="max-height: 80px;">
+    </a>
+
+    <!-- Center: Text -->
+    <span class="centered-brand-text d-none d-lg-block mx-auto">乙物語 ～ Otsumonogatari ～</span>
+
+    <!-- Right: Toggler and Nav items -->
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
       <span class="navbar-toggler-icon"></span>
     </button>
@@ -46,8 +54,14 @@
     {% block content %}{% endblock %}
 </main>
 
-<!-- Bootstrap JS CDN -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz" crossorigin="anonymous"></script>
+<footer>
+    <hr>
+    <div class="text-center py-3">
+        <small>© 2026 乙物語 / Otsumonogatari. All Rights Reserved.</small>
+    </div>
+    <!-- Bootstrap JS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz" crossorigin="anonymous"></script>
+</footer>
 
 {% block scripts %}
     <script>
