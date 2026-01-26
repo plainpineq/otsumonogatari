@@ -351,14 +351,16 @@ def update_composition_elements(document: dict, form_data) -> None:
         if doc_type_meta_def.get("editable", False):
             # --- カテゴリ自体を追加する処理 ---
             if "add_doc_type_category" in form_data:
-                new_category_id = str(uuid.uuid4().hex[:8])
-                new_category = {
-                    "id": new_category_id,
-                    "label": form_data.get("new_doc_type_category_label", "新しい分類"),
-                    "editable": True,
-                    "elements": []
-                }
-                doc_type_specific_categories.append(new_category)
+                new_label = form_data.get("new_doc_type_category_label", "").strip()
+                if new_label:
+                    new_category_id = str(uuid.uuid4().hex[:8])
+                    new_category = {
+                        "id": new_category_id,
+                        "label": new_label,
+                        "editable": True,
+                        "elements": []
+                    }
+                    doc_type_specific_categories.append(new_category)
 
             # --- カテゴリ自体を削除する処理 ---
             remove_category_id = form_data.get("remove_doc_type_category")
