@@ -8,111 +8,18 @@ import json
 from structure_templates import STRUCTURE_TEMPLATES
 
 # =========================
-# Default Composition Meta (V2 from 構成要素2.txt)
+# Load Default Composition Meta from JSON
 # =========================
+def _load_composition_meta():
+    """Loads the composition meta from an external JSON file."""
+    # Construct path relative to this file
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    # Assuming services.py is in services/ and the json is in the root
+    meta_path = os.path.join(base_dir, '..', 'composition_meta.json') 
+    with open(meta_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
 
-DEFAULT_COMPOSITION_META = {
-  "version": "2.0",
-  "description": "構成要素カテゴリのメタ定義（完全ユーザ拡張型）",
-
-  "common_categories": {
-    "label": "共通構成要素",
-    "editable": True,
-    "categories": [
-      {
-        "id": "theme",
-        "label": "テーマ・問い",
-        "description": "作品全体を貫く問い",
-        "multiple": True # 後方互換性のため
-      },
-      {
-        "id": "value",
-        "label": "価値観",
-        "description": "肯定・否定される価値",
-        "multiple": True
-      },
-      {
-        "id": "constraint",
-        "label": "制約条件",
-        "description": "表現上・設定上の制約",
-        "multiple": True
-      }
-    ]
-  },
-
-  "doc_types": {
-    "novel": {
-      "label": "小説",
-      "editable": True,
-      "categories": [
-        {
-          "id": "scene",
-          "label": "シーン案",
-          "editable": True,
-          "elements": [
-            {
-              "id": "intro",
-              "label": "導入",
-              "editable": True
-            },
-            {
-              "id": "daily_life",
-              "label": "日常",
-              "editable": True
-            },
-            {
-              "id": "incident",
-              "label": "事件",
-              "editable": True
-            },
-            {
-              "id": "conflict",
-              "label": "葛藤",
-              "editable": True
-            },
-            {
-              "id": "turning_point",
-              "label": "転機",
-              "editable": True
-            },
-            {
-              "id": "climax",
-              "label": "クライマックス",
-              "editable": True
-            },
-            {
-              "id": "ending",
-              "label": "結末",
-              "editable": True
-            }
-          ]
-        },
-        {
-          "id": "character",
-          "label": "キャラ案",
-          "editable": True,
-          "elements": [
-            {
-              "id": "protagonist",
-              "label": "主人公",
-              "editable": True
-            },
-            {
-              "id": "heroine",
-              "label": "ヒロイン",
-              "editable": True
-            },
-            {
-              "id": "antagonist",
-              "label": "対立者",
-              "editable": True
-            }
-          ]
-        }
-      ]
-    }
-  }
-}
+DEFAULT_COMPOSITION_META = _load_composition_meta()
 
 # =========================
 # Document Service
@@ -206,23 +113,23 @@ def _normalize_categories(current_categories: list, meta_categories: list):
                             existing_element["label"] = element_meta["label"] # labelも更新される可能性があるのでここで上書き
                             existing_element.setdefault("value", "") # valueがなければ追加
                             break
-                    # if not element_found:
-                    #     existing_elements.append(_get_default_element_instance(element_meta))
+                    if not element_found:
+                        existing_elements.append(_get_default_element_instance(element_meta))
 
                 category_found = True
                 break
 
-        # if not category_found:
-        #     # カテゴリが見つからなかった場合、メタ定義から追加
-        #     new_category = {
-        #         "id": category_meta["id"],
-        #         "label": category_meta["label"],
-        #         "editable": category_meta.get("editable", False),
-        #         "elements": []
-        #     }
-        #     for element_meta in category_meta.get("elements", []):
-        #         new_category["elements"].append(_get_default_element_instance(element_meta))
-        #     current_categories.append(new_category)
+        if not category_found:
+            # カテゴリが見つからなかった場合、メタ定義から追加
+            new_category = {
+                "id": category_meta["id"],
+                "label": category_meta["label"],
+                "editable": category_meta.get("editable", False),
+                "elements": []
+            }
+            for element_meta in category_meta.get("elements", []):
+                new_category["elements"].append(_get_default_element_instance(element_meta))
+            current_categories.append(new_category)
 
 
 def normalize_composition_elements(document: dict) -> None:
