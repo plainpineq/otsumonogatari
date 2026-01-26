@@ -159,166 +159,70 @@ def _get_default_element_instance(element_meta: dict) -> dict:
     }
 
 
+def _get_default_element_instance_for_new_category() -> dict:
+    return {
+        "id": str(uuid.uuid4().hex[:8]),
+        "label": "新しい項目",
+        "value": "",
+        "editable": True
+    }
+
 def _normalize_categories(current_categories: list, meta_categories: list):
-
-
     """カテゴリとその要素をメタ定義に基づいて初期化・正規化するヘルパー関数"""
 
-
     # メタ定義にないカテゴリを削除（古いデータをクリーンアップ）
-
-
     # ただし、ユーザーが追加した編集可能なカテゴリは残す
-
-
     meta_category_ids = {cat["id"] for cat in meta_categories}
-
-
     current_categories[:] = [
-
-
         cat for cat in current_categories if cat["id"] in meta_category_ids or cat.get("editable")
-
-
     ]
 
 
-
-
-
     for category_meta in meta_categories:
-
-
         category_id = category_meta["id"]
-
-
         category_found = False
 
-
-
-
-
         for existing_category in current_categories:
-
-
             if existing_category["id"] == category_id:
-
-
                 # カテゴリが見つかったら、そのメタ情報を更新し、中の要素を正規化
-
-
                 existing_category["label"] = category_meta["label"]
-
-
                 existing_category["editable"] = category_meta.get("editable", False)
-
-
-
-
 
                 existing_elements = existing_category.setdefault("elements", [])
 
-
-
-
-
                 # メタ定義にない要素を削除（ただし、ユーザーが追加した編集可能なものは残す）
-
-
                 if 'elements' in category_meta:
-
-
                     meta_element_ids = {elem["id"] for elem in category_meta.get("elements", [])}
-
-
                     existing_category["elements"][:] = [
-
-
                         elem for elem in existing_elements if elem["id"] in meta_element_ids or elem.get("editable")
-
-
                     ]
 
-
-
-
-
                 # メタ定義に基づいて不足している要素を追加 (idで比較)
-
-
                 for element_meta in category_meta.get("elements", []):
-
-
                     element_found = False
-
-
                     for existing_element in existing_elements:
-
-
                         if existing_element["id"] == element_meta["id"]:
-
-
                             element_found = True
-
-
                             existing_element["label"] = element_meta["label"] # labelも更新される可能性があるのでここで上書き
-
-
                             existing_element.setdefault("value", "") # valueがなければ追加
-
-
                             break
-
-
-                    if not element_found:
-
-
-                        existing_elements.append(_get_default_element_instance(element_meta))
-
-
-
-
+                    # if not element_found:
+                    #     existing_elements.append(_get_default_element_instance(element_meta))
 
                 category_found = True
-
-
                 break
 
-
-
-
-
-        if not category_found:
-
-
-            # カテゴリが見つからなかった場合、メタ定義から追加
-
-
-            new_category = {
-
-
-                "id": category_meta["id"],
-
-
-                "label": category_meta["label"],
-
-
-                "editable": category_meta.get("editable", False),
-
-
-                "elements": []
-
-
-            }
-
-
-            for element_meta in category_meta.get("elements", []):
-
-
-                new_category["elements"].append(_get_default_element_instance(element_meta))
-
-
-            current_categories.append(new_category)
+        # if not category_found:
+        #     # カテゴリが見つからなかった場合、メタ定義から追加
+        #     new_category = {
+        #         "id": category_meta["id"],
+        #         "label": category_meta["label"],
+        #         "editable": category_meta.get("editable", False),
+        #         "elements": []
+        #     }
+        #     for element_meta in category_meta.get("elements", []):
+        #         new_category["elements"].append(_get_default_element_instance(element_meta))
+        #     current_categories.append(new_category)
 
 
 def normalize_composition_elements(document: dict) -> None:
@@ -379,24 +283,31 @@ def update_composition_elements(document: dict, form_data) -> None:
     if common_meta_def.get("editable", False):
         # カテゴリ追加
         if "add_common_category" in form_data:
-            new_category_id = str(uuid.uuid4().hex[:8])
-            new_category = {
-                "id": new_category_id,
-                "label": form_data.get("new_common_category_label", "新しいカテゴリ"),
-                "editable": True,
-                "elements": []
-            }
-            common_categories.append(new_category)
+            new_label = form_data.get("new_common_category_label", "").strip()
+            if new_label:
+                new_category_id = str(uuid.uuid4().hex[:8])
+                new_category = {
+                    "id": new_category_id,
+                    "label": new_label,
+                    "editable": True,
+                                    "elements": []
+                                }
+                common_categories.append(new_category)
         # カテゴリ削除
         remove_category_id = form_data.get("remove_common_category")
         if remove_category_id:
             elements_data["common"]["categories"][:] = [
-                cat for cat in common_categories if not (cat["id"] == remove_category_id and cat.get("editable", False))
+                cat for cat in common_categories if cat["id"] != remove_category_id
             ]
 
     # 共通カテゴリ内の要素の追加・削除・更新
     for current_category_data in common_categories: # データ内のカテゴリをループ
         category_id = current_category_data["id"]
+
+        # カテゴリ自体のラベル更新
+        category_label_from_form = f"category_{category_id}_label"
+        if category_label_from_form in form_data:
+            current_category_data["label"] = form_data.get(category_label_from_form, "")
 
         elements = current_category_data.setdefault("elements", [])
 
@@ -415,8 +326,8 @@ def update_composition_elements(document: dict, form_data) -> None:
         remove_index_str = form_data.get(f"remove_element_{category_id}")
         if remove_index_str:
             remove_index = int(remove_index_str)
-            # メタ定義にない（ユーザーが追加した）editableなものだけ削除可能
-            if 0 <= remove_index < len(elements) and elements[remove_index].get("editable", False):
+            # 項目をeditableに関わらず削除可能にする
+            if 0 <= remove_index < len(elements):
                 elements.pop(remove_index)
 
         # --- 要素の更新 ---
@@ -426,9 +337,9 @@ def update_composition_elements(document: dict, form_data) -> None:
             if form_value_name in form_data:
                 element["value"] = form_data.get(form_value_name, "")
 
-            # labelの更新 (editableなものだけ)
+            # labelの更新
             form_label_name = f"element_{category_id}_{i}_label"
-            if form_label_name in form_data and element.get("editable", False):
+            if form_label_name in form_data:
                 element["label"] = form_data.get(form_label_name, "")
 
     # --- doc_type 固有構成要素の処理 ---
@@ -453,15 +364,17 @@ def update_composition_elements(document: dict, form_data) -> None:
             remove_category_id = form_data.get("remove_doc_type_category")
             if remove_category_id:
                 elements_data["doc_type_specific"]["categories"][:] = [
-                    cat for cat in doc_type_specific_categories if not (cat["id"] == remove_category_id and cat.get("editable", False))
+                    cat for cat in doc_type_specific_categories if cat["id"] != remove_category_id
                 ]
 
-        for category_meta_def in doc_type_meta_def["categories"]:
-            category_id = category_meta_def["id"]
+        # doc_type 固有カテゴリ内の要素の追加・削除・更新
+        for current_category_data in doc_type_specific_categories: # データ内のカテゴリをループ
+            category_id = current_category_data["id"]
 
-            # 該当カテゴリのデータを取得
-            current_category_data = next((cat for cat in doc_type_specific_categories if cat["id"] == category_id), None)
-            if not current_category_data: continue
+            # カテゴリ自体のラベル更新 (editableなもののみ)
+            category_label_from_form = f"category_{category_id}_label"
+            if category_label_from_form in form_data and current_category_data.get("editable", False):
+                current_category_data["label"] = form_data.get(category_label_from_form, "")
 
             elements = current_category_data.setdefault("elements", [])
 
@@ -479,8 +392,8 @@ def update_composition_elements(document: dict, form_data) -> None:
             remove_index_str = form_data.get(f"remove_element_{category_id}")
             if remove_index_str:
                 remove_index = int(remove_index_str)
-                # メタ定義にない（ユーザーが追加した）editableなものだけ削除可能
-                if 0 <= remove_index < len(elements) and elements[remove_index].get("editable", False):
+                # 項目をeditableに関わらず削除可能にする
+                if 0 <= remove_index < len(elements):
                     elements.pop(remove_index)
 
             # --- 要素の更新 ---
@@ -490,7 +403,7 @@ def update_composition_elements(document: dict, form_data) -> None:
                     element["value"] = form_data.get(form_value_name, "")
 
                 form_label_name = f"element_{category_id}_{i}_label"
-                if form_label_name in form_data and element.get("editable", False):
+                if form_label_name in form_data:
                     element["label"] = form_data.get(form_label_name, "")
 
 
