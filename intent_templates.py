@@ -1,32 +1,17 @@
-# intent_templates.py
+import os
+import json
 
-COMMON_INTENTS = [
-    ("genre", "ジャンル"),
-    ("theme", "テーマ・主張"),
-    ("audience", "想定読者"),
-    ("tone", "文体・トーン"),
-]
+def _load_intent_templates():
+    """Loads the intent templates from an external JSON file."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    json_path = os.path.join(base_dir, 'intent_templates.json')
+    with open(json_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    
+    # Convert lists of lists back to lists of tuples
+    common_intents = [tuple(item) for item in data['common_intents']]
+    doc_type_intents = {k: [tuple(item) for item in v] for k, v in data['doc_type_intents'].items()}
+    
+    return common_intents, doc_type_intents
 
-DOC_TYPE_INTENTS = {
-    "小説": [
-        ("worldview", "世界観"),
-        ("era", "時代"),
-        ("length", "長さ"),
-    ],
-    "脚本": [
-        ("setting", "舞台"),
-        ("duration", "想定尺"),
-    ],
-    "論文": [
-        ("field", "分野"),
-        ("research_question", "研究課題"),
-        ("method", "研究手法"),
-    ],
-    "記事": [
-        ("purpose", "目的"),
-        ("angle", "切り口"),
-    ],
-    "随筆": [
-        ("motif", "題材"),
-    ],
-}
+COMMON_INTENTS, DOC_TYPE_INTENTS = _load_intent_templates()

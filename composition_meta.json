@@ -93,6 +93,16 @@
               "editable": true
             }
           ]
+        },
+        {
+          "id": "foreshadowing",
+          "label": "伏線案",
+          "editable": true,
+          "elements": [
+            { "id": "early_hint", "label": "序盤の違和感", "editable": true },
+            { "id": "mid_hint", "label": "中盤の示唆", "editable": true },
+            { "id": "payoff", "label": "回収", "editable": true }
+          ]
         }
       ]
     }
