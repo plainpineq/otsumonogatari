@@ -36,6 +36,32 @@
     </div>
 </div>
 
+<div class="card p-4">
+            <h3 class="card-title">LLM & 量子サーバー設定</h3>
+            <form action="/save_config" method="post">
+                <div class="mb-3">
+                    <label for="llm_api_key" class="form-label">LLM API キー</label>
+                    <input type="password" class="form-control" id="llm_api_key" name="llm_api_key" value="{{ user_config.llm.api_key if user_config and user_config.llm }}" placeholder="sk-..." autocomplete="off">
+                </div>
+                <div class="mb-3">
+                    <label for="llm_model_name" class="form-label">LLM モデル名</label>
+                    <input type="text" class="form-control" id="llm_model_name" name="llm_model_name" value="{{ user_config.llm.model_name if user_config and user_config.llm }}" placeholder="例: gemini-pro, gpt-4o-mini">
+                </div>
+                <div class="mb-3">
+                    <label for="llm_base_url" class="form-label">LLM ベース URL (OpenAI互換API用)</label>
+                    <input type="text" class="form-control" id="llm_base_url" name="llm_base_url" value="{{ user_config.llm.base_url if user_config and user_config.llm }}" placeholder="例: https://api.openai.com/v1, http://localhost:11434/v1">
+                    <small class="form-text text-muted">OpenAI互換APIを使用する場合にのみ指定してください。例: Ollama, Anyscale, Together AIなど。</small>
+                </div>
+                <div class="mb-3">
+                    <label for="quantum_server_api_key" class="form-label">量子サーバー API キー</label>
+                    <input type="password" class="form-control" id="quantum_server_api_key" name="quantum_server_api_key" value="{{ user_config.quantum.api_key if user_config and user_config.quantum }}" placeholder="量子サーバーのAPIキー" autocomplete="off">
+                </div>
+                <button type="submit" class="btn btn-primary">設定を保存</button>
+            </form>
+        </div>
+    </div>
+</div>
+
 <div class="card p-4 mb-4">
     <h3 class="card-title">作品一覧</h3>
     {% if documents %}

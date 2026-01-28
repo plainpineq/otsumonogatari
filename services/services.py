@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # services.py
 import os
 from typing import Dict, List
@@ -134,7 +135,7 @@ def _normalize_categories(current_categories: list, meta_categories: list):
 
 def normalize_composition_elements(document: dict) -> None:
     """
-    document["composition_elements"] を初期化・正規化する
+document["composition_elements"] を初期化・正規化する
     """
     # composition_elements がなければ初期化
     if "composition_elements" not in document:
@@ -341,7 +342,6 @@ def find_document(data: Dict, doc_id: str) -> Dict | None:
         None
     )
 
-# services.py に追記
 
 def update_intent(document: dict, form_data) -> None:
     """
@@ -402,7 +402,6 @@ def update_intent(document: dict, form_data) -> None:
 
     document["intent"] = intent
 
-# services.py（末尾に追記）
 
 from domain_mapper import json_to_intent
 from optimizer import optimize_unit_order
@@ -422,9 +421,7 @@ def optimize_document_units(document: dict) -> None:
     optimized_units = optimize_unit_order(intent, units)
     document["units"] = optimized_units
 
-# services.py（末尾に追記）
 
-from domain_mapper import json_to_intent
 from services.scoring import score_intent_unit_alignment
 from connection_scoring import score_unit_connection
 
@@ -532,58 +529,6 @@ def build_llm_prompt(document: dict, unit: dict) -> str:
 
     return prompt.strip()
 
-def score_to_color(score):
-    if score is None:
-        return "black"
-    if score < 0.3:
-        return "red"
-    if score < 0.6:
-        return "orange"
-    return "green"
-
-def attach_unit_scores(document: dict) -> None:
-    """
-    document["units"] に _score を付与する
-    （intent / prev / next + 各 color）
-    """
-
-    units = document.get("units", [])
-
-    for i, unit in enumerate(units):
-
-        # --- ① intent スコア（仮実装 or 既存関数に置換）
-        intent_score = calc_intent_score(document, unit)
-
-        # --- ② 前後接続スコア
-        prev_score = None
-        next_score = None
-
-        if i > 0:
-            prev_score = calc_unit_connection(units[i - 1], unit)
-        if i < len(units) - 1:
-            next_score = calc_unit_connection(unit, units[i + 1])
-
-        score = {
-            "intent": intent_score,
-            "prev": prev_score,
-            "next": next_score,
-        }
-
-        # --- ③ 色付与
-        score["intent_color"] = score_to_color(intent_score)
-        score["prev_color"] = score_to_color(prev_score)
-        score["next_color"] = score_to_color(next_score)
-
-        unit["_score"] = score
-
-def calc_intent_score(document: dict, unit: dict) -> float:
-    # 仮：とりあえず全部 0.5
-    return 0.5
-
-def calc_unit_connection(unit_a: dict, unit_b: dict) -> float:
-    # 仮：とりあえず全部 0.5
-    return 0.5
-
 def normalize_intent(document: dict) -> None:
     """
     Intent を必ず
@@ -610,12 +555,101 @@ def normalize_intent(document: dict) -> None:
         document["intent"] = {"fields": fields}
         return
 
-    # fields が list（中期JSON）
-    if isinstance(intent["fields"], list):
-        intent["fields"] = {
-            f.get("key", f"intent_{i}"): {
-                "label": f.get("label", ""),
-                "value": f.get("value", "")
+        
+
+        # fields が list（中期JSON）
+
+        if isinstance(intent.get("fields"), list):
+
+            intent["fields"] = {
+
+                f.get("key", f"intent_{i}"): {
+
+                    "label": f.get("label", ""),
+
+                    "value": f.get("value", "")
+
+                }
+
+                for i, f in enumerate(intent["fields"])
+
             }
-            for i, f in enumerate(intent["fields"])
-        }
+
+    
+
+def build_composition_ideas_prompt(document: dict) -> str:
+
+    """
+    LLMに構成要素のアイデアを生成させるためのプロンプトを構築する。
+    """
+
+    intent_fields = document.get("intent", {}).get("fields", {})
+
+    intent_text = "\n".join(f"- {data['label']}: {data['value']}" for key, data in intent_fields.items() if data.get('value'))
+
+    
+
+    composition_elements = document.get("composition_elements", {})
+
+    elements_text = ""
+
+    for scope in ["common", "doc_type_specific"]:
+
+        for category in composition_elements.get(scope, {}).get("categories", []):
+
+            category_label = category.get("label")
+
+            elements_text += f"\n▼{category_label}\n"
+
+            for element in category.get("elements", []):
+
+                if element.get("value"):
+
+                    elements_text += f"- {element['label']}: {element['value']}\n"
+
+    
+
+    prompt = f"""
+あなたはプロの作家・編集者です。
+
+以下の作品のコンテキストを読み、この作品をより面白くするための新しい構成要素のアイデアを5つ提案してください。
+
+提案は具体的で、既存の要素と組み合わせることで物語や論理が深まるようなものにしてください。
+
+# 作品コンテキスト
+
+## 基本情報
+
+- タイトル: {document.get("title", "（無題）")}
+
+- 種類: {document.get("doc_type", "（未設定）")}
+
+## 作者の意図
+
+{intent_text if intent_text else "（未設定）"}
+
+## 現在の構成要素
+
+{elements_text if elements_text.strip() else "（まだ構成要素はありません）"}
+
+# あなたへの指示
+
+- 上記コンテキストに合致し、かつ新規性のあるアイデアを5つ、簡潔な日本語で提案してください。
+
+- 応答は必ず以下のJSON形式のみで出力してください。他のテキストは一切含めないでください。
+
+```json
+{{
+  "suggestions": [
+    "提案1",
+    "提案2",
+    "提案3",
+    "提案4",
+    "提案5"
+  ]
+}}
+```
+
+"""
+
+    return prompt.strip()

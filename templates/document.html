@@ -19,9 +19,69 @@
     <li class="nav-item" role="presentation">
         <button class="nav-link" id="composition-tab" data-bs-toggle="tab" data-bs-target="#composition" type="button" role="tab" aria-controls="composition" aria-selected="false">構成要素</button>
     </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="suggestions-tab" data-bs-toggle="tab" data-bs-target="#suggestions" type="button" role="tab" aria-controls="suggestions" aria-selected="false">提案</button>
+    </li>
 </ul>
 
 <div class="tab-content" id="documentTabContent">
+    <div class="tab-pane fade" id="intent" role="tabpanel" aria-labelledby="intent-tab">
+        <div class="card p-4">
+            <h2 class="h4 mb-3">作者の意図（Intent）</h2>            <form method="post" action="/document/{{ document.id }}/intent">
+                {% if document.intent and document.intent.fields %}
+                    {% for key, field in document.intent.fields.items() %}
+                        <div class="mb-3 d-flex align-items-center">
+                            <label class="form-label fw-bold me-2">{{ field.label }}</label>
+                            <input
+                                type="text"
+                                name="intent_value_{{ key }}"
+                                value="{{ field.value }}"
+                                class="form-control flex-grow-1 me-2"
+                            >
+                            <button type="submit"
+                                    name="remove_intent"
+                                    value="{{ key }}"
+                                    class="btn btn-danger btn-sm">
+                                退避
+                            </button>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p>このドキュメントには意図が設定されていません。</p>
+                {% endif %}
+
+                <hr class="my-4">
+
+                <h4 class="h5 mb-3">Intent項目を追加</h4>
+                <div class="mb-3 d-flex">
+                    <input
+                        type="text"
+                        name="new_intent_label"
+                        placeholder="項目名（例：世界観）"
+                        class="form-control me-2"
+                        style="width:30%;"
+                    >
+                    <input
+                        type="text"
+                        name="new_intent_value"
+                        placeholder="内容"
+                        class="form-control me-2"
+                        style="width:55%;"
+                    >
+                    <button type="submit" name="add_intent" value="1" class="btn btn-success">
+                        ＋ 追加
+                    </button>
+                </div>
+
+                <div class="d-flex justify-content-between">
+                    <button type="submit" name="save_intent" value="1" class="btn btn-primary">
+                        Intentを保存
+                    </button>
+                    <a href="/dashboard" class="btn btn-secondary">← ダッシュボードへ</a>
+                </div>
+            </form>
+        </div>
+    </div>
     <div class="tab-pane fade" id="composition" role="tabpanel" aria-labelledby="composition-tab">
         <div class="card p-4 shadow-sm mt-3">
             <form method="post" action="/document/{{ document.id }}">
@@ -127,61 +187,16 @@
             </form>
         </div>
     </div>
-    <div class="tab-pane fade" id="intent" role="tabpanel" aria-labelledby="intent-tab">
-        <div class="card p-4">
-            <h2 class="h4 mb-3">作者の意図（Intent）</h2>            <form method="post" action="/document/{{ document.id }}/intent">
-                {% if document.intent and document.intent.fields %}
-                    {% for key, field in document.intent.fields.items() %}
-                        <div class="mb-3 d-flex align-items-center">
-                            <label class="form-label fw-bold me-2">{{ field.label }}</label>
-                            <input
-                                type="text"
-                                name="intent_value_{{ key }}"
-                                value="{{ field.value }}"
-                                class="form-control flex-grow-1 me-2"
-                            >
-                            <button type="submit"
-                                    name="remove_intent"
-                                    value="{{ key }}"
-                                    class="btn btn-danger btn-sm">
-                                退避
-                            </button>
-                        </div>
-                    {% endfor %}
-                {% else %}
-                    <p>このドキュメントには意図が設定されていません。</p>
-                {% endif %}
-
-                <hr class="my-4">
-
-                <h4 class="h5 mb-3">Intent項目を追加</h4>
-                <div class="mb-3 d-flex">
-                    <input
-                        type="text"
-                        name="new_intent_label"
-                        placeholder="項目名（例：世界観）"
-                        class="form-control me-2"
-                        style="width:30%;"
-                    >
-                    <input
-                        type="text"
-                        name="new_intent_value"
-                        placeholder="内容"
-                        class="form-control me-2"
-                        style="width:55%;"
-                    >
-                    <button type="submit" name="add_intent" value="1" class="btn btn-success">
-                        ＋ 追加
-                    </button>
+    <div class="tab-pane fade" id="suggestions" role="tabpanel" aria-labelledby="suggestions-tab">
+        <div class="card p-4 shadow-sm mt-3">
+            <h2 class="h4 mb-3">AIによる構成要素の提案</h2>
+            <button type="button" id="generate-ideas-btn" class="btn btn-success mb-3">提案を生成</button>
+            <div id="suggestion-container" class="mt-3" style="display: none;">
+                <h4 class="h5">AIからの提案リスト</h4>
+                <div id="suggestion-list" class="list-group">
+                    <!-- Suggestions will be loaded here by JavaScript -->
                 </div>
-
-                <div class="d-flex justify-content-between">
-                    <button type="submit" name="save_intent" value="1" class="btn btn-primary">
-                        Intentを保存
-                    </button>
-                    <a href="/dashboard" class="btn btn-secondary">← ダッシュボードへ</a>
-                </div>
-            </form>
+            </div>
         </div>
     </div>
 </div>
@@ -199,10 +214,81 @@
         if (tabToActivate) {
             new bootstrap.Tab(tabToActivate).show();
         } else {
-            // Activate the default tab ('intent') if no hash or hash is invalid
-            let defaultTab = document.getElementById('intent-tab');
+            // Activate the default tab ('suggestions') if no hash or hash is invalid
+            let defaultTab = document.getElementById('suggestions-tab');
             if (defaultTab) {
                 new bootstrap.Tab(defaultTab).show();
+            }
+        }
+    });
+
+    // JavaScript for Suggestions Tab
+    document.getElementById("generate-ideas-btn").addEventListener("click", async function() {
+        const docId = "{{ document.id }}";
+        const suggestionContainer = document.getElementById("suggestion-container");
+        const suggestionList = document.getElementById("suggestion-list");
+
+        suggestionList.innerHTML = ""; // Clear previous suggestions
+        suggestionContainer.style.display = "block"; // Show the container
+
+        try {
+            const response = await fetch(`/document/${docId}/generate_ideas`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                }
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                suggestionList.innerHTML = `<div class="alert alert-danger">${errorData.error || "提案の生成に失敗しました。"}</div>`;
+                return;
+            }
+
+            const data = await response.json();
+            if (data.suggestions && data.suggestions.length > 0) {
+                data.suggestions.forEach(suggestion => {
+                    const listItem = document.createElement("div");
+                    listItem.classList.add("list-group-item", "d-flex", "justify-content-between", "align-items-center");
+                    listItem.innerHTML = `
+                        <span>${suggestion}</span>
+                        <button type="button" class="btn btn-sm btn-outline-primary add-suggestion-btn" data-suggestion="${suggestion}">追加</button>
+                    `;
+                    suggestionList.appendChild(listItem);
+                });
+            } else {
+                suggestionList.innerHTML = `<div class="alert alert-info">提案は見つかりませんでした。</div>`;
+            }
+        } catch (error) {
+            console.error("Error generating suggestions:", error);
+            suggestionList.innerHTML = `<div class="alert alert-danger">エラーが発生しました: ${error.message}</div>`;
+        }
+    });
+
+    // Event delegation for Add Suggestion buttons
+    document.getElementById("suggestion-list").addEventListener("click", async function(event) {
+        if (event.target.classList.contains("add-suggestion-btn")) {
+            const suggestion = event.target.dataset.suggestion;
+            const docId = "{{ document.id }}";
+            
+            try {
+                const addResponse = await fetch(`/document/${docId}/add_composition_element`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ label: suggestion })
+                });
+
+                if (addResponse.ok) {
+                    alert("提案が追加されました。");
+                    // Reload the page to show the updated composition elements
+                    window.location.reload(); 
+                } else {
+                    const errorData = await addResponse.json();
+                    alert(`提案の追加に失敗しました: ${errorData.error || "不明なエラー"}`);
+                }
+            } catch (error) {
+                console.error("Error adding suggestion:", error);
+                alert(`提案の追加中にエラーが発生しました: ${error.message}`);
             }
         }
     });
