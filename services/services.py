@@ -6,8 +6,6 @@ import copy # copyモジュールを追加
 import uuid
 import json
 
-from structure_templates import STRUCTURE_TEMPLATES
-
 # =========================
 # Load Default Composition Meta from JSON
 # =========================
@@ -35,21 +33,42 @@ def create_document(
     新しい Document を作成し、data["documents"] に追加する。
     data は load_user_data() で取得した dict を想定。
     """
+    print(f"\n--- DEBUG: create_document called ---")
+    print(f"DEBUG: doc_type received: {doc_type}")
 
     document = {
         "id": os.urandom(4).hex(),
         "title": title,
         "doc_type": doc_type,
         "intent": {},
-        "units": [
-            {"title": t, "content": ""}
-            for t in STRUCTURE_TEMPLATES[doc_type]
-        ],
+        "units": [], # Initialize as empty, will be populated from composition_meta
         "entities": [],
         "composition_elements": {}, # 新しい構成要素の格納場所
         "composition_meta": copy.deepcopy(DEFAULT_COMPOSITION_META) # デフォルトのメタ定義を追加
     }
+    print(f"DEBUG: Document initialized (empty units): {document['units']}")
 
+    # 日本語の doc_type を英語のキーにマッピング
+    doc_type_mapping = {meta["label"]: doc_id for doc_id, meta in DEFAULT_COMPOSITION_META["doc_types"].items()}
+    mapped_doc_type_id = doc_type_mapping.get(doc_type)
+    print(f"DEBUG: mapped_doc_type_id for '{doc_type}': {mapped_doc_type_id}")
+
+    if mapped_doc_type_id:
+        doc_type_meta_def = DEFAULT_COMPOSITION_META["doc_types"].get(mapped_doc_type_id)
+        print(f"DEBUG: doc_type_meta_def found: {doc_type_meta_def is not None}")
+        if doc_type_meta_def and "categories" in doc_type_meta_def:
+            for category_meta in doc_type_meta_def["categories"]:
+                print(f"DEBUG: Checking category_meta['id']: {category_meta.get('id')}")
+                if category_meta["id"] == "scene":
+                    print(f"DEBUG: 'scene' category found. Elements: {category_meta.get('elements', [])}")
+                    for element_meta in category_meta.get("elements", []):
+                        document["units"].append({"title": element_meta["label"], "content": ""})
+                    break # Stop after processing the scene category
+    else:
+        print(f"DEBUG: No mapped_doc_type_id found for '{doc_type}'. Units will remain empty.")
+    
+    print(f"DEBUG: Units after population attempt: {document['units']}")
+    
     data.setdefault("documents", []).append(document)
     return document
 
@@ -174,6 +193,30 @@ document["composition_elements"] を初期化・正規化する
                 elements_data.setdefault("doc_type_specific", {"categories": []}).setdefault("categories", []),
                 doc_type_meta_def["categories"]
             )
+    
+    # --- Synchronize document["units"] from composition_elements ---
+    # This ensures document["units"] reflects the current state of composition_elements,
+    # especially the 'scene' category, which functions as the document's structure.
+    
+    # Find the 'scene' category within the doc_type_specific composition elements
+    scene_elements = []
+    if mapped_doc_type: # Only attempt if a valid doc_type is mapped
+        for category in elements_data.get("doc_type_specific", {}).get("categories", []):
+            if category["id"] == "scene":
+                scene_elements = category.get("elements", [])
+                break
+    
+    # Regenerate document["units"] based on the current scene_elements
+    # Preserve existing content where possible
+    new_units = []
+    existing_unit_map = {unit["title"]: unit["content"] for unit in document.get("units", [])}
+
+    for element in scene_elements:
+        unit_title = element["label"]
+        unit_content = existing_unit_map.get(unit_title, "") # Preserve content if title matches
+        new_units.append({"title": unit_title, "content": unit_content})
+    
+    document["units"] = new_units
 
 
 def update_composition_elements(document: dict, form_data) -> None:
