@@ -33,8 +33,6 @@ def create_document(
     新しい Document を作成し、data["documents"] に追加する。
     data は load_user_data() で取得した dict を想定。
     """
-    print(f"\n--- DEBUG: create_document called ---")
-    print(f"DEBUG: doc_type received: {doc_type}")
 
     document = {
         "id": os.urandom(4).hex(),
@@ -46,28 +44,19 @@ def create_document(
         "composition_elements": {}, # 新しい構成要素の格納場所
         "composition_meta": copy.deepcopy(DEFAULT_COMPOSITION_META) # デフォルトのメタ定義を追加
     }
-    print(f"DEBUG: Document initialized (empty units): {document['units']}")
 
     # 日本語の doc_type を英語のキーにマッピング
     doc_type_mapping = {meta["label"]: doc_id for doc_id, meta in DEFAULT_COMPOSITION_META["doc_types"].items()}
     mapped_doc_type_id = doc_type_mapping.get(doc_type)
-    print(f"DEBUG: mapped_doc_type_id for '{doc_type}': {mapped_doc_type_id}")
 
     if mapped_doc_type_id:
         doc_type_meta_def = DEFAULT_COMPOSITION_META["doc_types"].get(mapped_doc_type_id)
-        print(f"DEBUG: doc_type_meta_def found: {doc_type_meta_def is not None}")
         if doc_type_meta_def and "categories" in doc_type_meta_def:
             for category_meta in doc_type_meta_def["categories"]:
-                print(f"DEBUG: Checking category_meta['id']: {category_meta.get('id')}")
                 if category_meta["id"] == "scene":
-                    print(f"DEBUG: 'scene' category found. Elements: {category_meta.get('elements', [])}")
                     for element_meta in category_meta.get("elements", []):
                         document["units"].append({"title": element_meta["label"], "content": ""})
                     break # Stop after processing the scene category
-    else:
-        print(f"DEBUG: No mapped_doc_type_id found for '{doc_type}'. Units will remain empty.")
-    
-    print(f"DEBUG: Units after population attempt: {document['units']}")
     
     data.setdefault("documents", []).append(document)
     return document
@@ -220,12 +209,6 @@ document["composition_elements"] を初期化・正規化する
 
 
 def update_composition_elements(document: dict, form_data) -> None:
-    print(f"\n--- DEBUG: update_composition_elements called ---")
-    print(f"DEBUG: form_data received:")
-    for key, value in form_data.items(multi=True): # Use multi=True to see all values if multiple keys exist
-        print(f"  Key: '{key}', Value: '{value}'")
-    print(f"DEBUG: Document ID: {document.get('id')}")
-    print(f"DEBUG: Document Title: {document.get('title')}")
 
     elements_data = document["composition_elements"]
     composition_meta = document["composition_meta"] # documentからcomposition_metaを取得
@@ -239,7 +222,6 @@ def update_composition_elements(document: dict, form_data) -> None:
     for current_category_data in common_categories:
         category_id = current_category_data["id"]
         elements = current_category_data.setdefault("elements", [])
-        print(f"DEBUG: Processing common category '{category_id}'. Elements BEFORE deletion check: {[e.get('id') for e in elements if e and 'id' in e]}")
 
         # --- 要素の追加 ---
         if f"add_element_{category_id}" in form_data:
@@ -250,32 +232,21 @@ def update_composition_elements(document: dict, form_data) -> None:
                 "editable": True
             }
             elements.append(new_element)
-            print(f"DEBUG: Added new element to category '{category_id}'. New elements: {[e.get('id') for e in elements if e and 'id' in e]}")
 
         # Identify the exact delete button that was clicked
         clicked_delete_id = None
         # Iterate through all elements in the *current* category
         for element in elements:
+            # Construct the expected form_key for this element's delete button
             expected_form_key = f"remove_element_{category_id}_{element.get('id')}"
-            print(f"DEBUG: Checking for expected_form_key: '{expected_form_key}' for element '{element.get('id')}'")
             if expected_form_key in form_data:
                 # And if its value matches the element's ID (double-check)
                 if form_data.get(expected_form_key) == element.get('id'):
                     clicked_delete_id = element.get('id')
-                    print(f"DEBUG: FOUND clicked_delete_id: '{clicked_delete_id}' for category '{category_id}'")
                     break # Found the specific button clicked
-                else:
-                    print(f"DEBUG: Expected key '{expected_form_key}' found, but value mismatch. Expected '{element.get('id')}', got '{form_data.get(expected_form_key)}'")
-            else:
-                print(f"DEBUG: Expected key '{expected_form_key}' NOT found in form_data.")
         
         if clicked_delete_id:
-            print(f"DEBUG: Attempting to remove element with ID: '{clicked_delete_id}' from category '{category_id}'")
-            original_elements_len = len(elements)
             elements[:] = [elem for elem in elements if elem.get("id") != clicked_delete_id]
-            print(f"DEBUG: Elements AFTER removal: {[e.get('id') for e in elements if e and 'id' in e]}, removed {original_elements_len - len(elements)} elements.")
-        else:
-            print(f"DEBUG: No specific delete button clicked for category '{category_id}'.")
 
         # --- 要素の更新 ---
         # Iterate through elements in the document data, and for each, check if its label/value was updated in form_data
