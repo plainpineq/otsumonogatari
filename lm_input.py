@@ -1,59 +1,34 @@
 # llm_input.py
 import json
-# from services.services import (
-#     get_document,
-#     list_units,
-#     list_entities,
-#     get_intent
-# )
+import os
+from user_files import get_user_data_path
 
+# ... existing code ...
 
-# The original build_llm_input function, commented out due to missing imports.
-# If this function is needed in the future, it will need to be refactored
-# to use existing service functions like find_document and process the
-# passed-in document dictionary.
-# def build_llm_input(document_id: str) -> dict:
-#     document = get_document(document_id)
-#     units = list_units(document_id)
-#     entities = list_entities(document_id)
-#     intent = get_intent(document_id)
-
-#     return {
-#         "document": {
-#             "id": document.id,
-#             "title": document.title,
-#             "type": document.doc_type,
-#             "synopsis": document.synopsis
-#         },
-#         "intent": {
-#             "theme_or_claim": intent.theme_or_claim if intent else "",
-#             "values": intent.values if intent else "",
-#             "genre": intent.genre if intent else ""
-#         },
-#         "constraints": intent.constraints if intent else [],
-#         "units": [
-#             {
-#                 "title": u.title,
-#                 "summary": u.summary,
-#                 "order": u.order_no
-#             } for u in units
-#         ],
-#         "entities": [
-#             {
-#                 "name": e.name,
-#                 "role": e.role,
-#                 "description": e.description
-#             } for e in entities
-#         ]
-#     }
-
-def build_composition_ideas_prompt(document: dict) -> str:
+def build_composition_ideas_prompt(document: dict, composition_meta: dict, user_id: str) -> str:
     """
     Builds a prompt for the LLM to generate composition element suggestions.
     """
-    intent_fields = document.get("intent", {}).get("fields", {})
-    doc_type = document.get("doc_type", "不明")
+    doc_type_label = document.get("doc_type", "不明")
+    document_title = document.get("title", "不明なドキュメント")
+    
+    # Map doc_type_label (e.g., "小説") to its internal ID (e.g., "novel")
+    doc_type_mapping = {meta["label"]: doc_id for doc_id, meta in composition_meta["doc_types"].items()}
+    doc_type_id = doc_type_mapping.get(doc_type_label, "default") # Use "default" as a fallback ID if not found
 
+    # Dynamically determine template file path
+    template_file_name = f"{doc_type_id}.md"
+    template_file_path = os.path.join("prompt_templates", template_file_name)
+
+    # Fallback to default.md if doc_type specific template does not exist
+    if not os.path.exists(template_file_path):
+        template_file_path = os.path.join("prompt_templates", "default.md")
+
+    with open(template_file_path, "r", encoding="utf-8") as f:
+        template_content = f.read()
+    
+    intent_fields = document.get("intent", {}).get("fields", {})
+    
     # Format intent fields into a readable string
     formatted_intent = ""
     for key, field in intent_fields.items():
@@ -62,68 +37,77 @@ def build_composition_ideas_prompt(document: dict) -> str:
     if not formatted_intent:
         formatted_intent = "（作者の意図は特に指定されていません）"
 
-    prompt = f"""
-あなたはプロの物語構成エディターです。
-以下のドキュメント情報と作者の意図に基づき、物語の構成要素（プロット、キャラクター属性、世界観の要素など）を5〜10個提案してください。
-各提案は、具体的で創造的なタイトルとして短くまとめてください。
+    # Extract composition elements based on doc_type_id and format them for the prompt
+    elements_text = "以下の『構成要素』セクションに記載されている各項目について、上記の『作者の意図』に基づき、それぞれ5つの具体的な候補を生成してください。出力は必ず各要素名がキーとなるJSON形式でお願いします。\n\n"
+    
+    doc_type_data = composition_meta.get("doc_types", {}).get(doc_type_id)
+    if doc_type_data and doc_type_data.get("categories"):
+        for category in doc_type_data["categories"]:
+            if category.get("elements"):
+                elements_text += f"### {category['label']}\n" # Category heading
+                for element in category["elements"]:
+                    if element.get("label"):
+                        elements_text += f"- {element['label']}\n"
+    else:
+        elements_text += "（構成要素は定義されていません）\n"
 
----
-ドキュメント種別: {doc_type}
+    # Fill template placeholders
+    prompt = template_content.format(
+        document_title=document_title,
+        doc_type=doc_type_label, # Use the human-readable label for the prompt
+        intent_text=formatted_intent,
+        elements_text=elements_text
+    )
 
-作者の意図:
-{formatted_intent}
----
+    # Output the generated prompt to a file for debugging/verification
+    user_data_dir = get_user_data_path(user_id)
+    os.makedirs(user_data_dir, exist_ok=True) # Ensure the directory exists
+    output_file_path = os.path.join(user_data_dir, "generated_prompt.md")
+    try:
+        with open(output_file_path, "w", encoding="utf-8") as f:
+            f.write(prompt)
+        print(f"Generated prompt written to: {output_file_path}")
+    except Exception as e:
+        print(f"Error writing prompt to file: {e}")
 
-提案はJSON形式で、キーは "suggestions"、値は提案の文字列の配列として出力してください。
-例:
-{{
-    "suggestions": [
-        "主人公の過去の秘密",
-        "クライマックスでの予期せぬ裏切り",
-        "魔法システムの詳細なルール",
-        "主要キャラクターの成長アーク",
-        "物語の舞台となる都市の歴史的背景"
-    ]
-}}
-"""
     return prompt
 
-def mock_llm_call(prompt: str) -> list[str]:
+def _get_composition_elements(doc_type_id: str, composition_meta: dict) -> list[str]:
     """
-    Mocks an LLM call, returning hardcoded suggestions.
+    Extracts a list of composition element labels for a given document type
+    from the composition_meta dictionary.
+    """
+    elements = []
+    doc_type_data = composition_meta.get("doc_types", {}).get(doc_type_id)
+    if doc_type_data and doc_type_data.get("categories"):
+        for category in doc_type_data["categories"]:
+            if category.get("elements"):
+                for element in category["elements"]:
+                    if element.get("label"):
+                        elements.append(element["label"])
+    return elements
+
+def mock_llm_call(prompt: str) -> dict:
+    """
+    Mocks an LLM call, returning hardcoded suggestions based on parsed elements.
     In a real scenario, this would call an actual LLM API.
     """
     print(f"Mock LLM called with prompt: {prompt[:200]}...") # Log part of the prompt
     
-    # Simulate different responses based on doc_type or intent if needed
-    if "小説" in prompt:
-        return {
-            "suggestions": [
-                "主人公の隠された過去",
-                "ライバルとの因縁",
-                "物語を左右するキーアイテム",
-                "予期せぬ第三勢力の介入",
-                "感情の対比によるシーン構成",
-                "舞台となる異世界の風習"
-            ]
-        }
-    elif "論文" in prompt:
-        return {
-            "suggestions": [
-                "研究目的の明確化",
-                "先行研究との比較分析",
-                "実験方法の具体的な記述",
-                "結果の統計的考察",
-                "結論の新規性と貢献度"
-            ]
-        }
-    else:
-        return {
-            "suggestions": [
-                "汎用アイデア1",
-                "汎用アイデア2",
-                "汎用アイデア3",
-                "汎用アイデア4",
-                "汎用アイデア5"
-            ]
-        }
+    mock_suggestions = {"suggestions": {}}
+    
+    # Extract element labels from the prompt
+    elements_section_start = prompt.find("以下に挙げる各構成要素について")
+    if elements_section_start != -1:
+        elements_section = prompt[elements_section_start:]
+        for line in elements_section.split('\n'):
+            if line.strip().startswith('- '):
+                element_label = line.strip()[2:].strip()
+                if element_label:
+                    mock_suggestions["suggestions"][element_label] = [f"{element_label}の候補{i+1}" for i in range(5)]
+    
+    if not mock_suggestions["suggestions"]:
+        # Fallback if no specific elements are found or parsed
+        mock_suggestions["suggestions"]["汎用構成要素"] = [f"汎用アイデア{i+1}" for i in range(5)]
+        
+    return mock_suggestions

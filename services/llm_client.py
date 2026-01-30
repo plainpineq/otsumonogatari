@@ -3,7 +3,7 @@ import openai
 import json
 from typing import Optional
 
-def _call_gemini_llm(api_key: str, model_name: str, prompt: str) -> dict:
+def _call_gemini_llm(api_key: str, model_name: str, prompt: str) -> (str, dict):
     """
     Calls the Google Gemini LLM with the given API key, model name, and prompt.
     Expects the LLM to return a JSON string with a 'suggestions' key.
@@ -26,12 +26,12 @@ def _call_gemini_llm(api_key: str, model_name: str, prompt: str) -> dict:
             response_text = response_text.strip("```").strip()
 
         parsed_response = json.loads(response_text)
-        return parsed_response
+        return response_text, parsed_response
     except Exception as e:
         print(f"Error calling Gemini LLM: {e}")
         raise RuntimeError(f"Failed to get response from Gemini LLM: {e}")
 
-def _call_openai_llm(api_key: str, model_name: str, prompt: str, base_url: Optional[str] = None) -> dict:
+def _call_openai_llm(api_key: str, model_name: str, prompt: str, base_url: Optional[str] = None) -> (str, dict):
     """
     Calls the OpenAI LLM with the given API key, model name, and prompt.
     Expects the LLM to return a JSON string with a 'suggestions' key.
@@ -55,12 +55,12 @@ def _call_openai_llm(api_key: str, model_name: str, prompt: str, base_url: Optio
         )
         response_text = response.choices[0].message.content
         parsed_response = json.loads(response_text)
-        return parsed_response
+        return response_text, parsed_response
     except Exception as e:
         print(f"Error calling OpenAI LLM: {e}")
         raise RuntimeError(f"Failed to get response from OpenAI LLM: {e}")
 
-def call_llm(api_key: str, model_name: str, prompt: str, base_url: Optional[str] = None) -> dict:
+def call_llm(api_key: str, model_name: str, prompt: str, base_url: Optional[str] = None) -> (str, dict):
     """
     Dispatches to the appropriate LLM client based on the model name and optional base_url.
     """
