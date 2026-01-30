@@ -3,25 +3,29 @@
   "description": "構成要素カテゴリのメタ定義（完全ユーザ拡張型）",
   "common_categories": {
     "label": "共通構成要素",
-    "editable": true,
+    "editable": false,
     "categories": [
       {
-        "id": "theme",
-        "label": "テーマ・問い",
-        "description": "作品全体を貫く問い",
-        "multiple": true
-      },
-      {
-        "id": "value",
-        "label": "価値観",
-        "description": "肯定・否定される価値",
-        "multiple": true
-      },
-      {
-        "id": "constraint",
-        "label": "制約条件",
-        "description": "表現上・設定上の制約",
-        "multiple": true
+        "id": "common",
+        "label": "共通構成要素",
+        "editable": false,
+        "elements": [
+          {
+            "id": "theme",
+            "label": "テーマ・問い",
+            "editable": true
+          },
+          {
+            "id": "value",
+            "label": "価値観",
+            "editable": true
+          },
+          {
+            "id": "constraint",
+            "label": "制約条件",
+            "editable": true
+          }
+        ]
       }
     ]
   },

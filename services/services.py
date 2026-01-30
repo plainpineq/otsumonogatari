@@ -106,16 +106,21 @@ def _normalize_categories(current_categories: list, meta_categories: list):
                     ]
 
                 # メタ定義に基づいて不足している要素を追加 (idで比較)
+                # ただし、editableがTrueのメタ要素はユーザーが削除可能なので、
+                # ここで自動的に再追加しないようにする。
                 for element_meta in category_meta.get("elements", []):
-                    element_found = False
-                    for existing_element in existing_elements:
-                        if existing_element["id"] == element_meta["id"]:
-                            element_found = True
-                            existing_element["label"] = element_meta["label"] # labelも更新される可能性があるのでここで上書き
-                            existing_element.setdefault("value", "") # valueがなければ追加
-                            break
-                    if not element_found:
-                        existing_elements.append(_get_default_element_instance(element_meta))
+                    # editableではないメタ要素のみを強制的に存在させる
+                    if not element_meta.get("editable", False):
+                        element_found = False
+                        for existing_element in existing_elements:
+                            if existing_element["id"] == element_meta["id"]:
+                                element_found = True
+                                # labelも更新される可能性があるのでここで上書き
+                                existing_element["label"] = element_meta["label"]
+                                existing_element.setdefault("value", "") # valueがなければ追加
+                                break
+                        if not element_found:
+                            existing_elements.append(_get_default_element_instance(element_meta))
 
                 category_found = True
                 break
@@ -172,10 +177,13 @@ document["composition_elements"] を初期化・正規化する
 
 
 def update_composition_elements(document: dict, form_data) -> None:
-    """
-    Composition Elements を更新・追加・削除する (v2)
-    """
-    # normalize_composition_elements はすでに app.py のGETリクエスト時に呼ばれている前提
+    print(f"\n--- DEBUG: update_composition_elements called ---")
+    print(f"DEBUG: form_data received:")
+    for key, value in form_data.items(multi=True): # Use multi=True to see all values if multiple keys exist
+        print(f"  Key: '{key}', Value: '{value}'")
+    print(f"DEBUG: Document ID: {document.get('id')}")
+    print(f"DEBUG: Document Title: {document.get('title')}")
+
     elements_data = document["composition_elements"]
     composition_meta = document["composition_meta"] # documentからcomposition_metaを取得
 
@@ -185,43 +193,13 @@ def update_composition_elements(document: dict, form_data) -> None:
 
     # --- 共通構成要素の処理 ---
     common_categories = elements_data["common"].setdefault("categories", [])
-    common_meta_def = composition_meta["common_categories"] # メタ定義もcomposition_metaから取得
-
-    # --- 共通カテゴリ自体を追加・削除する処理 ---
-    if common_meta_def.get("editable", False):
-        # カテゴリ追加
-        if "add_common_category" in form_data:
-            new_label = form_data.get("new_common_category_label", "").strip()
-            if new_label:
-                new_category_id = str(uuid.uuid4().hex[:8])
-                new_category = {
-                    "id": new_category_id,
-                    "label": new_label,
-                    "editable": True,
-                                    "elements": []
-                                }
-                common_categories.append(new_category)
-        # カテゴリ削除
-        remove_category_id = form_data.get("remove_common_category")
-        if remove_category_id:
-            elements_data["common"]["categories"][:] = [
-                cat for cat in common_categories if cat["id"] != remove_category_id
-            ]
-
-    # 共通カテゴリ内の要素の追加・削除・更新
-    for current_category_data in common_categories: # データ内のカテゴリをループ
+    for current_category_data in common_categories:
         category_id = current_category_data["id"]
-
-        # カテゴリ自体のラベル更新
-        category_label_from_form = f"category_{category_id}_label"
-        if category_label_from_form in form_data:
-            current_category_data["label"] = form_data.get(category_label_from_form, "")
-
         elements = current_category_data.setdefault("elements", [])
+        print(f"DEBUG: Processing common category '{category_id}'. Elements BEFORE deletion check: {[e.get('id') for e in elements if e and 'id' in e]}")
 
         # --- 要素の追加 ---
         if f"add_element_{category_id}" in form_data:
-            # multiple はカテゴリのeditableに統合されたので、常に新しい要素を追加
             new_element = {
                 "id": str(uuid.uuid4().hex[:8]), # 一時的なユニークID
                 "label": "新しい項目", # デフォルトラベル
@@ -229,26 +207,47 @@ def update_composition_elements(document: dict, form_data) -> None:
                 "editable": True
             }
             elements.append(new_element)
+            print(f"DEBUG: Added new element to category '{category_id}'. New elements: {[e.get('id') for e in elements if e and 'id' in e]}")
 
-        # --- 要素の削除 ---
-        remove_index_str = form_data.get(f"remove_element_{category_id}")
-        if remove_index_str:
-            remove_index = int(remove_index_str)
-            # 項目をeditableに関わらず削除可能にする
-            if 0 <= remove_index < len(elements):
-                elements.pop(remove_index)
+        # Identify the exact delete button that was clicked
+        clicked_delete_id = None
+        # Iterate through all elements in the *current* category
+        for element in elements:
+            expected_form_key = f"remove_element_{category_id}_{element.get('id')}"
+            print(f"DEBUG: Checking for expected_form_key: '{expected_form_key}' for element '{element.get('id')}'")
+            if expected_form_key in form_data:
+                # And if its value matches the element's ID (double-check)
+                if form_data.get(expected_form_key) == element.get('id'):
+                    clicked_delete_id = element.get('id')
+                    print(f"DEBUG: FOUND clicked_delete_id: '{clicked_delete_id}' for category '{category_id}'")
+                    break # Found the specific button clicked
+                else:
+                    print(f"DEBUG: Expected key '{expected_form_key}' found, but value mismatch. Expected '{element.get('id')}', got '{form_data.get(expected_form_key)}'")
+            else:
+                print(f"DEBUG: Expected key '{expected_form_key}' NOT found in form_data.")
+        
+        if clicked_delete_id:
+            print(f"DEBUG: Attempting to remove element with ID: '{clicked_delete_id}' from category '{category_id}'")
+            original_elements_len = len(elements)
+            elements[:] = [elem for elem in elements if elem.get("id") != clicked_delete_id]
+            print(f"DEBUG: Elements AFTER removal: {[e.get('id') for e in elements if e and 'id' in e]}, removed {original_elements_len - len(elements)} elements.")
+        else:
+            print(f"DEBUG: No specific delete button clicked for category '{category_id}'.")
 
         # --- 要素の更新 ---
-        for i, element in enumerate(elements):
-            # valueの更新
-            form_value_name = f"element_{category_id}_{i}_value"
-            if form_value_name in form_data:
-                element["value"] = form_data.get(form_value_name, "")
+        # Iterate through elements in the document data, and for each, check if its label/value was updated in form_data
+        for element in elements:
+            element_id = element.get("id")
 
             # labelの更新
-            form_label_name = f"element_{category_id}_{i}_label"
+            form_label_name = f"element_label_{category_id}_{element_id}"
             if form_label_name in form_data:
                 element["label"] = form_data.get(form_label_name, "")
+
+            # valueの更新 (if such fields exist in HTML, current HTML doesn't show them but it's good for consistency)
+            form_value_name = f"element_value_{category_id}_{element_id}"
+            if form_value_name in form_data:
+                element["value"] = form_data.get(form_value_name, "")
 
     # --- doc_type 固有構成要素の処理 ---
     doc_type_specific_categories = elements_data["doc_type_specific"].setdefault("categories", [])
@@ -298,23 +297,31 @@ def update_composition_elements(document: dict, form_data) -> None:
                 }
                 elements.append(new_element)
 
-            # --- 要素の削除 ---
-            remove_index_str = form_data.get(f"remove_element_{category_id}")
-            if remove_index_str:
-                remove_index = int(remove_index_str)
-                # 項目をeditableに関わらず削除可能にする
-                if 0 <= remove_index < len(elements):
-                    elements.pop(remove_index)
-
+            # Identify the exact delete button that was clicked
+            clicked_delete_id = None
+            for element in elements:
+                expected_form_key = f"remove_element_{category_id}_{element.get('id')}"
+                if expected_form_key in form_data:
+                    if form_data.get(expected_form_key) == element.get('id'):
+                        clicked_delete_id = element.get('id')
+                        break
+            
+            if clicked_delete_id:
+                elements[:] = [elem for elem in elements if elem.get("id") != clicked_delete_id]
+            
             # --- 要素の更新 ---
-            for i, element in enumerate(elements):
-                form_value_name = f"element_{category_id}_{i}_value"
-                if form_value_name in form_data:
-                    element["value"] = form_data.get(form_value_name, "")
+            for element in elements:
+                element_id = element.get("id")
 
-                form_label_name = f"element_{category_id}_{i}_label"
+                # labelの更新
+                form_label_name = f"element_label_{category_id}_{element_id}"
                 if form_label_name in form_data:
                     element["label"] = form_data.get(form_label_name, "")
+
+                # valueの更新 (if such fields exist in HTML, current HTML doesn't show them but it's good for consistency)
+                form_value_name = f"element_value_{category_id}_{element_id}"
+                if form_value_name in form_data:
+                    element["value"] = form_data.get(form_value_name, "")
 
 
 # =========================

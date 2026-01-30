@@ -94,38 +94,41 @@
                 {% set common_categories_data = document.composition_elements.common.categories %}
                 {% if common_meta_data.categories %}
                     <h3 class="h5 mt-4">{{ common_meta_data.label }}</h3>
-                    {% if common_meta_data.editable %}
-                        <div class="mb-3 d-flex">
-                            <input type="text" name="new_common_category_label" placeholder="新しい共通構成要素のラベル" class="form-control me-2">
-                            <button type="submit" name="add_common_category" value="1" class="btn btn-primary">追加</button>
-                        </div>
-                    {% endif %}
-
                     {% for category in common_categories_data %}
                         {# Get meta for default categories, for user-added ones it will be none #}
                         {% set category_meta = common_meta_data.categories | selectattr("id", "equalto", category.id) | first %}
                         <div class="card p-3 mb-3">
                             <h4 class="h6 mb-3 d-flex justify-content-between align-items-center">
-                                <input type="text" name="category_{{ category.id }}_label" value="{{ category.label }}" class="form-control me-2 category-input">
-                                <button type="submit" name="remove_common_category" value="{{ category.id }}" class="btn btn-danger btn-sm ms-2">削除</button>
+                                {% if category.editable %}
+                                    <input type="text" name="category_{{ category.id }}_label" value="{{ category.label }}" class="form-control me-2 category-input">
+                                {% else %}
+                                    <span>{{ category.label }}</span>
+                                {% endif %}
+                                {% if category.editable %}
+                                    <button type="submit" name="remove_common_category" value="{{ category.id }}" class="btn btn-danger btn-sm ms-2">削除</button>
+                                {% endif %}
                             </h4>
                             {% set category_id = category.id %}
                             {% set elements = category.elements %}
 
                             {% if elements %}
                                 {% for element in elements %}
-                                    <div class="mb-2 d-flex align-items-center">
+                                    <div class="element-item mb-2 d-flex align-items-center">
                                         <input
                                             type="text"
-                                            name="element_{{ category_id }}_{{ loop.index0 }}_label"
+                                            name="element_label_{{ category_id }}_{{ element.id }}"
                                             value="{{ element.label }}"
                                             class="form-control me-2"
                                             placeholder="{{ category.label }} #{{ loop.index + 1 }}"
                                         >
-                                        <button type="submit" name="remove_element_{{ category_id }}" value="{{ loop.index0 }}" class="btn btn-danger btn-sm">削除</button>
+                                        <button type="submit" name="remove_element_{{ category_id }}_{{ element.id }}" value="{{ element.id }}" class="btn btn-danger btn-sm">削除</button>
                                     </div>
                                 {% endfor %}
                             {% endif %}
+                            
+                            
+                                <button type="submit" name="add_element_{{ category_id }}" value="1" class="btn btn-success btn-sm mt-2">＋ {{ category.label }}を追加</button>
+                            
                         </div>
                     {% endfor %}
                 {% endif %}
@@ -161,15 +164,15 @@
 
                             {% if elements %}
                                 {% for element in elements %}
-                                    <div class="mb-2 d-flex align-items-center">
+                                    <div class="element-item mb-2 d-flex align-items-center">
                                         <input
                                             type="text"
-                                            name="element_{{ category_id }}_{{ loop.index0 }}_label" {# ラベル編集用 #}
+                                            name="element_label_{{ category_id }}_{{ element.id }}" {# ラベル編集用 #}
                                             value="{{ element.label }}"
                                             class="form-control me-2"
                                             placeholder="{{ category.label }} #{{ loop.index + 1 }}"
                                         >
-                                        <button type="submit" name="remove_element_{{ category_id }}" value="{{ loop.index0 }}" class="btn btn-danger btn-sm">削除</button>
+                                        <button type="submit" name="remove_element_{{ category_id }}_{{ element.id }}" value="{{ element.id }}" class="btn btn-danger btn-sm">削除</button>
                                     </div>
                                 {% endfor %}
                             {% endif %}
