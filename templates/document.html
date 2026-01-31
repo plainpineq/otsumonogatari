@@ -205,6 +205,60 @@
 </div>
 
 <script>
+    // Initial data from the backend
+    // Ensure this is properly JSON-encoded to handle special characters and nulls
+    const initialLlmSuggestions = {{ document.llm_suggestions | tojson | default('[]', true) }}; // Pass existing suggestions from backend
+
+    function renderSuggestions(suggestionsData) {
+        const suggestionList = document.getElementById("suggestion-list");
+        suggestionList.innerHTML = ""; // Clear previous suggestions
+        const suggestionContainer = document.getElementById("suggestion-container");
+
+        if (suggestionsData && suggestionsData.length > 0) {
+            suggestionContainer.style.display = "block";
+            suggestionsData.forEach(categoryObj => {
+                // Display Category Name
+                const categoryHeader = document.createElement("h5");
+                categoryHeader.classList.add("mt-3", "mb-2");
+                categoryHeader.textContent = `分類: ${categoryObj.category}`;
+                suggestionList.appendChild(categoryHeader);
+
+                if (categoryObj.elements) {
+                    for (const elementName in categoryObj.elements) {
+                        if (categoryObj.elements.hasOwnProperty(elementName)) {
+                            const suggestionsForElement = categoryObj.elements[elementName];
+                            
+                            // Display Element Name
+                            const elementHeader = document.createElement("h6");
+                            elementHeader.classList.add("ms-3", "mb-1");
+                            elementHeader.textContent = `要素名: ${elementName}`;
+                            suggestionList.appendChild(elementHeader);
+
+                            // Display Suggestions for the element
+                            const ul = document.createElement("ul");
+                            ul.classList.add("list-group", "mb-2", "ms-4");
+                            suggestionsForElement.forEach(suggestion => {
+                                const li = document.createElement("li");
+                                li.classList.add("list-group-item", "d-flex", "justify-content-between", "align-items-center", "py-1");
+                                // Also pass element name to add button for context if needed later
+                                li.innerHTML = `
+                                    <span>${suggestion}</span>
+                                    <button type="button" class="btn btn-sm btn-outline-primary add-suggestion-btn" data-suggestion="${suggestion}" data-element="${elementName}">追加</button>
+                                `;
+                                ul.appendChild(li);
+                            });
+                            suggestionList.appendChild(ul);
+                        }
+                    }
+                }
+            });
+        } else {
+            suggestionList.innerHTML = `<div class="alert alert-info">提案は見つかりませんでした。</div>`;
+            suggestionContainer.style.display = "block"; // Still show container, but with message
+        }
+    }
+
+
     document.addEventListener('DOMContentLoaded', function() {
         // Activate tab based on URL hash
         let hash = window.location.hash;
@@ -223,6 +277,11 @@
                 new bootstrap.Tab(defaultTab).show();
             }
         }
+
+        // --- Load initial suggestions if available ---
+        if (initialLlmSuggestions && initialLlmSuggestions.length > 0) {
+            renderSuggestions(initialLlmSuggestions);
+        }
     });
 
     // JavaScript for Suggestions Tab
@@ -231,8 +290,9 @@
         const suggestionContainer = document.getElementById("suggestion-container");
         const suggestionList = document.getElementById("suggestion-list");
 
-        suggestionList.innerHTML = ""; // Clear previous suggestions
-        suggestionContainer.style.display = "block"; // Show the container
+        // UI for loading state
+        suggestionList.innerHTML = `<div class="text-center my-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">提案を生成中...</p></div>`;
+        suggestionContainer.style.display = "block"; 
 
         try {
             const response = await fetch(`/document/${docId}/generate_ideas`, {
@@ -249,45 +309,9 @@
             }
 
             const data = await response.json();
-            if (data.suggestions && data.suggestions.length > 0) {
-                data.suggestions.forEach(categoryObj => {
-                    // Display Category Name
-                    const categoryHeader = document.createElement("h5");
-                    categoryHeader.classList.add("mt-3", "mb-2");
-                    categoryHeader.textContent = `分類: ${categoryObj.category}`;
-                    suggestionList.appendChild(categoryHeader);
+            // --- Call the rendering function with newly fetched data ---
+            renderSuggestions(data.suggestions);
 
-                    if (categoryObj.elements) {
-                        for (const elementName in categoryObj.elements) {
-                            if (categoryObj.elements.hasOwnProperty(elementName)) {
-                                const suggestionsForElement = categoryObj.elements[elementName];
-                                
-                                // Display Element Name
-                                const elementHeader = document.createElement("h6");
-                                elementHeader.classList.add("ms-3", "mb-1");
-                                elementHeader.textContent = `要素名: ${elementName}`;
-                                suggestionList.appendChild(elementHeader);
-
-                                // Display Suggestions for the element
-                                const ul = document.createElement("ul");
-                                ul.classList.add("list-group", "mb-2", "ms-4");
-                                suggestionsForElement.forEach(suggestion => {
-                                    const li = document.createElement("li");
-                                    li.classList.add("list-group-item", "d-flex", "justify-content-between", "align-items-center", "py-1");
-                                    li.innerHTML = `
-                                        <span>${suggestion}</span>
-                                        <button type="button" class="btn btn-sm btn-outline-primary add-suggestion-btn" data-suggestion="${suggestion}" data-element="${elementName}">追加</button>
-                                    `;
-                                    ul.appendChild(li);
-                                });
-                                suggestionList.appendChild(ul);
-                            }
-                        }
-                    }
-                });
-            } else {
-                suggestionList.innerHTML = `<div class="alert alert-info">提案は見つかりませんでした。</div>`;
-            }
         } catch (error) {
             console.error("Error generating suggestions:", error);
             suggestionList.innerHTML = `<div class="alert alert-danger">エラーが発生しました: ${error.message}</div>`;
@@ -298,13 +322,18 @@
     document.getElementById("suggestion-list").addEventListener("click", async function(event) {
         if (event.target.classList.contains("add-suggestion-btn")) {
             const suggestion = event.target.dataset.suggestion;
+            const elementName = event.target.dataset.element; // Get element name from data attribute
             const docId = "{{ document.id }}";
+            
+            // To add a suggestion, we need to know which element it belongs to
+            // The backend's add_composition_element currently expects just 'label'
+            // We might need to enhance add_composition_element to accept element_name or category_id
             
             try {
                 const addResponse = await fetch(`/document/${docId}/add_composition_element`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ label: suggestion })
+                    body: JSON.stringify({ label: suggestion, element_name: elementName }) // Pass element_name
                 });
 
                 if (addResponse.ok) {

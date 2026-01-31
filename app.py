@@ -206,6 +206,9 @@ def view_document(doc_id):
     normalize_intent_service(document)
     normalize_composition_elements(document)
 
+    # Ensure llm_suggestions key exists for rendering
+    document.setdefault("llm_suggestions", [])
+
     if request.method == "POST":
         # composition_elements の更新を処理
         if request.form.get("update_composition_elements"):
@@ -319,6 +322,11 @@ def generate_composition_ideas(doc_id):
 
         # The suggestions are already structured by category, so pass them directly
         suggestions = suggestions_dict.get("suggestions", []) # Now 'suggestions' is a list of category objects
+
+        # Save the generated suggestions to the document
+        document["llm_suggestions"] = suggestions
+        save_user_data(session["user_id"], data)
+
         return jsonify({"suggestions": suggestions})
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
