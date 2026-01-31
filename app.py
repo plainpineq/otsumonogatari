@@ -3,36 +3,32 @@ from datetime import timedelta
 import os
 import json
 import io
-from datetime import timedelta
-import os
-import json
 
 from db import init_user_db, get_user_conn
 from auth import login
 from security import hash_password
-from user_files import load_user_data, save_user_data
+from user_files import load_user_data, save_user_data, get_user_data_path
 from ui_labels import UI_LABELS
 from intent_templates import COMMON_INTENTS, DOC_TYPE_INTENTS
-
-
-
+from lm_input import build_composition_ideas_prompt, mock_llm_call
 
 from services.services import (
     create_document,
     find_document,
     update_units_content,
-    DEFAULT_COMPOSITION_META # Add this line
+    update_intent,
+    normalize_composition_elements,
+    update_composition_elements,
+    attach_unit_scores,
+    extract_red_units,
+    build_llm_prompt,
+    DEFAULT_COMPOSITION_META
 )
-
 from services.domain_bridge import (
     document_to_domain,
     domain_to_document
 )
-
-from services.services import update_intent, normalize_composition_elements, update_composition_elements
-from services.services import attach_unit_scores
-from services.services import extract_red_units, build_llm_prompt, build_composition_ideas_prompt
-from intent_service import normalize_intent as normalize_intent_service # Rename to avoid conflict with services.py version
+from intent_service import normalize_intent as normalize_intent_service
 
 app = Flask(__name__)
 app.secret_key = "storyforge-secret"
@@ -278,17 +274,6 @@ def improve_unit(doc_id, unit_index):
 from services.llm_client import call_llm # Import the generic LLM client
 
 
-def mock_llm_call(prompt: str) -> dict:
-    """Mocks a call to the LLM, returning a predefined set of suggestions."""
-    return {
-        "suggestions": [
-            "（モック）登場人物が予期せぬ選択をする",
-            "（モック）過去の出来事が現在の状況に影響を与える",
-            "（モック）主人公が自身の価値観に疑問を抱く出来事",
-            "（モック）新たな対立軸が生まれる",
-            "（モック）結末を暗示する象徴的なアイテムが登場する"
-        ]
-    }
 
 @app.route("/document/<doc_id>/generate_ideas", methods=["POST"])
 def generate_composition_ideas(doc_id):
@@ -306,18 +291,41 @@ def generate_composition_ideas(doc_id):
 
     # Fallback to mock if essential configuration is missing
     if (not llm_api_key and not llm_base_url) or not llm_model_name:
-        prompt = build_composition_ideas_prompt(document)
+        prompt = build_composition_ideas_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"])
         suggestions_dict = mock_llm_call(prompt)
         suggestions = suggestions_dict.get("suggestions", [])
         return jsonify({"suggestions": suggestions, "message": "LLM設定が不完全なため、モックデータを使用しました。"}), 200
 
     # Build prompt for LLM
-    prompt = build_composition_ideas_prompt(document)
+    prompt = build_composition_ideas_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"])
     
     try:
         # Call actual LLM using the dispatcher
-        suggestions_dict = call_llm(llm_api_key, llm_model_name, prompt, base_url=llm_base_url)
-        suggestions = suggestions_dict.get("suggestions", [])
+        raw_text, suggestions_dict = call_llm(llm_api_key, llm_model_name, prompt, base_url=llm_base_url)
+
+        # Save the raw LLM response to a text file
+        user_data_dir = get_user_data_path(session["user_id"])
+        os.makedirs(user_data_dir, exist_ok=True)
+        llm_output_file_path = os.path.join(user_data_dir, "generated_llm.txt")
+        with open(llm_output_file_path, "w", encoding="utf-8") as f:
+            f.write(raw_text)
+        print(f"Raw LLM response written to: {llm_output_file_path}")
+
+        # Save the structured LLM response to a JSON file
+        llm_json_output_file_path = os.path.join(user_data_dir, "generated_llm.json")
+        with open(llm_json_output_file_path, "w", encoding="utf-8") as f:
+            json.dump(suggestions_dict, f, ensure_ascii=False, indent=2)
+        print(f"Structured LLM response written to: {llm_json_output_file_path}")
+
+        # Flatten the dictionary of lists into a single list for the frontend
+        suggestions_data = suggestions_dict.get("suggestions", {})
+        all_suggestions = []
+        if isinstance(suggestions_data, dict):
+            for category_suggestions in suggestions_data.values():
+                if isinstance(category_suggestions, list):
+                    all_suggestions.extend(category_suggestions)
+        
+        suggestions = all_suggestions
         return jsonify({"suggestions": suggestions})
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
