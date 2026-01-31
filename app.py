@@ -317,15 +317,8 @@ def generate_composition_ideas(doc_id):
             json.dump(suggestions_dict, f, ensure_ascii=False, indent=2)
         print(f"Structured LLM response written to: {llm_json_output_file_path}")
 
-        # Flatten the dictionary of lists into a single list for the frontend
-        suggestions_data = suggestions_dict.get("suggestions", {})
-        all_suggestions = []
-        if isinstance(suggestions_data, dict):
-            for category_suggestions in suggestions_data.values():
-                if isinstance(category_suggestions, list):
-                    all_suggestions.extend(category_suggestions)
-        
-        suggestions = all_suggestions
+        # The suggestions are already structured by category, so pass them directly
+        suggestions = suggestions_dict.get("suggestions", []) # Now 'suggestions' is a list of category objects
         return jsonify({"suggestions": suggestions})
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
