@@ -38,16 +38,16 @@ def build_composition_ideas_prompt(document: dict, composition_meta: dict, user_
         formatted_intent = "（作者の意図は特に指定されていません）"
 
     # Extract composition elements based on doc_type_id and format them for the prompt
-    elements_text = "以下の『構成要素』セクションに記載されている各項目について、上記の『作者の意図』に基づき、それぞれ5つの具体的な候補を生成してください。出力は必ず各要素名がキーとなるJSON形式でお願いします。\n\n"
+    elements_text = "" # Start with an empty string
     
     doc_type_data = composition_meta.get("doc_types", {}).get(doc_type_id)
     if doc_type_data and doc_type_data.get("categories"):
         for category in doc_type_data["categories"]:
             if category.get("elements"):
-                elements_text += f"### {category['label']}\n" # Category heading
+                elements_text += f"- 分類名: {category['label']}\n" # Category heading
                 for element in category["elements"]:
                     if element.get("label"):
-                        elements_text += f"- {element['label']}\n"
+                        elements_text += f"  - 要素名: {element['label']}\n" # Indented element
     else:
         elements_text += "（構成要素は定義されていません）\n"
 
