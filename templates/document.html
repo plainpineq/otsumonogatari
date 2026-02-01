@@ -207,6 +207,7 @@
     // Initial data from the backend
     // Ensure this is properly JSON-encoded to handle special characters and nulls
     const initialLlmSuggestions = {{ document.llm_suggestions | tojson | default('[]', true) }}; // Pass existing suggestions from backend
+    const documentData = {{ document | tojson | default('{}', true) }}; // Full document data for order reference
 
     // Extract all unique category labels from the document's composition elements
     const allCategoryLabels = [];
@@ -237,7 +238,34 @@
         let htmlContent = `<h5>分類: ${categoryObj.category}</h5>`;
         htmlContent += `<div class="list-group">`; // Wrap elements in a list-group
 
-        Object.keys(categoryObj.elements).forEach(elementName => {
+        // Determine the expected order of elements for this category from the original document structure
+        let expectedElementOrder = [];
+        const currentCategoryLabel = categoryObj.category;
+
+        // Helper to find category elements from documentData
+        function findElementsInDocumentData(categoriesData) {
+            if (!categoriesData) return;
+            for (const cat of categoriesData) {
+                if (cat.label === currentCategoryLabel && cat.elements) {
+                    expectedElementOrder = cat.elements.map(el => el.label);
+                    return; // Found and extracted, exit
+                }
+            }
+        }
+
+        // Process common categories in documentData
+        const commonCategoriesInDoc = documentData.composition_elements.common.categories;
+        findElementsInDocumentData(commonCategoriesInDoc);
+
+        // Process doc_type_specific categories in documentData if not found in common
+        if (expectedElementOrder.length === 0) {
+            const docTypeSpecificCategoriesInDoc = documentData.composition_elements.doc_type_specific.categories;
+            findElementsInDocumentData(docTypeSpecificCategoriesInDoc);
+        }
+
+        // Now, iterate based on the expected order
+        expectedElementOrder.forEach(elementName => {
+            // Only display if the element actually exists in the LLM's returned suggestions
             if (categoryObj.elements.hasOwnProperty(elementName)) {
                 const suggestionsForElement = categoryObj.elements[elementName];
                 
