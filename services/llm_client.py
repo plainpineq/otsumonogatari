@@ -1,7 +1,9 @@
 import google.genai as genai
 import openai
+from openai import APIConnectionError
 import json
 from typing import Optional
+import re
 
 def _call_gemini_llm(api_key: str, model_name: str, prompt: str) -> (str, dict):
     """
@@ -18,15 +20,23 @@ def _call_gemini_llm(api_key: str, model_name: str, prompt: str) -> (str, dict):
 
     try:
         response = model.generate_content(prompt)
-        response_text = response.text
+        raw_response_text = response.text # Keep the original raw text
         
-        if response_text.startswith("```json"):
-            response_text = response_text.strip("```json").strip("```").strip()
-        elif response_text.startswith("```"):
-            response_text = response_text.strip("```").strip()
+        # Find the JSON block using a regular expression
+        json_match = re.search(r"```(json)?\s*({.*})\s*```", raw_response_text, re.DOTALL)
+        
+        if json_match:
+            # Extract the JSON string from the regex match
+            json_str = json_match.group(2)
+        else:
+            # If no markdown fence is found, assume the whole response is the JSON string
+            json_str = raw_response_text.strip()
 
-        parsed_response = json.loads(response_text)
-        return response_text, parsed_response
+        # Parse the extracted JSON string
+        parsed_response = json.loads(json_str)
+        
+        # Return the ORIGINAL raw text and the parsed dictionary
+        return raw_response_text, parsed_response
     except Exception as e:
         print(f"Error calling Gemini LLM: {e}")
         raise RuntimeError(f"Failed to get response from Gemini LLM: {e}")
@@ -53,9 +63,23 @@ def _call_openai_llm(api_key: str, model_name: str, prompt: str, base_url: Optio
             ],
             response_format={"type": "json_object"}
         )
-        response_text = response.choices[0].message.content
-        parsed_response = json.loads(response_text)
-        return response_text, parsed_response
+        raw_response_text = response.choices[0].message.content
+        
+        # Find the JSON block using a regular expression
+        json_match = re.search(r"```(json)?\s*({.*})\s*```", raw_response_text, re.DOTALL)
+        
+        if json_match:
+            # Extract the JSON string from the regex match
+            json_str = json_match.group(2)
+        else:
+            # If no markdown fence is found, assume the whole response is the JSON string
+            json_str = raw_response_text.strip()
+            
+        parsed_response = json.loads(json_str)
+        return raw_response_text, parsed_response
+    except openai.APIConnectionError as e:
+        print(f"Error connecting to OpenAI-compatible LLM at {base_url}: {e}")
+        raise RuntimeError(f"LLMサーバーへの接続に失敗しました。URL（{base_url}）が正しいか、サーバーが起動しているか確認してください。")
     except Exception as e:
         print(f"Error calling OpenAI LLM: {e}")
         raise RuntimeError(f"Failed to get response from OpenAI LLM: {e}")

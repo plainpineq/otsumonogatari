@@ -1,16 +1,14 @@
 {
     "common_intents": [
-        ["genre", "ジャンル"],
         ["theme", "テーマ・主張"],
         ["audience", "想定読者"],
         ["tone", "文体・トーン"]
     ],
     "doc_type_intents": {
         "小説": [
+            ["genre", "ジャンル"],
             ["worldview", "世界観"],
-            ["era", "時代"],
-            ["person", "人称と視点"],
-            ["length", "長さ"]
+            ["perspective", "視点"]
         ],
         "脚本": [
             ["setting", "舞台"],

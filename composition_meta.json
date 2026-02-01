@@ -11,18 +11,13 @@
         "editable": false,
         "elements": [
           {
-            "id": "theme",
-            "label": "テーマ・問い",
+            "id": "title",
+            "label": "題名",
             "editable": true
           },
           {
-            "id": "value",
-            "label": "価値観",
-            "editable": true
-          },
-          {
-            "id": "constraint",
-            "label": "制約条件",
+            "id": "overview",
+            "label": "概要",
             "editable": true
           }
         ]

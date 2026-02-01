@@ -224,8 +224,11 @@
                 suggestionList.appendChild(categoryHeader);
 
                 if (categoryObj.elements) {
-                    for (const elementName in categoryObj.elements) {
-                        if (categoryObj.elements.hasOwnProperty(elementName)) {
+                    Object.keys(categoryObj.elements).forEach(elementName => {
+                        // It's good practice to keep hasOwnProperty check if properties might come from prototype chain,
+                        // but less critical when using Object.keys().forEach for plain objects.
+                        // We'll keep it for robustness.
+                        if (categoryObj.elements.hasOwnProperty(elementName)) { 
                             const suggestionsForElement = categoryObj.elements[elementName];
                             
                             // Display Element Name
@@ -240,16 +243,18 @@
                             suggestionsForElement.forEach(suggestion => {
                                 const li = document.createElement("li");
                                 li.classList.add("list-group-item", "d-flex", "justify-content-between", "align-items-center", "py-1");
-                                // Also pass element name to add button for context if needed later
+                                
+                                const suggestionText = suggestion;
+
                                 li.innerHTML = `
-                                    <span>${suggestion}</span>
-                                    <button type="button" class="btn btn-sm btn-outline-primary add-suggestion-btn" data-suggestion="${suggestion}" data-element="${elementName}">追加</button>
+                                    <span>${suggestionText}</span>
+                                    <button type="button" class="btn btn-sm btn-outline-primary add-suggestion-btn" data-suggestion="${suggestionText}" data-element="${elementName}">追加</button>
                                 `;
                                 ul.appendChild(li);
                             });
                             suggestionList.appendChild(ul);
                         }
-                    }
+                    }); // End of forEach
                 }
             });
         } else {

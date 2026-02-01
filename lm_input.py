@@ -37,26 +37,47 @@ def build_composition_ideas_prompt(document: dict, composition_meta: dict, user_
     if not formatted_intent:
         formatted_intent = "（作者の意図は特に指定されていません）"
 
-    # Extract composition elements based on doc_type_id and format them for the prompt
+    # Extract composition elements based on all defined categories and format them for the prompt
     elements_text = "" # Start with an empty string
     
-    doc_type_data = composition_meta.get("doc_types", {}).get(doc_type_id)
-    if doc_type_data and doc_type_data.get("categories"):
-        for category in doc_type_data["categories"]:
-            if category.get("elements"):
-                elements_text += f"- 分類名: {category['label']}\n" # Category heading
-                for element in category["elements"]:
-                    if element.get("label"):
-                        elements_text += f"  - 要素名: {element['label']}\n" # Indented element
-    else:
-        elements_text += "（構成要素は定義されていません）\n"
+    has_elements = False
+
+    # Helper function to append categories and elements
+    def append_elements_to_text(categories_data):
+        nonlocal has_elements
+        nonlocal elements_text # Declare elements_text as nonlocal
+        if categories_data:
+            for category in categories_data:
+                elements_text_local = "" # Use a local string to check if elements are added
+                if category.get("elements"):
+                    elements_text_local += f"- 分類名: {category['label']}\n" # Category heading
+                    for element in category["elements"]:
+                        if element.get("label"):
+                            elements_text_local += f"  - 要素名: {element['label']}\n" # Indented element
+                            has_elements = True
+                    elements_text += elements_text_local
+
+    # Process common categories
+    common_categories = document.get("composition_elements", {}).get("common", {}).get("categories")
+    append_elements_to_text(common_categories)
+
+    # Process doc_type_specific categories
+    doc_type_specific_categories = document.get("composition_elements", {}).get("doc_type_specific", {}).get("categories")
+    append_elements_to_text(doc_type_specific_categories)
+    
+    if not has_elements:
+        elements_text = "（構成要素は定義されていません）\n"
+
+    # Generate the dynamic JSON example for the prompt
+    dynamic_json_example = _build_dynamic_json_example(document)
 
     # Fill template placeholders
     prompt = template_content.format(
         document_title=document_title,
         doc_type=doc_type_label, # Use the human-readable label for the prompt
         intent_text=formatted_intent,
-        elements_text=elements_text
+        elements_text=elements_text,
+        dynamic_json_example=dynamic_json_example # New placeholder
     )
 
     # Output the generated prompt to a file for debugging/verification
@@ -106,8 +127,56 @@ def mock_llm_call(prompt: str) -> dict:
                 if element_label:
                     mock_suggestions["suggestions"][element_label] = [f"{element_label}の候補{i+1}" for i in range(5)]
     
-    if not mock_suggestions["suggestions"]:
-        # Fallback if no specific elements are found or parsed
+    # If no specific elements are found or parsed
         mock_suggestions["suggestions"]["汎用構成要素"] = [f"汎用アイデア{i+1}" for i in range(5)]
         
     return mock_suggestions
+
+def _build_dynamic_json_example(document: dict) -> str:
+    """
+    Generates a dynamic JSON example string based on the document's composition elements.
+    This example serves as a strong few-shot example for the LLM.
+    """
+    dynamic_suggestions_list = []
+
+    # Helper to process categories (common or doc_type_specific)
+    def process_categories(categories_data):
+        if not categories_data:
+            return
+
+        for category_obj in categories_data:
+            category_name = category_obj.get("label")
+            if not category_name:
+                continue
+
+            elements_dict = {}
+            elements_in_category = category_obj.get("elements")
+            if elements_in_category:
+                for element_obj in elements_in_category:
+                    element_label = element_obj.get("label")
+                    if element_label:
+                        # Use generic suggestion placeholders
+                        elements_dict[element_label] = [f"提案{i+1}" for i in range(5)]
+            
+            # Only add category if it has elements
+            if elements_dict:
+                dynamic_suggestions_list.append({
+                    "category": category_name,
+                    "elements": elements_dict
+                })
+
+    # Process common categories
+    common_categories = document.get("composition_elements", {}).get("common", {}).get("categories")
+    process_categories(common_categories)
+
+    # Process doc_type_specific categories
+    doc_type_specific_categories = document.get("composition_elements", {}).get("doc_type_specific", {}).get("categories")
+    process_categories(doc_type_specific_categories)
+    
+    # Wrap in the final "suggestions" structure
+    final_json_structure = {"suggestions": dynamic_suggestions_list}
+
+    # Generate JSON string with proper indentation and Japanese character handling
+    # Escaping curly braces for Python's .format() is not needed here
+    # as this string is already the final JSON.
+    return json.dumps(final_json_structure, indent=2, ensure_ascii=False)
