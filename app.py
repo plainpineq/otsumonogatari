@@ -1,16 +1,49 @@
 from flask import Flask, render_template, request, redirect, session, send_file, make_response, flash, jsonify
-from datetime import timedelta
+from datetime import timedelta, datetime
 import os
 import json
 import io
+import glob
 
 from db import init_user_db, get_user_conn
 from auth import login
 from security import hash_password
 from user_files import load_user_data, save_user_data, get_user_data_path
+
+def _reset_generation_counter(user_id: str):
+    session[f"generation_counter_{user_id}"] = 0
+
+def _get_next_generation_number(user_id: str) -> int:
+    if f"generation_counter_{user_id}" not in session:
+        _reset_generation_counter(user_id)
+    session[f"generation_counter_{user_id}"] += 1
+    return session[f"generation_counter_{user_id}"]
+
+
 from ui_labels import UI_LABELS
 from intent_templates import COMMON_INTENTS, DOC_TYPE_INTENTS
 from lm_input import build_composition_ideas_prompt, mock_llm_call
+
+# Helper function for cleaning up old generated files
+def _cleanup_old_generated_files(user_id: str):
+    user_data_dir = get_user_data_path(user_id)
+    if not os.path.exists(user_data_dir):
+        return
+
+    # Patterns for files to delete
+    patterns = [
+        os.path.join(user_data_dir, "generated_prompt_*.md"),
+        os.path.join(user_data_dir, "generated_llm_*.txt"),
+        os.path.join(user_data_dir, "generated_llm_*.json")
+    ]
+
+    for pattern in patterns:
+        for file_path in glob.glob(pattern):
+            try:
+                os.remove(file_path)
+                print(f"Cleaned up old generated file: {file_path}")
+            except OSError as e:
+                print(f"Error deleting file {file_path}: {e}")
 
 from services.services import (
     create_document,
@@ -29,6 +62,8 @@ from services.domain_bridge import (
     domain_to_document
 )
 from intent_service import normalize_intent as normalize_intent_service
+
+
 
 app = Flask(__name__)
 app.secret_key = "storyforge-secret"
@@ -287,6 +322,19 @@ def generate_composition_ideas(doc_id):
     if document is None:
         return jsonify({"error": "Document not found"}), 404
 
+    request_data = request.get_json()
+    category_label = request_data.get("category_label") # Get category label from request
+    is_first_category_in_session = request_data.get("is_first_category_in_session", False)
+
+    # If this is the first category request in a new generation session, clean up and reset counter
+    if is_first_category_in_session:
+        _cleanup_old_generated_files(session["user_id"])
+        _reset_generation_counter(session["user_id"])
+
+    # Get the next sequential number for this generation
+    current_generation_number = _get_next_generation_number(session["user_id"])
+    suffix = f"_{current_generation_number}"
+
     # Get LLM configuration from session
     llm_api_key = session.get("llm_api_key")
     llm_model_name = session.get("llm_model_name")
@@ -294,28 +342,28 @@ def generate_composition_ideas(doc_id):
 
     # Fallback to mock if essential configuration is missing
     if (not llm_api_key and not llm_base_url) or not llm_model_name:
-        prompt = build_composition_ideas_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"])
-        suggestions_dict = mock_llm_call(prompt)
+        prompt = build_composition_ideas_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"], target_category_label=category_label, suffix=suffix)
+        suggestions_dict = mock_llm_call(prompt) # mock_llm_call does not use suffix, so it writes to the default names
         suggestions = suggestions_dict.get("suggestions", [])
         return jsonify({"suggestions": suggestions, "message": "LLM設定が不完全なため、モックデータを使用しました。"}), 200
 
     # Build prompt for LLM
-    prompt = build_composition_ideas_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"])
+    prompt = build_composition_ideas_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"], target_category_label=category_label, suffix=suffix)
     
     try:
         # Call actual LLM using the dispatcher
         raw_text, suggestions_dict = call_llm(llm_api_key, llm_model_name, prompt, base_url=llm_base_url)
 
-        # Save the raw LLM response to a text file
+        # Save the raw LLM response to a text file with suffix
         user_data_dir = get_user_data_path(session["user_id"])
         os.makedirs(user_data_dir, exist_ok=True)
-        llm_output_file_path = os.path.join(user_data_dir, "generated_llm.txt")
+        llm_output_file_path = os.path.join(user_data_dir, f"generated_llm{suffix}.txt")
         with open(llm_output_file_path, "w", encoding="utf-8") as f:
             f.write(raw_text)
         print(f"Raw LLM response written to: {llm_output_file_path}")
 
-        # Save the structured LLM response to a JSON file
-        llm_json_output_file_path = os.path.join(user_data_dir, "generated_llm.json")
+        # Save the structured LLM response to a JSON file with suffix
+        llm_json_output_file_path = os.path.join(user_data_dir, f"generated_llm{suffix}.json")
         with open(llm_json_output_file_path, "w", encoding="utf-8") as f:
             json.dump(suggestions_dict, f, ensure_ascii=False, indent=2)
         print(f"Structured LLM response written to: {llm_json_output_file_path}")

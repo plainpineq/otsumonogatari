@@ -203,66 +203,81 @@
         </div>
     </div>
 </div>
-
 <script>
     // Initial data from the backend
     // Ensure this is properly JSON-encoded to handle special characters and nulls
     const initialLlmSuggestions = {{ document.llm_suggestions | tojson | default('[]', true) }}; // Pass existing suggestions from backend
 
-    function renderSuggestions(suggestionsData) {
+    // Extract all unique category labels from the document's composition elements
+    const allCategoryLabels = [];
+    {% if document.composition_elements.common.categories %}
+        {% for category in document.composition_elements.common.categories %}
+            allCategoryLabels.push("{{ category.label }}");
+        {% endfor %}
+    {% endif %}
+    {% if document.composition_elements.doc_type_specific.categories %}
+        {% for category in document.composition_elements.doc_type_specific.categories %}
+            allCategoryLabels.push("{{ category.label }}");
+        {% endfor %}
+    {% endif %}
+
+    // New function to render suggestions for a single category
+    function renderSingleCategorySuggestions(sectionId, categoryObj) {
+        const categorySection = document.getElementById(sectionId);
+        categorySection.innerHTML = ""; // Clear loading spinner
+
+        if (!categoryObj || !categoryObj.elements) {
+            categorySection.innerHTML = `
+                <h5>分類: ${categoryObj.category}</h5>
+                <div class="alert alert-info mb-0">提案は見つかりませんでした。</div>
+            `;
+            return;
+        }
+
+        let htmlContent = `<h5>分類: ${categoryObj.category}</h5>`;
+        htmlContent += `<div class="list-group">`; // Wrap elements in a list-group
+
+        Object.keys(categoryObj.elements).forEach(elementName => {
+            if (categoryObj.elements.hasOwnProperty(elementName)) {
+                const suggestionsForElement = categoryObj.elements[elementName];
+                
+                htmlContent += `<h6 class="ms-3 mb-1 mt-2">要素名: ${elementName}</h6>`; // Element Name
+
+                htmlContent += `<ul class="list-group mb-2 ms-4">`;
+                suggestionsForElement.forEach(suggestion => {
+                    htmlContent += `
+                        <li class="list-group-item d-flex justify-content-between align-items-center py-1">
+                            <span>${suggestion}</span>
+                            <button type="button" class="btn btn-sm btn-outline-primary add-suggestion-btn" data-suggestion="${suggestion}" data-element="${elementName}">追加</button>
+                        </li>
+                    `;
+                });
+                htmlContent += `</ul>`;
+            }
+        });
+        htmlContent += `</div>`; // Close list-group
+        categorySection.innerHTML = htmlContent;
+    }
+
+    // Adapt renderSuggestions for initial load of multiple categories
+    function renderSuggestions(suggestionsData) { // This function is for initial load
         const suggestionList = document.getElementById("suggestion-list");
-        suggestionList.innerHTML = ""; // Clear previous suggestions
+        suggestionList.innerHTML = ""; // Clear all initial suggestions
         const suggestionContainer = document.getElementById("suggestion-container");
 
         if (suggestionsData && suggestionsData.length > 0) {
             suggestionContainer.style.display = "block";
             suggestionsData.forEach(categoryObj => {
-                // Display Category Name
-                const categoryHeader = document.createElement("h5");
-                categoryHeader.classList.add("mt-3", "mb-2");
-                categoryHeader.textContent = `分類: ${categoryObj.category}`;
-                suggestionList.appendChild(categoryHeader);
-
-                if (categoryObj.elements) {
-                    Object.keys(categoryObj.elements).forEach(elementName => {
-                        // It's good practice to keep hasOwnProperty check if properties might come from prototype chain,
-                        // but less critical when using Object.keys().forEach for plain objects.
-                        // We'll keep it for robustness.
-                        if (categoryObj.elements.hasOwnProperty(elementName)) { 
-                            const suggestionsForElement = categoryObj.elements[elementName];
-                            
-                            // Display Element Name
-                            const elementHeader = document.createElement("h6");
-                            elementHeader.classList.add("ms-3", "mb-1");
-                            elementHeader.textContent = `要素名: ${elementName}`;
-                            suggestionList.appendChild(elementHeader);
-
-                            // Display Suggestions for the element
-                            const ul = document.createElement("ul");
-                            ul.classList.add("list-group", "mb-2", "ms-4");
-                            suggestionsForElement.forEach(suggestion => {
-                                const li = document.createElement("li");
-                                li.classList.add("list-group-item", "d-flex", "justify-content-between", "align-items-center", "py-1");
-                                
-                                const suggestionText = suggestion;
-
-                                li.innerHTML = `
-                                    <span>${suggestionText}</span>
-                                    <button type="button" class="btn btn-sm btn-outline-primary add-suggestion-btn" data-suggestion="${suggestionText}" data-element="${elementName}">追加</button>
-                                `;
-                                ul.appendChild(li);
-                            });
-                            suggestionList.appendChild(ul);
-                        }
-                    }); // End of forEach
-                }
+                const categoryLabel = categoryObj.category;
+                const categorySectionId = `suggestions-for-${categoryLabel.replace(/\s/g, '-')}`;
+                suggestionList.innerHTML += `<div id="${categorySectionId}" class="card p-3 mb-2"></div>`; // Create div for category
+                renderSingleCategorySuggestions(categorySectionId, categoryObj);
             });
         } else {
             suggestionList.innerHTML = `<div class="alert alert-info">提案は見つかりませんでした。</div>`;
-            suggestionContainer.style.display = "block"; // Still show container, but with message
+            suggestionContainer.style.display = "block";
         }
     }
-
 
     document.addEventListener('DOMContentLoaded', function() {
         // Activate tab based on URL hash
@@ -295,32 +310,84 @@
         const suggestionContainer = document.getElementById("suggestion-container");
         const suggestionList = document.getElementById("suggestion-list");
 
-        // UI for loading state
-        suggestionList.innerHTML = `<div class="text-center my-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">提案を生成中...</p></div>`;
-        suggestionContainer.style.display = "block"; 
+        // Clear previous suggestions entirely before starting a new generation cycle
+        suggestionList.innerHTML = ""; 
+        suggestionContainer.style.display = "block";
 
-        try {
-            const response = await fetch(`/document/${docId}/generate_ideas`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
+        // Disable button during generation
+        const generateBtn = this;
+        generateBtn.disabled = true;
+        generateBtn.textContent = "生成中...";
+
+        // Flag to indicate the very first category request in this session
+        let isFirstCategory = true;
+
+        for (const categoryLabel of allCategoryLabels) {
+            // Display loading state for the current category
+            const categorySectionId = `suggestions-for-${categoryLabel.replace(/\s/g, '-')}`;
+            suggestionList.innerHTML += `
+                <div id="${categorySectionId}" class="card p-3 mb-2">
+                    <h5>分類: ${categoryLabel}</h5>
+                    <div class="text-center my-2">
+                        <div class="spinner-border text-secondary spinner-border-sm" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-1">提案を生成中...</p>
+                    </div>
+                </div>
+            `;
+            // Scroll to the bottom to show new loading spinners
+            suggestionList.scrollTop = suggestionList.scrollHeight;
+
+
+            try {
+                const response = await fetch(`/document/${docId}/generate_ideas`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ 
+                        category_label: categoryLabel,
+                        is_first_category_in_session: isFirstCategory // Pass the flag
+                    })
+                });
+
+                // After the first request, set the flag to false for subsequent requests
+                isFirstCategory = false;
+
+                const categorySection = document.getElementById(categorySectionId);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    categorySection.innerHTML = `
+                        <h5>分類: ${categoryLabel}</h5>
+                        <div class="alert alert-danger mb-0">${errorData.error || "提案の生成に失敗しました。"}</div>
+                    `;
+                    continue; // Continue to next category
                 }
-            });
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                suggestionList.innerHTML = `<div class="alert alert-danger">${errorData.error || "提案の生成に失敗しました。"}</div>`;
-                return;
+                const data = await response.json();
+                // --- Call a new rendering function for just this category ---
+                // Backend now returns suggestions for only ONE category in the "suggestions" array
+                if (data.suggestions && data.suggestions.length > 0) {
+                    renderSingleCategorySuggestions(categorySectionId, data.suggestions[0]); 
+                } else {
+                     categorySection.innerHTML = `
+                        <h5>分類: ${categoryLabel}</h5>
+                        <div class="alert alert-info mb-0">この分類の提案は見つかりませんでした。</div>
+                    `;
+                }
+
+            } catch (error) {
+                console.error(`Error generating suggestions for ${categoryLabel}:`, error);
+                const categorySection = document.getElementById(categorySectionId);
+                categorySection.innerHTML = `
+                    <h5>分類: ${categoryLabel}</h5>
+                    <div class="alert alert-danger mb-0">エラーが発生しました: ${error.message}</div>
+                `;
             }
-
-            const data = await response.json();
-            // --- Call the rendering function with newly fetched data ---
-            renderSuggestions(data.suggestions);
-
-        } catch (error) {
-            console.error("Error generating suggestions:", error);
-            suggestionList.innerHTML = `<div class="alert alert-danger">エラーが発生しました: ${error.message}</div>`;
         }
+        generateBtn.disabled = false;
+        generateBtn.textContent = "提案を生成";
     });
 
     // Event delegation for Add Suggestion buttons

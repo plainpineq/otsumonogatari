@@ -2,12 +2,15 @@
 import json
 import os
 from user_files import get_user_data_path
+from typing import Optional
 
 # ... existing code ...
 
-def build_composition_ideas_prompt(document: dict, composition_meta: dict, user_id: str) -> str:
+def build_composition_ideas_prompt(document: dict, composition_meta: dict, user_id: str, target_category_label: Optional[str] = None, suffix: str = "") -> str:
     """
     Builds a prompt for the LLM to generate composition element suggestions.
+    If target_category_label is provided, the prompt will be specific to that category.
+    The suffix is used for naming generated files.
     """
     doc_type_label = document.get("doc_type", "不明")
     document_title = document.get("title", "不明なドキュメント")
@@ -48,6 +51,10 @@ def build_composition_ideas_prompt(document: dict, composition_meta: dict, user_
         nonlocal elements_text # Declare elements_text as nonlocal
         if categories_data:
             for category in categories_data:
+                # Filter by target_category_label if provided
+                if target_category_label and category.get("label") != target_category_label:
+                    continue
+
                 elements_text_local = "" # Use a local string to check if elements are added
                 if category.get("elements"):
                     elements_text_local += f"- 分類名: {category['label']}\n" # Category heading
@@ -69,7 +76,8 @@ def build_composition_ideas_prompt(document: dict, composition_meta: dict, user_
         elements_text = "（構成要素は定義されていません）\n"
 
     # Generate the dynamic JSON example for the prompt
-    dynamic_json_example = _build_dynamic_json_example(document)
+    # Pass target_category_label so example is also specific to the category
+    dynamic_json_example = _build_dynamic_json_example(document, target_category_label=target_category_label)
 
     # Fill template placeholders
     prompt = template_content.format(
@@ -83,7 +91,7 @@ def build_composition_ideas_prompt(document: dict, composition_meta: dict, user_
     # Output the generated prompt to a file for debugging/verification
     user_data_dir = get_user_data_path(user_id)
     os.makedirs(user_data_dir, exist_ok=True) # Ensure the directory exists
-    output_file_path = os.path.join(user_data_dir, "generated_prompt.md")
+    output_file_path = os.path.join(user_data_dir, f"generated_prompt{suffix}.md")
     try:
         with open(output_file_path, "w", encoding="utf-8") as f:
             f.write(prompt)
@@ -132,9 +140,10 @@ def mock_llm_call(prompt: str) -> dict:
         
     return mock_suggestions
 
-def _build_dynamic_json_example(document: dict) -> str:
+def _build_dynamic_json_example(document: dict, target_category_label: Optional[str] = None) -> str:
     """
     Generates a dynamic JSON example string based on the document's composition elements.
+    If target_category_label is provided, the example will be specific to that category.
     This example serves as a strong few-shot example for the LLM.
     """
     dynamic_suggestions_list = []
@@ -147,6 +156,10 @@ def _build_dynamic_json_example(document: dict) -> str:
         for category_obj in categories_data:
             category_name = category_obj.get("label")
             if not category_name:
+                continue
+            
+            # Filter by target_category_label if provided
+            if target_category_label and category_name != target_category_label:
                 continue
 
             elements_dict = {}
