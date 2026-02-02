@@ -377,7 +377,8 @@
                     body: JSON.stringify({ 
                         category_label: categoryLabel,
                         is_first_category_in_session: isFirstCategory // Pass the flag
-                    })
+                    }),
+                    credentials: "same-origin" // Ensure session cookie is sent
                 });
 
                 // After the first request, set the flag to false for subsequent requests

@@ -84,16 +84,20 @@ def _call_openai_llm(api_key: str, model_name: str, prompt: str, base_url: Optio
         print(f"Error calling OpenAI LLM: {e}")
         raise RuntimeError(f"Failed to get response from OpenAI LLM: {e}")
 
-def call_llm(api_key: str, model_name: str, prompt: str, base_url: Optional[str] = None) -> (str, dict):
+def call_llm(api_key: str, model_name: str, prompt: str, llm_provider: str, base_url: Optional[str] = None) -> (str, dict):
     """
-    Dispatches to the appropriate LLM client based on the model name and optional base_url.
+    Dispatches to the appropriate LLM client based on the llm_provider.
     """
-    if base_url: # If base_url is provided, assume OpenAI-compatible API
-        # Even if it's a Gemini model name, if base_url is given, prioritize OpenAI-compatible client
-        return _call_openai_llm(api_key, model_name, prompt, base_url)
-    elif model_name.startswith("gpt") or model_name.startswith("text-davinci"):
-        return _call_openai_llm(api_key, model_name, prompt)
-    elif model_name.startswith("gemini"):
+    if llm_provider == "gemini":
         return _call_gemini_llm(api_key, model_name, prompt)
+    elif llm_provider == "chatgpt":
+        # ChatGPT specific logic for model_name and base_url can be added here if needed
+        # For now, it will use _call_openai_llm, which is compatible with OpenAI's API
+        return _call_openai_llm(api_key, model_name, prompt)
+    elif llm_provider == "other":
+        # 'other' assumes an OpenAI-compatible API, thus uses _call_openai_llm
+        if not base_url:
+            raise ValueError("Base URL is required for 'other' LLM provider.")
+        return _call_openai_llm(api_key, model_name, prompt, base_url)
     else:
-        raise ValueError(f"Unsupported LLM model vendor for model: {model_name}. Please specify a valid model name (e.g., 'gemini-pro' or 'gpt-3.5-turbo'), or provide a 'base_url' for OpenAI-compatible APIs.")
+        raise ValueError(f"Unsupported LLM provider: {llm_provider}.")

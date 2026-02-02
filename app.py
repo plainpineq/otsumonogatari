@@ -125,7 +125,8 @@ def dashboard():
         "llm": {
             "api_key": session.get("llm_api_key", ""),
             "model_name": session.get("llm_model_name", ""),
-            "base_url": session.get("llm_base_url", "") # Retrieve base URL from session
+            "base_url": session.get("llm_base_url", ""),
+            "provider": session.get("llm_provider", "gemini")
         },
         "quantum": {
             "api_key": session.get("quantum_server_api_key", "")
@@ -201,8 +202,21 @@ def save_config():
 
     # Store LLM config in session
     session["llm_api_key"] = request.form["llm_api_key"]
-    session["llm_model_name"] = request.form["llm_model_name"]
-    session["llm_base_url"] = request.form["llm_base_url"] # Store new base URL
+    
+    llm_provider = request.form.get("llm_provider", "gemini")
+    session["llm_provider"] = llm_provider
+
+    if llm_provider == "gemini":
+        session["llm_model_name"] = "gemini-pro" # Default for Gemini
+        session["llm_base_url"] = "" # Gemini typically doesn't use a custom base_url
+    elif llm_provider == "chatgpt":
+        session["llm_model_name"] = "gpt-4o-mini" # Default for ChatGPT
+        session["llm_base_url"] = "" # ChatGPT typically doesn't use a custom base_url
+    else: # other
+        # For 'other', use the values provided in the form
+        session["llm_model_name"] = request.form["llm_model_name"]
+        session["llm_base_url"] = request.form["llm_base_url"]
+    
     session["quantum_server_api_key"] = request.form["quantum_server_api_key"]
     
     flash("設定を保存しました。", "success")
@@ -339,20 +353,27 @@ def generate_composition_ideas(doc_id):
     llm_api_key = session.get("llm_api_key")
     llm_model_name = session.get("llm_model_name")
     llm_base_url = session.get("llm_base_url")
+    llm_provider = session.get("llm_provider", "gemini") # Retrieve llm_provider
 
-    # Fallback to mock if essential configuration is missing
-    if (not llm_api_key and not llm_base_url) or not llm_model_name:
+    # Refined mock fallback logic
+    # Mock if API key is missing for Gemini/ChatGPT, or if any of the three are missing for 'other'
+    is_config_incomplete = False
+    if llm_provider in ["gemini", "chatgpt"] and not llm_api_key:
+        is_config_incomplete = True
+    elif llm_provider == "other" and (not llm_model_name or not llm_base_url):
+        is_config_incomplete = True
+    
+    if is_config_incomplete:
         prompt = build_composition_ideas_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"], target_category_label=category_label, suffix=suffix)
         suggestions_dict = mock_llm_call(prompt) # mock_llm_call does not use suffix, so it writes to the default names
-        suggestions = suggestions_dict.get("suggestions", [])
-        return jsonify({"suggestions": suggestions, "message": "LLM設定が不完全なため、モックデータを使用しました。"}), 200
+        return jsonify({"suggestions": suggestions_dict.get("suggestions", []), "message": "LLM設定が不完全なため、モックデータを使用しました。"}), 200
 
     # Build prompt for LLM
     prompt = build_composition_ideas_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"], target_category_label=category_label, suffix=suffix)
     
     try:
         # Call actual LLM using the dispatcher
-        raw_text, suggestions_dict = call_llm(llm_api_key, llm_model_name, prompt, base_url=llm_base_url)
+        raw_text, suggestions_dict = call_llm(llm_api_key, llm_model_name, prompt, llm_provider, base_url=llm_base_url)
 
         # Save the raw LLM response to a text file with suffix
         user_data_dir = get_user_data_path(session["user_id"])
@@ -371,8 +392,18 @@ def generate_composition_ideas(doc_id):
         # The suggestions are already structured by category, so pass them directly
         suggestions = suggestions_dict.get("suggestions", []) # Now 'suggestions' is a list of category objects
 
-        # Save the generated suggestions to the document
-        document["llm_suggestions"] = suggestions
+        # If this is the first call in the generation sequence, clear old suggestions
+        if is_first_category_in_session:
+            document["llm_suggestions"] = []
+        
+        # Ensure llm_suggestions key exists and is a list
+        if "llm_suggestions" not in document or not isinstance(document["llm_suggestions"], list):
+            document["llm_suggestions"] = []
+
+        # Append new suggestions
+        if suggestions:
+            document["llm_suggestions"].extend(suggestions)
+            
         save_user_data(session["user_id"], data)
 
         return jsonify({"suggestions": suggestions})
