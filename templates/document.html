@@ -22,6 +22,9 @@
     <li class="nav-item" role="presentation">
         <button class="nav-link" id="suggestions-tab" data-bs-toggle="tab" data-bs-target="#suggestions" type="button" role="tab" aria-controls="suggestions" aria-selected="false">提案</button>
     </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="evaluation-tab" data-bs-toggle="tab" data-bs-target="#evaluation" type="button" role="tab" aria-controls="evaluation" aria-selected="false">評価</button>
+    </li>
 </ul>
 
 <div class="tab-content" id="documentTabContent">
@@ -202,6 +205,55 @@
             </div>
         </div>
     </div>
+    <div class="tab-pane fade" id="evaluation" role="tabpanel" aria-labelledby="evaluation-tab">
+        <div class="card p-4 shadow-sm mt-3">
+            <h2 class="h4 mb-3">意味ラベル評価</h2>
+            <p>「提案」タブで生成されたAIからの提案テキストに、物語的な役割や性質を示す「意味ラベル」を付与します。</p>
+            <div class="d-flex gap-2">
+                <form id="evaluation-form" action="{{ url_for('evaluate_document', doc_id=document.id) }}" method="POST">
+                    <button type="submit" id="evaluation-button" class="btn btn-primary">評価を実行</button>
+                </form>
+                {% if document.semantic_labels %}
+                <a href="{{ url_for('download_evaluation', doc_id=document.id) }}" class="btn btn-secondary">評価結果をCSVでダウンロード</a>
+                {% endif %}
+            </div>
+            <hr>
+
+            {% if document.semantic_labels %}
+                <h3 class="h5 mt-3">評価結果</h3>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 10%;">カテゴリ</th>
+                                <th style="width: 10%;">要素名</th>
+                                <th style="width: 35%;">テキスト</th>
+                                <th style="width: 10%;">変化の種類</th>
+                                <th style="width: 10%;">因果の扱い</th>
+                                <th style="width: 10%;">対立の種類</th>
+                                <th style="width: 15%;">読者効果</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for item in document.semantic_labels %}
+                            <tr>
+                                <td>{{ item.category }}</td>
+                                <td>{{ item.element }}</td>
+                                <td><small>{{ item.text }}</small></td>
+                                <td>{{ item.labels.change_type }}</td>
+                                <td>{{ item.labels.causal_exposure }}</td>
+                                <td>{{ item.labels.conflict_type }}</td>
+                                <td>{{ item.labels.reader_effect | join(', ') }}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% elif document.semantic_labels is not none %}
+                <div class="alert alert-warning">評価結果がありません。</div>
+            {% endif %}
+        </div>
+    </div>
 </div>
 <script>
     // Initial data from the backend
@@ -319,8 +371,8 @@
         if (tabToActivate) {
             new bootstrap.Tab(tabToActivate).show();
         } else {
-            // Activate the default tab ('suggestions') if no hash or hash is invalid
-            let defaultTab = document.getElementById('suggestions-tab');
+            // Activate the default tab ('intent') if no hash or hash is invalid
+            let defaultTab = document.getElementById('intent-tab');
             if (defaultTab) {
                 new bootstrap.Tab(defaultTab).show();
             }
@@ -451,5 +503,18 @@
             }
         }
     });
+
+    // JavaScript for Evaluation Tab
+    const evalForm = document.getElementById('evaluation-form');
+    if (evalForm) {
+        evalForm.addEventListener('submit', function() {
+            const button = document.getElementById('evaluation-button');
+            button.disabled = true;
+            button.innerHTML = `
+                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                評価中...
+            `;
+        });
+    }
 </script>
 {% endblock %}

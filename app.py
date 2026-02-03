@@ -4,6 +4,7 @@ import os
 import json
 import io
 import glob
+import pandas as pd
 
 from db import init_user_db, get_user_conn
 from auth import login
@@ -62,6 +63,7 @@ from services.domain_bridge import (
     domain_to_document
 )
 from intent_service import normalize_intent as normalize_intent_service
+from semantic_labeler import label_suggestions
 
 
 
@@ -494,6 +496,67 @@ def download_document(doc_id):
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
+
+
+@app.route("/document/<doc_id>/evaluate", methods=["POST"])
+def evaluate_document(doc_id):
+    if "user_id" not in session:
+        return redirect("/login")
+
+    data = load_user_data(session["user_id"])
+    document = find_document(data, doc_id)
+
+    if document is None:
+        flash("ドキュメントが見つかりません。", "error")
+        return redirect("/dashboard")
+
+    if "llm_suggestions" in document and document["llm_suggestions"]:
+        # The label_suggestions function expects a dict with the key "llm_suggestions"
+        evaluation_input = {"llm_suggestions": document["llm_suggestions"]}
+        
+        user_data_dir = get_user_data_path(session["user_id"])
+        log_file_path = os.path.join(user_data_dir, "labeler.log")
+
+        labeled_results = label_suggestions(evaluation_input, log_file_path=log_file_path)
+        
+        document["semantic_labels"] = labeled_results
+        save_user_data(session["user_id"], data)
+        flash("意味ラベルの評価が完了しました。", "success")
+    else:
+        flash("評価対象のAI提案がありません。「提案」タブで先にアイデアを生成してください。", "warning")
+
+    return redirect(f"/document/{doc_id}#evaluation")
+
+
+@app.route("/document/<doc_id>/download_evaluation")
+def download_evaluation(doc_id):
+    if "user_id" not in session:
+        return redirect("/login")
+
+    data = load_user_data(session["user_id"])
+    document = find_document(data, doc_id)
+
+    if not document or "semantic_labels" not in document or not document["semantic_labels"]:
+        flash("ダウンロードする評価データがありません。", "warning")
+        return redirect(f"/document/{doc_id}#evaluation")
+
+    try:
+        # Flatten the data
+        df = pd.json_normalize(document["semantic_labels"], sep='_')
+        
+        # Convert to CSV
+        csv_data = df.to_csv(index=False, encoding='utf-8-sig')
+        
+        # Create response
+        response = make_response(csv_data)
+        response.headers["Content-Disposition"] = "attachment; filename=evaluation_results.csv"
+        response.headers["Content-Type"] = "text/csv; charset=utf-8-sig"
+        return response
+
+    except Exception as e:
+        flash(f"CSVの生成中にエラーが発生しました: {e}", "error")
+        return redirect(f"/document/{doc_id}#evaluation")
+
 
 if __name__ == "__main__":
     app.run(debug=True)
