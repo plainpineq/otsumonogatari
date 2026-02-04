@@ -53,8 +53,8 @@ from services.services import (
     update_intent,
     normalize_composition_elements,
     update_composition_elements,
-    attach_unit_scores,
-    extract_red_units,
+#    attach_unit_scores,
+#    extract_red_units,
     build_llm_prompt,
     DEFAULT_COMPOSITION_META
 )
