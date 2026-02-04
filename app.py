@@ -64,6 +64,7 @@ from services.domain_bridge import (
 )
 from intent_service import normalize_intent as normalize_intent_service
 from semantic_labeler import label_suggestions
+from feature_extractor import FeatureExtractor
 
 
 
@@ -556,6 +557,34 @@ def download_evaluation(doc_id):
     except Exception as e:
         flash(f"CSVの生成中にエラーが発生しました: {e}", "error")
         return redirect(f"/document/{doc_id}#evaluation")
+
+
+@app.route("/document/<doc_id>/vectorize", methods=["POST"])
+def vectorize_document(doc_id):
+    if "user_id" not in session:
+        return redirect("/login")
+
+    data = load_user_data(session["user_id"])
+    document = find_document(data, doc_id)
+
+    if not document or "semantic_labels" not in document or not document["semantic_labels"]:
+        flash("数値化する評価済みデータがありません。「評価」タブで先に意味ラベルを付与してください。", "warning")
+        return redirect(f"/document/{doc_id}#evaluation")
+
+    # Instantiate the extractor and call the method
+    try:
+        extractor = FeatureExtractor()
+        numerical_features = extractor.create_numerical_features(document["semantic_labels"])
+    except (FileNotFoundError, ValueError) as e:
+        flash(f"特徴量の数値化中にエラーが発生しました: {e}", "error")
+        return redirect(f"/document/{doc_id}#evaluation")
+    
+    document["numerical_features"] = numerical_features
+    save_user_data(session["user_id"], data)
+    flash("数値特徴量への変換が完了しました。", "success")
+
+    return redirect(f"/document/{doc_id}#vectorization")
+
 
 
 if __name__ == "__main__":

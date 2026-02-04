@@ -25,6 +25,9 @@
     <li class="nav-item" role="presentation">
         <button class="nav-link" id="evaluation-tab" data-bs-toggle="tab" data-bs-target="#evaluation" type="button" role="tab" aria-controls="evaluation" aria-selected="false">評価</button>
     </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="vectorization-tab" data-bs-toggle="tab" data-bs-target="#vectorization" type="button" role="tab" aria-controls="vectorization" aria-selected="false">数値化</button>
+    </li>
 </ul>
 
 <div class="tab-content" id="documentTabContent">
@@ -251,6 +254,52 @@
                 </div>
             {% elif document.semantic_labels is not none %}
                 <div class="alert alert-warning">評価結果がありません。</div>
+            {% endif %}
+        </div>
+    </div>
+    <div class="tab-pane fade" id="vectorization" role="tabpanel" aria-labelledby="vectorization-tab">
+        <div class="card p-4 shadow-sm mt-3">
+            <h2 class="h4 mb-3">数値特徴量化</h2>
+            <p>「評価」タブで付与された意味ラベルを、後続の最適化処理で使用できる数値ベクトルに変換します。</p>
+            <div class="d-flex gap-2">
+                <form id="vectorization-form" action="{{ url_for('vectorize_document', doc_id=document.id) }}" method="POST">
+                    <button type="submit" id="vectorization-button" class="btn btn-primary">数値化を実行</button>
+                </form>
+            </div>
+            <hr>
+
+            {% if document.numerical_features %}
+                <h3 class="h5 mt-3">数値化結果</h3>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th>カテゴリ</th>
+                                <th>要素名</th>
+                                <th style="width: 40%;">テキスト</th>
+                                <th>Change</th>
+                                <th>Causal</th>
+                                <th>Conflict</th>
+                                <th style="width: 20%;">Effects (Vector)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for item in document.numerical_features %}
+                            <tr>
+                                <td>{{ item.category }}</td>
+                                <td>{{ item.element }}</td>
+                                <td><small>{{ item.text }}</small></td>
+                                <td>{{ item.features.change }}</td>
+                                <td>{{ item.features.causal }}</td>
+                                <td>{{ item.features.conflict }}</td>
+                                <td><code>{{ item.features.effects | join(', ') }}</code></td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% elif document.numerical_features is not none %}
+                <div class="alert alert-warning">数値化されたデータがありません。</div>
             {% endif %}
         </div>
     </div>
@@ -513,6 +562,19 @@
             button.innerHTML = `
                 <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
                 評価中...
+            `;
+        });
+    }
+
+    // JavaScript for Vectorization Tab
+    const vectorizeForm = document.getElementById('vectorization-form');
+    if (vectorizeForm) {
+        vectorizeForm.addEventListener('submit', function() {
+            const button = document.getElementById('vectorization-button');
+            button.disabled = true;
+            button.innerHTML = `
+                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                数値化を実行中...
             `;
         });
     }
