@@ -634,6 +634,8 @@ def vectorize_document(doc_id):
     save_user_data(session["user_id"], data)
     flash("数値特徴量への変換が完了しました。", "success")
 
+    print(f"DEBUG: vectorize_document - numerical_features before redirect: {document.get('numerical_features')}")
+
     return redirect(f"/document/{doc_id}#vectorization")
 
 
