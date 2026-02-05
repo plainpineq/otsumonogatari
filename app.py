@@ -53,9 +53,6 @@ from services.services import (
     update_intent,
     normalize_composition_elements,
     update_composition_elements,
-#    attach_unit_scores,
-#    extract_red_units,
-    build_llm_prompt,
     DEFAULT_COMPOSITION_META
 )
 from services.domain_bridge import (
@@ -305,30 +302,8 @@ def edit_intent(doc_id):
     save_user_data(session["user_id"], data)
     return redirect(f"/document/{doc_id}")
 
-@app.route("/document/<doc_id>/improve/<int:unit_index>", methods=["POST"])
-def improve_unit(doc_id, unit_index):
-    if "user_id" not in session: # Removed data_loaded check
-        return redirect("/dashboard")
-
-    data = load_user_data(session["user_id"])
-    document = find_document(data, doc_id)
-    if document is None:
-        return redirect(f"/document/{doc_id}")
-
-    units = document.get("units", [])
-    if unit_index < 0 or unit_index >= len(units):
-        return redirect(f"/document/{doc_id}")
-
-    unit = units[unit_index]
-
-    prompt = build_llm_prompt(document, unit)
-
-    # 🔽 今は LLM を呼ばず、そのまま表示
-    return f"<pre>{prompt}</pre>"
 
 from services.llm_client import call_llm # Import the generic LLM client
-
-
 
 @app.route("/document/<doc_id>/generate_ideas", methods=["POST"])
 def generate_composition_ideas(doc_id):
@@ -501,32 +476,104 @@ def download_document(doc_id):
 
 @app.route("/document/<doc_id>/evaluate", methods=["POST"])
 def evaluate_document(doc_id):
+    """
+    評価ページにリダイレクトする。実際の処理はクライアントサイドのJavaScriptが
+    /evaluate/stream エンドポイントを呼び出すことで開始される。
+    """
     if "user_id" not in session:
         return redirect("/login")
+
+    # LLM設定が不完全な場合はエラーを表示して中断
+    llm_provider = session.get("llm_provider")
+    is_config_incomplete = (llm_provider in ["gemini", "chatgpt"] and not session.get("llm_api_key")) or \
+                           (llm_provider == "other" and (not session.get("llm_model_name") or not session.get("llm_base_url")))
+
+    if is_config_incomplete:
+        flash("評価を実行するには、まず「設定」タブでLLM設定を完了してください。", "warning")
+        return redirect(f"/document/{doc_id}#evaluation")
 
     data = load_user_data(session["user_id"])
     document = find_document(data, doc_id)
 
-    if document is None:
-        flash("ドキュメントが見つかりません。", "error")
-        return redirect("/dashboard")
+    if not document or "llm_suggestions" not in document or not document["llm_suggestions"]:
+        flash("評価対象のAI提案がありません。「提案」タブで先にアイデアを生成してください。", "warning")
+        return redirect(f"/document/{doc_id}#evaluation")
 
-    if "llm_suggestions" in document and document["llm_suggestions"]:
-        # The label_suggestions function expects a dict with the key "llm_suggestions"
+    # ページをリロードし、クライアント側でストリーミングを開始させる
+    flash("評価処理を開始します。結果はリアルタイムで表示されます...", "info")
+    return redirect(f"/document/{doc_id}#evaluation")
+
+
+@app.route('/document/<doc_id>/evaluate/stream')
+def evaluate_stream(doc_id):
+    """
+    Server-Sent Events (SSE) を使用して、意味ラベル評価の結果をストリーミングする。
+    """
+    from flask import Response
+    import logging
+
+    if "user_id" not in session:
+        return Response("Unauthorized", status=401)
+
+    # ジェネレータが実行される前に、リクエストコンテキストから必要な情報を取得
+    user_id = session["user_id"]
+    llm_config = {
+        "api_key": session.get("llm_api_key"),
+        "model_name": session.get("llm_model_name"),
+        "provider": session.get("llm_provider"),
+        "base_url": session.get("llm_base_url")
+    }
+
+    def generate_labels(user_id_arg, llm_config_arg):
+        data = load_user_data(user_id_arg)
+        document = find_document(data, doc_id)
+
+        if not document or "llm_suggestions" not in document or not document["llm_suggestions"]:
+            yield f"data: {json.dumps({'error': '評価対象のデータが見つかりません。'})}\n\n"
+            return
+
+        user_data_dir = get_user_data_path(user_id_arg)
+        log_file_path = os.path.join(user_data_dir, "labeler.log")
         evaluation_input = {"llm_suggestions": document["llm_suggestions"]}
         
-        user_data_dir = get_user_data_path(session["user_id"])
-        log_file_path = os.path.join(user_data_dir, "labeler.log")
+        all_results = []
+        # ロガーのハンドラをクリーンアップするための準備
+        logger_to_cleanup = logging.getLogger("semantic_labeler")
 
-        labeled_results = label_suggestions(evaluation_input, log_file_path=log_file_path)
-        
-        document["semantic_labels"] = labeled_results
-        save_user_data(session["user_id"], data)
-        flash("意味ラベルの評価が完了しました。", "success")
-    else:
-        flash("評価対象のAI提案がありません。「提案」タブで先にアイデアを生成してください。", "warning")
+        # Calculate total items
+        total_suggestions_count = sum(
+            len(texts) 
+            for sg in evaluation_input.get("llm_suggestions", []) 
+            for texts in sg.get("elements", {}).values() 
+            if isinstance(texts, list)
+        )
+        # Send total items as initial event
+        yield f"data: {json.dumps({'event': 'total_items', 'count': total_suggestions_count})}\n\n"
 
-    return redirect(f"/document/{doc_id}#evaluation")
+        current_processed_count = 0
+        try:
+            for labeled_result in label_suggestions(evaluation_input, llm_config=llm_config_arg, log_file_path=log_file_path):
+                all_results.append(labeled_result)
+                current_processed_count += 1
+                yield f"data: {json.dumps(labeled_result, ensure_ascii=False)}\n\n"
+                # Send progress update
+                yield f"data: {json.dumps({'event': 'progress', 'current': current_processed_count})}\n\n"
+            
+            document["semantic_labels"] = all_results
+            save_user_data(user_id_arg, data)
+            yield f"data: {json.dumps({'event': 'close', 'message': '全ての評価が完了しました。'})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'error': f'ストリーミング中にエラーが発生しました: {str(e)}'})}\n\n"
+        finally:
+            # ストリーム終了時に必ずハンドラを閉じてクリーンアップ
+            for handler in logger_to_cleanup.handlers[:]:
+                handler.close()
+                logger_to_cleanup.removeHandler(handler)
+
+    # ジェネレータに必要な情報を引数として渡す
+    return Response(generate_labels(user_id, llm_config), mimetype='text/event-stream')
+
 
 
 @app.route("/document/<doc_id>/download_evaluation")

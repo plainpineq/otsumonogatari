@@ -6,6 +6,8 @@ import pandas as pd
 import logging
 import os # osモジュールをインポート
 
+from services.llm_client import call_llm # <-- ADDED: Import call_llm
+
 # --- プロンプトテンプレートの読み込み ---
 try:
     with open("prompt_templates/novel_label.md", "r", encoding="utf-8") as f:
@@ -37,39 +39,15 @@ class LabeledSuggestion(Dict):
     labels: LabelSet
 
 # --- LLM プロンプト構築 ---
-def build_prompt(element_name: str, text: str) -> str:
+def build_prompt(system_prompt: str, element_name: str, text: str) -> str: # <-- MODIFIED: Added system_prompt
     """LLMに渡すユーザープロンプトを構築します。"""
     if not PROMPT_TEMPLATE:
         return ""
     # JSONの出力形式をMarkdownコードブロックで囲むことで、LLMがより確実にJSONを生成するように促す
-    return PROMPT_TEMPLATE.format(element_name=element_name, text=text)
+    # MODIFIED: Combine system_prompt with PROMPT_TEMPLATE
+    user_template_filled = PROMPT_TEMPLATE.format(element_name=element_name, text=text)
+    return f"{system_prompt}\n\n{user_template_filled}"
 
-# --- LLM API 呼び出し (モック) ---
-# loggerインスタンスを引数として受け取るように変更
-def mock_llm_api_call(logger: logging.Logger, system_prompt: str, user_prompt: str, temperature: float = 0.1) -> str:
-    """LLM API呼び出しを模倣する関数。"""
-    logger.info("--- LLMに送信中 ---")
-    logger.info(f"[SYSTEM] {system_prompt}")
-    logger.info(f"[USER] {user_prompt[:200]}...")
-    logger.info(f"[CONFIG] temperature={temperature}")
-    
-    if random.random() < 0.2:
-        logger.warning("-> [Mock LLM] 不正なJSONを返却します（リトライテスト）")
-        return '{"change_type": "A", "causal_exposure": "B", "conflict_type":, "reader_effect": ["不安"]}'
-
-    dummy_labels = {
-        "change_type": random.choice(["A", "B", "C", "D"]),
-        "causal_exposure": random.choice(["A", "B", "C", "D"]),
-        "conflict_type": random.choice(["A", "B", "C", "D"]),
-        "reader_effect": random.sample(
-            ["違和感", "緊張", "疑問", "驚き", "悲劇性", "希望", "安心", "不安", "興味喚起"],
-            k=random.randint(1, 3)
-        )
-    }
-    
-    logger.info(f"-> [Mock LLM] 正常なJSONを返却します: {dummy_labels}")
-    time.sleep(0.5)
-    return json.dumps(dummy_labels, ensure_ascii=False)
 
 # --- ラベル検証 ---
 # loggerインスタンスを引数として受け取るように変更
@@ -90,6 +68,7 @@ def get_semantic_labels_from_llm(
     logger: logging.Logger, # loggerインスタンスを引数に追加
     element_name: str, 
     text: str, 
+    llm_config: Dict[str, Any], # <-- ADDED: llm_config
     max_retries: int = 3
 ) -> Optional[LabelSet]:
     """単一のテキストに対してLLMを呼び出し、意味ラベルを取得します。"""
@@ -98,12 +77,21 @@ def get_semantic_labels_from_llm(
         return None
 
     system_prompt = "あなたは小説編集者です。文章の良し悪しは評価せず、物語的な役割・性質を分類してください。"
-    user_prompt = build_prompt(element_name, text)
+    full_prompt = build_prompt(system_prompt, element_name, text) # <-- MODIFIED: Call new build_prompt
+    
+    logger.info("--- LLMに送信中 ---")
+    logger.info(f"[USER] {full_prompt[:200]}...") # <-- MODIFIED: Log full_prompt
     
     for attempt in range(max_retries):
         try:
-            response_text = mock_llm_api_call(logger, system_prompt, user_prompt) # loggerを渡す
-            parsed_json = json.loads(response_text)
+            # MODIFIED: Replace mock_llm_api_call with services.llm_client.call_llm
+            raw_response, parsed_json = call_llm(
+                api_key=llm_config["api_key"],
+                model_name=llm_config["model_name"],
+                prompt=full_prompt, # <-- MODIFIED: Use full_prompt
+                llm_provider=llm_config["provider"],
+                base_url=llm_config["base_url"]
+            )
             
             if validate_labels(logger, parsed_json): # loggerを渡す
                 logger.info("✅ ラベル取得成功")
@@ -111,17 +99,19 @@ def get_semantic_labels_from_llm(
             else:
                 logger.warning(f"⚠️ 検証失敗 (試行 {attempt + 1}/{max_retries})")
                 
-        except json.JSONDecodeError:
-            logger.warning(f"⚠️ JSONパース失敗 (試行 {attempt + 1}/{max_retries})")
+        except (json.JSONDecodeError, ValueError, RuntimeError) as e: # <-- MODIFIED: Added ValueError, RuntimeError
+            logger.warning(f"⚠️ LLMの応答形式が不正またはAPI呼び出しエラー (試行 {attempt + 1}/{max_retries}): {e}")
+        except Exception as e:
+            logger.error(f"❌ 予期せぬエラー (試行 {attempt + 1}/{max_retries}): {e}")
         
         time.sleep(1)
         
     logger.error(f"❌ {max_retries}回のリトライに失敗しました。このテキストの処理をスキップします。")
     return None
 
-def label_suggestions(input_data: Dict[str, Any], log_file_path: Optional[str] = None) -> List[LabeledSuggestion]:
+def label_suggestions(input_data: Dict[str, Any], llm_config: Dict[str, Any], log_file_path: Optional[str] = None): # -> Generator[LabeledSuggestion, None, None]
     """
-    入力JSON全体を処理し、各候補に意味ラベルを付与します。
+    入力JSON全体を処理し、各候補に意味ラベルを付与するジェネレータ。
     log_file_pathが指定された場合、そのファイルにログを出力します。
     """
     # ロガーの初期化
@@ -130,11 +120,6 @@ def label_suggestions(input_data: Dict[str, Any], log_file_path: Optional[str] =
     if logger.hasHandlers():
         logger.handlers.clear()
     logger.setLevel(logging.INFO)
-
-    # StreamHandlerを追加（コンソール出力用、必要に応じて削除）
-    # stream_handler = logging.StreamHandler()
-    # stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    # logger.addHandler(stream_handler)
 
     if log_file_path:
         # ファイルハンドラを追加
@@ -147,14 +132,11 @@ def label_suggestions(input_data: Dict[str, Any], log_file_path: Optional[str] =
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         logger.addHandler(stream_handler)
-
-
-    labeled_results: List[LabeledSuggestion] = []
     
     suggestions = input_data.get("llm_suggestions", [])
     if not suggestions:
         logger.warning("警告: `llm_suggestions` が見つからないか、空です。")
-        return []
+        return
 
     for suggestion_group in suggestions:
         category = suggestion_group.get("category", "不明なカテゴリ")
@@ -165,23 +147,22 @@ def label_suggestions(input_data: Dict[str, Any], log_file_path: Optional[str] =
                 continue
             for text in texts:
                 logger.info(f"\n--- 処理開始: [{category}]-[{element_name}] ---")
-                labels = get_semantic_labels_from_llm(logger, element_name, text) # loggerを渡す
+                labels = get_semantic_labels_from_llm(logger, element_name, text, llm_config) # <-- MODIFIED: Pass llm_config
                 
                 if labels:
-                    labeled_results.append({
+                    labeled_result = {
                         "category": category,
                         "element": element_name,
                         "text": text,
                         "labels": labels
-                    })
+                    }
+                    yield labeled_result # <-- MODIFIED: Yield result
     
     # 処理終了後、ファイルハンドラを閉じて削除 (メモリリーク防止)
     for handler in logger.handlers[:]: # リストをコピーしてイテレート
         if isinstance(handler, logging.FileHandler):
             handler.close()
             logger.removeHandler(handler)
-
-    return labeled_results
 
 # --- 実行例 ---
 # if __name__ == "__main__":
