@@ -17,26 +17,25 @@ except FileNotFoundError:
     print("ERROR: プロンプトファイル 'prompt_templates/novel_label.md' が見つかりません。")
     PROMPT_TEMPLATE = "" # フォールバック
 
-# --- 型定義 ---
-ChangeType = Literal["A", "B", "C", "D"]
-CausalExposure = Literal["A", "B", "C", "D"]
-ConflictType = Literal["A", "B", "C", "D"]
-ReaderEffect = Literal[
-    "違和感", "緊張", "疑問", "驚き", "悲劇性",
-    "希望", "安心", "不安", "興味喚起"
-]
+# --- ラベル設定の読み込み ---
+try:
+    with open("prompt_templates/novel_label_config.json", "r", encoding="utf-8") as f:
+        LABEL_CONFIG = json.load(f)
+except FileNotFoundError:
+    print("ERROR: 設定ファイル 'prompt_templates/novel_label_config.json' が見つかりません。")
+    LABEL_CONFIG = {"labels": {}} # フォールバック
+
+# 読み込んだ設定から許容される値のリストを生成
+ALLOWED_CHANGE_TYPES = list(LABEL_CONFIG.get("labels", {}).get("change_type", {}).keys())
+ALLOWED_CAUSAL_EXPOSURES = list(LABEL_CONFIG.get("labels", {}).get("causal_exposure", {}).keys())
+ALLOWED_CONFLICT_TYPES = list(LABEL_CONFIG.get("labels", {}).get("conflict_type", {}).keys())
+ALLOWED_READER_EFFECTS = list(LABEL_CONFIG.get("labels", {}).get("reader_effect", {}).keys())
 
 class LabelSet(Dict):
-    change_type: ChangeType
-    causal_exposure: CausalExposure
-    conflict_type: ConflictType
-    reader_effect: List[ReaderEffect]
-
-class LabeledSuggestion(Dict):
-    category: str
-    element: str
-    text: str
-    labels: LabelSet
+    change_type: str
+    causal_exposure: str
+    conflict_type: str
+    reader_effect: List[str]
 
 # --- LLM プロンプト構築 ---
 def build_prompt(system_prompt: str, element_name: str, text: str) -> str: # <-- MODIFIED: Added system_prompt
@@ -53,14 +52,38 @@ def build_prompt(system_prompt: str, element_name: str, text: str) -> str: # <--
 # loggerインスタンスを引数として受け取るように変更
 def validate_labels(logger: logging.Logger, labels: Dict[str, Any]) -> bool:
     """LLMからの応答が期待するスキーマに合致するかを検証します。"""
-    required_keys = {"change_type", "causal_exposure", "conflict_type", "reader_effect"}
+    # 必須キーを動的に取得
+    required_keys = set(LABEL_CONFIG.get("labels", {}).keys())
+
     if not required_keys.issubset(labels.keys()):
         logger.warning(f"検証エラー: 必須キーが不足しています。 ({required_keys - set(labels.keys())})")
         return False
-    if labels["change_type"] not in ["A", "B", "C", "D"]: return False
-    if labels["causal_exposure"] not in ["A", "B", "C", "D"]: return False
-    if labels["conflict_type"] not in ["A", "B", "C", "D"]: return False
-    if not isinstance(labels["reader_effect"], list): return False
+
+    # 各ラベルタイプの値を動的に検証
+    if "change_type" in labels and labels["change_type"] not in ALLOWED_CHANGE_TYPES:
+        logger.warning(f"検証エラー: 不正な change_type 値 '{labels['change_type']}'")
+        return False
+    if "causal_exposure" in labels and labels["causal_exposure"] not in ALLOWED_CAUSAL_EXPOSURES:
+        logger.warning(f"検証エラー: 不正な causal_exposure 値 '{labels['causal_exposure']}'")
+        return False
+    if "conflict_type" in labels and labels["conflict_type"] not in ALLOWED_CONFLICT_TYPES:
+        logger.warning(f"検証エラー: 不正な conflict_type 値 '{labels['conflict_type']}'")
+        return False
+
+    # reader_effectはリストであることと、各要素が許容リストに含まれることを確認
+    if "reader_effect" in labels:
+        if not isinstance(labels["reader_effect"], list):
+            logger.warning("検証エラー: reader_effect がリストではありません。")
+            return False
+        for effect in labels["reader_effect"]:
+            if effect not in ALLOWED_READER_EFFECTS:
+                logger.warning(f"検証エラー: 不正な reader_effect 要素 '{effect}'")
+                return False
+    else: # required_keysに含まれていれば、存在しないのはエラー
+        if "reader_effect" in required_keys:
+             logger.warning("検証エラー: 必須キー 'reader_effect' が不足しています。")
+             return False
+
     return True
 
 # --- メインロジック ---
@@ -109,7 +132,7 @@ def get_semantic_labels_from_llm(
     logger.error(f"❌ {max_retries}回のリトライに失敗しました。このテキストの処理をスキップします。")
     return None
 
-def label_suggestions(input_data: Dict[str, Any], llm_config: Dict[str, Any], log_file_path: Optional[str] = None): # -> Generator[LabeledSuggestion, None, None]
+def label_suggestions(input_data: Dict[str, Any], llm_config: Dict[str, Any], log_file_path: Optional[str] = None): # <-- MODIFIED: Added llm_config and log_file_path
     """
     入力JSON全体を処理し、各候補に意味ラベルを付与するジェネレータ。
     log_file_pathが指定された場合、そのファイルにログを出力します。
