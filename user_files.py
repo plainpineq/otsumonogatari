@@ -12,6 +12,8 @@ def save_user_data(user_id, data):
     os.makedirs(user_path, exist_ok=True)
     with open(os.path.join(user_path, "working.json"), "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+        f.flush() # Explicitly flush buffers
+        os.fsync(f.fileno()) # Force write to disk
 
 def load_user_data(user_id):
     """ユーザーデータを読み込む"""

@@ -158,56 +158,11 @@ def label_suggestions(input_data: Dict[str, Any], llm_config: Dict[str, Any], lo
                     }
                     yield labeled_result # <-- MODIFIED: Yield result
     
+    logger.info("全ての意味ラベル付け処理が完了しました。") # ADDED: Log completion
+    
     # 処理終了後、ファイルハンドラを閉じて削除 (メモリリーク防止)
     for handler in logger.handlers[:]: # リストをコピーしてイテレート
         if isinstance(handler, logging.FileHandler):
             handler.close()
             logger.removeHandler(handler)
 
-# --- 実行例 ---
-# if __name__ == "__main__":
-#     # 入力データ（仕様書通りのサンプル）
-#     sample_input = {
-#       "llm_suggestions": [
-#         {
-#           "category": "プロット案_v1",
-#           "elements": {
-#             "導入": [
-#               "古い灯台守の男が、嵐の夜に奇妙な漂着物を発見する。それは未知の文字が刻まれた、光る金属の箱だった。",
-#               "都会での生活に疲れた主人公が、祖父の遺した海辺の古い家を訪れる。静かな生活を始めた矢先、浜辺で記憶を失った少女と出会う。"
-#             ],
-#             "転機": [
-#               "主人公が金属の箱を開けてしまうと、灯台の光が消え、村全体が深い霧に包まれてしまう。"
-#             ]
-#           }
-#         }
-#       ]
-#     }
-    
-#     # 処理の実行（ログファイル指定なし、コンソールに出力）
-#     print("--- ログファイル指定なし (コンソール出力) ---")
-#     final_output_console = label_suggestions(sample_input)
-    
-#     # ログファイル指定ありの例
-#     # user_data/test_user/labeler.log に出力
-#     test_user_log_path = "user_data/test_user/labeler.log"
-#     os.makedirs(os.path.dirname(test_user_log_path), exist_ok=True)
-#     print(f"\n--- ログファイル指定あり ({test_user_log_path} に出力) ---")
-#     final_output_file = label_suggestions(sample_input, log_file_path=test_user_log_path)
-    
-#     # 結果の表示 (JSON)
-#     print("\n\n--- 最終出力 (JSON) ---")
-#     print(json.dumps(final_output_file, indent=2, ensure_ascii=False))
-    
-#     # 結果の表示 (Pandas DataFrame)
-#     try:
-#         print("\n--- 最終出力 (DataFrame) ---")
-#         df = pd.DataFrame(final_output_file)
-        
-#         # 'labels'列の辞書をフラットに展開
-#         labels_df = pd.json_normalize(df['labels'])
-#         df = df.drop('labels', axis=1).join(labels_df)
-        
-#         print(df)
-#     except ImportError:
-#         print("Pandasがインストールされていません。`pip install pandas`でインストールすると、結果をテーブル形式で表示できます。")

@@ -246,7 +246,7 @@
                                 <th style="width: 20%;">読者効果</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="evaluation-results-body">
                         {% for item in document.semantic_labels %}
                             <tr>
                                 <td>{{ item.category }}</td>
@@ -573,6 +573,12 @@
                 評価中...
             `;
 
+            // Clear existing evaluation results if any
+            const evaluationResultsBody = document.getElementById('evaluation-results-body');
+            if (evaluationResultsBody) {
+                evaluationResultsBody.innerHTML = ''; // Clear the table body
+            }
+
                         const statusDiv = document.getElementById('evaluation-status');
                         const progressBarContainer = document.getElementById('evaluation-progress-container');
                         const progressBar = document.getElementById('evaluation-progress-bar');
@@ -622,22 +628,25 @@
                     progressBar.setAttribute('aria-valuenow', totalItems); // Set to totalItems for final display
                     progressBar.textContent = '100%';
                     eventSource.close();
-                    setTimeout(() => window.location.reload(), 2000);
+                    button.disabled = false; // Add this line
+                    button.textContent = '評価を実行'; // Add this line
+                    setTimeout(() => { window.location.hash = '#evaluation'; window.location.reload(); }, 2000);
                     return;
                 }
                 
                 // It's a regular data item - display all, no filtering
                 statusDiv.innerHTML = '<div class="alert alert-primary">評価を処理中...</div>';
-                const listItem = document.createElement('li');
-                listItem.className = 'list-group-item list-group-item-action'; // Removed badge
-                listItem.innerHTML = `
-                    <div class="d-flex w-100 justify-content-between">
-                        <h6 class="mb-1">${data.category} / ${data.element}</h6>
-                    </div>
-                    <p class="mb-1 text-muted"><small>${data.text}</small></p>
-                `;
-                resultsList.appendChild(listItem);
-                resultsList.scrollTop = resultsList.scrollHeight;
+                // The actual table will be reloaded on page refresh, so no need to append streaming items directly
+                // const listItem = document.createElement('li'); // Removed
+                // listItem.className = 'list-group-item list-group-item-action'; // Removed
+                // listItem.innerHTML = ` // Removed
+                //     <div class="d-flex w-100 justify-content-between"> // Removed
+                //         <h6 class="mb-1">${data.category} / ${data.element}</h6> // Removed
+                //     </div> // Removed
+                //     <p class="mb-1 text-muted"><small>${data.text}</small></p> // Removed
+                // `; // Removed
+                // resultsList.appendChild(listItem); // Removed
+                // resultsList.scrollTop = resultsList.scrollHeight; // Removed
             };
 
             eventSource.onerror = function(e) {

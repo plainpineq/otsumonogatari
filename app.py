@@ -274,12 +274,16 @@ def view_document(doc_id):
     doc_type_mapping = {meta["label"]: doc_id for doc_id, meta in DEFAULT_COMPOSITION_META["doc_types"].items()}
     mapped_doc_type_id = doc_type_mapping.get(document["doc_type"])
 
-    return render_template(
+    response = make_response(render_template(
         "document.html",
         document=document,
         labels=labels,
-        mapped_doc_type_id=mapped_doc_type_id # 追加
-    )
+        mapped_doc_type_id=mapped_doc_type_id
+    ))
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.route("/document/<doc_id>/intent", methods=["POST"])
