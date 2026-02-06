@@ -135,15 +135,17 @@ def _normalize_categories(current_categories: list, meta_categories: list):
 
         if not category_found:
             # カテゴリが見つからなかった場合、メタ定義から追加
-            new_category = {
-                "id": category_meta["id"],
-                "label": category_meta["label"],
-                "editable": category_meta.get("editable", False),
-                "elements": []
-            }
-            for element_meta in category_meta.get("elements", []):
-                new_category["elements"].append(_get_default_element_instance(element_meta))
-            current_categories.append(new_category)
+            # ただし、メタ定義でeditable=Trueのカテゴリは、ユーザーが削除した場合に再追加しない
+            if not category_meta.get("editable", False): # Only re-add if meta category is NOT editable
+                new_category = {
+                    "id": category_meta["id"],
+                    "label": category_meta["label"],
+                    "editable": category_meta.get("editable", False),
+                    "elements": []
+                }
+                for element_meta in category_meta.get("elements", []):
+                    new_category["elements"].append(_get_default_element_instance(element_meta))
+                current_categories.append(new_category)
 
 
 def normalize_composition_elements(document: dict) -> None:

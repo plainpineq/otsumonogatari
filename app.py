@@ -130,7 +130,8 @@ def dashboard():
         },
         "quantum": {
             "api_key": session.get("quantum_server_api_key", "")
-        }
+        },
+        "suggestion_count": session.get("suggestion_count", 3)
     }
 
     return render_template(
@@ -222,6 +223,25 @@ def save_config():
     flash("設定を保存しました。", "success")
     return redirect("/dashboard")
 
+@app.route("/update_suggestion_count", methods=["POST"])
+def update_suggestion_count():
+    if "user_id" not in session:
+        flash("ログインしてください。", "error")
+        return redirect("/login")
+
+    try:
+        suggestion_count = int(request.form["suggestion_count"])
+        if not (1 <= suggestion_count <= 5):
+            raise ValueError("提案個数は1から5の範囲で指定してください。")
+        session["suggestion_count"] = suggestion_count
+        flash("提案個数を保存しました。", "success")
+    except ValueError as e:
+        flash(f"エラー: {e}", "error")
+    except Exception as e:
+        flash(f"予期せぬエラーが発生しました: {e}", "error")
+    
+    return redirect("/dashboard")
+
 # ---------- ドキュメント ----------
 
 @app.route("/document/create", methods=["POST"])
@@ -251,13 +271,6 @@ def view_document(doc_id):
     if document is None:
         return redirect("/dashboard")
 
-    # Normalize document for both GET and POST requests
-    normalize_intent_service(document)
-    normalize_composition_elements(document)
-
-    # Ensure llm_suggestions key exists for rendering
-    document.setdefault("llm_suggestions", [])
-
     if request.method == "POST":
         # composition_elements の更新を処理
         if request.form.get("update_composition_elements"):
@@ -265,6 +278,10 @@ def view_document(doc_id):
         else: # 既存の unit content 更新も残しておく
             update_units_content(document, request.form)
         
+        # Ensure normalization happens AFTER updates/deletions are processed
+        normalize_intent_service(document) # Re-normalize intent after any potential changes
+        normalize_composition_elements(document) # Re-normalize composition elements after any potential changes
+
         save_user_data(session["user_id"], data)
         return redirect(f"/document/{doc_id}#composition") # 常に構成要素タブにリダイレクト
 
@@ -336,6 +353,7 @@ def generate_composition_ideas(doc_id):
     llm_model_name = session.get("llm_model_name")
     llm_base_url = session.get("llm_base_url")
     llm_provider = session.get("llm_provider", "gemini") # Retrieve llm_provider
+    suggestion_count = session.get("suggestion_count", 3) # Retrieve suggestion_count
 
     # Refined mock fallback logic
     # Mock if API key is missing for Gemini/ChatGPT, or if any of the three are missing for 'other'
@@ -346,55 +364,139 @@ def generate_composition_ideas(doc_id):
         is_config_incomplete = True
     
     if is_config_incomplete:
-        prompt = build_composition_ideas_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"], target_category_label=category_label, suffix=suffix)
-        suggestions_dict = mock_llm_call(prompt) # mock_llm_call does not use suffix, so it writes to the default names
+        prompt = build_composition_ideas_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"], target_category_label=category_label, suffix=suffix, suggestion_count=suggestion_count)
+        suggestions_dict = mock_llm_call(prompt, suggestion_count=suggestion_count)
         return jsonify({"suggestions": suggestions_dict.get("suggestions", []), "message": "LLM設定が不完全なため、モックデータを使用しました。"}), 200
 
-    # Build prompt for LLM
-    prompt = build_composition_ideas_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"], target_category_label=category_label, suffix=suffix)
+    # --- Retry logic for LLM call ---
+    MAX_RETRIES_PER_CATEGORY_ELEMENT = 3
+    accumulated_suggestions_for_category = {}
     
-    try:
-        # Call actual LLM using the dispatcher
-        raw_text, suggestions_dict = call_llm(llm_api_key, llm_model_name, prompt, llm_provider, base_url=llm_base_url)
+    # Get the elements for the target_category_label to properly check completion
+    target_elements_in_document = []
+    # Helper to process categories (common or doc_type_specific)
+    def extract_elements_from_doc(categories_data):
+        if not categories_data:
+            return
+        for category_obj in categories_data:
+            if category_obj.get("label") == category_label:
+                if category_obj.get("elements"):
+                    for element_obj in category_obj["elements"]:
+                        if element_obj.get("label"):
+                            target_elements_in_document.append(element_obj["label"])
+                break # Found the category, no need to check further
 
-        # Save the raw LLM response to a text file with suffix
-        user_data_dir = get_user_data_path(session["user_id"])
-        os.makedirs(user_data_dir, exist_ok=True)
-        llm_output_file_path = os.path.join(user_data_dir, f"generated_llm{suffix}.txt")
-        with open(llm_output_file_path, "w", encoding="utf-8") as f:
-            f.write(raw_text)
-        print(f"Raw LLM response written to: {llm_output_file_path}")
+    common_categories = document.get("composition_elements", {}).get("common", {}).get("categories")
+    extract_elements_from_doc(common_categories)
+    doc_type_specific_categories = document.get("composition_elements", {}).get("doc_type_specific", {}).get("categories")
+    extract_elements_from_doc(doc_type_specific_categories)
+    
+    # Initialize accumulated suggestions for each element to empty lists
+    for element_label in target_elements_in_document:
+        accumulated_suggestions_for_category[element_label] = []
 
-        # Save the structured LLM response to a JSON file with suffix
-        llm_json_output_file_path = os.path.join(user_data_dir, f"generated_llm{suffix}.json")
-        with open(llm_json_output_file_path, "w", encoding="utf-8") as f:
-            json.dump(suggestions_dict, f, ensure_ascii=False, indent=2)
-        print(f"Structured LLM response written to: {llm_json_output_file_path}")
+    final_suggestions_for_response = []
 
-        # The suggestions are already structured by category, so pass them directly
-        suggestions = suggestions_dict.get("suggestions", []) # Now 'suggestions' is a list of category objects
-
-        # If this is the first call in the generation sequence, clear old suggestions
-        if is_first_category_in_session:
-            document["llm_suggestions"] = []
-        
-        # Ensure llm_suggestions key exists and is a list
-        if "llm_suggestions" not in document or not isinstance(document["llm_suggestions"], list):
-            document["llm_suggestions"] = []
-
-        # Append new suggestions
-        if suggestions:
-            document["llm_suggestions"].extend(suggestions)
+    for retry_attempt in range(MAX_RETRIES_PER_CATEGORY_ELEMENT + 1):
+        try:
+            # Build prompt for LLM (same prompt for retries for simplicity)
+            prompt = build_composition_ideas_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"], target_category_label=category_label, suffix=suffix, suggestion_count=suggestion_count)
             
-        save_user_data(session["user_id"], data)
+            raw_text, suggestions_dict = call_llm(llm_api_key, llm_model_name, prompt, llm_provider, base_url=llm_base_url)
 
-        return jsonify({"suggestions": suggestions})
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    except RuntimeError as e:
-        return jsonify({"error": f"LLM呼び出しエラー: {str(e)}", "message": "LLM呼び出しでエラーが発生しました。設定とプロンプトを確認してください。"}), 500
-    except Exception as e:
-        return jsonify({"error": f"予期せぬエラー: {str(e)}", "message": "予期せぬエラーが発生しました。"}), 500
+            # Find the target category's suggestions from the LLM response
+            current_llm_suggestions = suggestions_dict.get("suggestions", [])
+            target_category_llm_response = next(
+                (sug_cat for sug_cat in current_llm_suggestions if sug_cat.get("category") == category_label),
+                None
+            )
+
+            if target_category_llm_response:
+                elements_from_llm = target_category_llm_response.get("elements", {})
+                for element_label, new_suggestions in elements_from_llm.items():
+                    if element_label in target_elements_in_document: # Only process elements that exist in the document
+                        current_list = accumulated_suggestions_for_category.setdefault(element_label, [])
+                        updated_list = list(set(current_list + new_suggestions)) # Ensure uniqueness and accumulate
+                        accumulated_suggestions_for_category[element_label] = updated_list[:suggestion_count] # Trim to suggestion_count
+
+            # Check if all target elements have reached the desired suggestion_count
+            all_elements_complete = True
+            for element_label in target_elements_in_document:
+                if len(accumulated_suggestions_for_category.get(element_label, [])) < suggestion_count:
+                    all_elements_complete = False
+                    break
+            
+            if all_elements_complete:
+                break # Exit retry loop if all elements are complete
+
+        except ValueError as e:
+            if retry_attempt == MAX_RETRIES_PER_CATEGORY_ELEMENT:
+                return jsonify({"error": str(e)}), 400
+            print(f"ValueError during LLM call, retrying... ({e})")
+            continue
+        except RuntimeError as e:
+            if retry_attempt == MAX_RETRIES_PER_CATEGORY_ELEMENT:
+                return jsonify({"error": f"LLM呼び出しエラー: {str(e)}", "message": "LLM呼び出しでエラーが発生しました。設定とプロンプトを確認してください。"}), 500
+            print(f"RuntimeError during LLM call, retrying... ({e})")
+            continue
+        except Exception as e:
+            if retry_attempt == MAX_RETRIES_PER_CATEGORY_ELEMENT:
+                return jsonify({"error": f"予期せぬエラー: {str(e)}", "message": "予期せぬエラーが発生しました。"}), 500
+            print(f"Unexpected error during LLM call, retrying... ({e})")
+            continue
+
+    # --- End of Retry logic ---
+
+    # Construct the final suggestions for the response based on accumulated_suggestions_for_category
+    if accumulated_suggestions_for_category:
+        final_suggestions_for_response.append({
+            "category": category_label,
+            "elements": accumulated_suggestions_for_category
+        })
+    else:
+        # If no suggestions were accumulated after all retries (e.g., LLM consistently failed or returned nothing)
+        return jsonify({"suggestions": [], "message": "提案を生成できませんでした。"}), 500
+
+    # Save the raw LLM response (from the last successful or attempted call) to a text file with suffix
+    user_data_dir = get_user_data_path(session["user_id"])
+    os.makedirs(user_data_dir, exist_ok=True)
+    llm_output_file_path = os.path.join(user_data_dir, f"generated_llm{suffix}.txt")
+    with open(llm_output_file_path, "w", encoding="utf-8") as f:
+        f.write(raw_text if 'raw_text' in locals() else "No LLM response received.")
+    print(f"Raw LLM response written to: {llm_output_file_path}")
+
+    # Save the structured LLM response (final accumulated suggestions) to a JSON file with suffix
+    llm_json_output_file_path = os.path.join(user_data_dir, f"generated_llm{suffix}.json")
+    with open(llm_json_output_file_path, "w", encoding="utf-8") as f:
+        json.dump({"suggestions": final_suggestions_for_response}, f, ensure_ascii=False, indent=2)
+    print(f"Structured LLM response written to: {llm_json_output_file_path}")
+
+    # If this is the first call in the generation sequence, clear old suggestions
+    if is_first_category_in_session:
+        document["llm_suggestions"] = []
+    
+    # Ensure llm_suggestions key exists and is a list
+    if "llm_suggestions" not in document or not isinstance(document["llm_suggestions"], list):
+        document["llm_suggestions"] = []
+
+    # Update/append new suggestions for the target category
+    existing_category_index = -1
+    for idx, existing_sug_cat in enumerate(document["llm_suggestions"]):
+        if existing_sug_cat.get("category") == category_label:
+            existing_category_index = idx
+            break
+
+    if existing_category_index != -1:
+        # Update existing category
+        document["llm_suggestions"][existing_category_index] = final_suggestions_for_response[0]
+    else:
+        # Append new category
+        if final_suggestions_for_response:
+            document["llm_suggestions"].extend(final_suggestions_for_response)
+            
+    save_user_data(session["user_id"], data)
+
+    return jsonify({"suggestions": final_suggestions_for_response})
 
 @app.route("/document/<doc_id>/add_composition_element", methods=["POST"])
 def add_composition_element(doc_id):

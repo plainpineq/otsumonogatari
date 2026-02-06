@@ -34,6 +34,18 @@
             </form>
         </div>
     </div>
+    <div class="col-md-6 mb-4">
+        <div class="card p-4">
+            <h3 class="card-title">構成要素の提案設定</h3>
+            <form action="/update_suggestion_count" method="post">
+                <div class="mb-3">
+                    <label for="suggestion_count" class="form-label">提案個数（上限5）</label>
+                    <input type="number" class="form-control" id="suggestion_count" name="suggestion_count" min="1" max="5" value="{{ user_config.suggestion_count if user_config and user_config.suggestion_count else 3 }}" required>
+                </div>
+                <button type="submit" class="btn btn-primary">設定を保存</button>
+            </form>
+        </div>
+    </div>
 </div>
 
 <div class="card p-4">

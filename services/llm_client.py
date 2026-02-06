@@ -19,7 +19,7 @@ def _call_gemini_llm(api_key: str, model_name: str, prompt: str) -> (str, dict):
     model = genai.GenerativeModel(model_name)
 
     try:
-        response = model.generate_content(prompt, request_options={"timeout": 60})
+        response = model.generate_content(prompt)
         raw_response_text = response.text # Keep the original raw text
         
         # Find the JSON block using a regular expression
@@ -61,8 +61,7 @@ def _call_openai_llm(api_key: str, model_name: str, prompt: str, base_url: Optio
             messages=[
                 {"role": "user", "content": prompt}
             ],
-            response_format={"type": "json_object"},
-            timeout=60
+            response_format={"type": "json_object"}
         )
         raw_response_text = response.choices[0].message.content
         

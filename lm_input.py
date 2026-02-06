@@ -6,7 +6,7 @@ from typing import Optional
 
 # ... existing code ...
 
-def build_composition_ideas_prompt(document: dict, composition_meta: dict, user_id: str, target_category_label: Optional[str] = None, suffix: str = "") -> str:
+def build_composition_ideas_prompt(document: dict, composition_meta: dict, user_id: str, target_category_label: Optional[str] = None, suffix: str = "", suggestion_count: int = 3) -> str:
     """
     Builds a prompt for the LLM to generate composition element suggestions.
     If target_category_label is provided, the prompt will be specific to that category.
@@ -77,7 +77,7 @@ def build_composition_ideas_prompt(document: dict, composition_meta: dict, user_
 
     # Generate the dynamic JSON example for the prompt
     # Pass target_category_label so example is also specific to the category
-    dynamic_json_example = _build_dynamic_json_example(document, target_category_label=target_category_label)
+    dynamic_json_example = _build_dynamic_json_example(document, target_category_label=target_category_label, suggestion_count=suggestion_count)
 
     # Fill template placeholders
     prompt = template_content.format(
@@ -85,7 +85,8 @@ def build_composition_ideas_prompt(document: dict, composition_meta: dict, user_
         doc_type=doc_type_label, # Use the human-readable label for the prompt
         intent_text=formatted_intent,
         elements_text=elements_text,
-        dynamic_json_example=dynamic_json_example # New placeholder
+        dynamic_json_example=dynamic_json_example, # New placeholder
+        suggestion_count=suggestion_count
     )
 
     # Output the generated prompt to a file for debugging/verification
@@ -116,7 +117,7 @@ def _get_composition_elements(doc_type_id: str, composition_meta: dict) -> list[
                         elements.append(element["label"])
     return elements
 
-def mock_llm_call(prompt: str) -> dict:
+def mock_llm_call(prompt: str, suggestion_count: int = 3) -> dict:
     """
     Mocks an LLM call, returning hardcoded suggestions based on parsed elements.
     In a real scenario, this would call an actual LLM API.
@@ -133,14 +134,14 @@ def mock_llm_call(prompt: str) -> dict:
             if line.strip().startswith('- '):
                 element_label = line.strip()[2:].strip()
                 if element_label:
-                    mock_suggestions["suggestions"][element_label] = [f"{element_label}の候補{i+1}" for i in range(5)]
+                    mock_suggestions["suggestions"][element_label] = [f"{element_label}の候補{i+1}" for i in range(suggestion_count)]
     
     # If no specific elements are found or parsed
-        mock_suggestions["suggestions"]["汎用構成要素"] = [f"汎用アイデア{i+1}" for i in range(5)]
+        mock_suggestions["suggestions"]["汎用構成要素"] = [f"汎用アイデア{i+1}" for i in range(suggestion_count)]
         
     return mock_suggestions
 
-def _build_dynamic_json_example(document: dict, target_category_label: Optional[str] = None) -> str:
+def _build_dynamic_json_example(document: dict, target_category_label: Optional[str] = None, suggestion_count: int = 3) -> str:
     """
     Generates a dynamic JSON example string based on the document's composition elements.
     If target_category_label is provided, the example will be specific to that category.
@@ -169,7 +170,7 @@ def _build_dynamic_json_example(document: dict, target_category_label: Optional[
                     element_label = element_obj.get("label")
                     if element_label:
                         # Use generic suggestion placeholders
-                        elements_dict[element_label] = [f"提案{i+1}" for i in range(5)]
+                        elements_dict[element_label] = [f"提案{i+1}" for i in range(suggestion_count)]
             
             # Only add category if it has elements
             if elements_dict:
