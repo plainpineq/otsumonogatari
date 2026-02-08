@@ -6,6 +6,9 @@ import copy # copyモジュールを追加
 import uuid
 import json
 
+from intent_templates import COMMON_INTENTS, DOC_TYPE_INTENTS # Import intent templates
+
+
 # =========================
 # Load Default Composition Meta from JSON
 # =========================
@@ -38,16 +41,30 @@ def create_document(
         "id": os.urandom(4).hex(),
         "title": title,
         "doc_type": doc_type,
-        "intent": {},
+        "intent": {"fields": {}}, # Initialize intent with an empty fields dict
         "units": [], # Initialize as empty, will be populated from composition_meta
         "entities": [],
         "composition_elements": {}, # 新しい構成要素の格納場所
         "composition_meta": copy.deepcopy(DEFAULT_COMPOSITION_META) # デフォルトのメタ定義を追加
     }
 
-    # 日本語の doc_type を英語のキーにマッピング
+    # 日本語の doc_type を英語のキーにマッピング (mapped_doc_type_idを取得するため)
     doc_type_mapping = {meta["label"]: doc_id for doc_id, meta in DEFAULT_COMPOSITION_META["doc_types"].items()}
     mapped_doc_type_id = doc_type_mapping.get(doc_type)
+
+    # --- Intentの初期化 ---
+    # COMMON_INTENTSを追加
+    for internal_name, display_label in COMMON_INTENTS:
+        key = f"intent_{uuid.uuid4().hex[:8]}" # ユニークなキーを生成
+        document["intent"]["fields"][key] = {"label": display_label, "value": ""}
+
+    # DOC_TYPE_INTENTSを追加 (doc_typeに応じて)
+    # mapped_doc_type_idはcomposition_metaのキー、DOC_TYPE_INTENTSはdoc_typeのラベルをキーとしているため、直接doc_typeを使用
+    if doc_type in DOC_TYPE_INTENTS:
+        for internal_name, display_label in DOC_TYPE_INTENTS[doc_type]:
+            key = f"intent_{uuid.uuid4().hex[:8]}" # ユニークなキーを生成
+            document["intent"]["fields"][key] = {"label": display_label, "value": ""}
+
 
     if mapped_doc_type_id:
         doc_type_meta_def = DEFAULT_COMPOSITION_META["doc_types"].get(mapped_doc_type_id)
@@ -135,17 +152,16 @@ def _normalize_categories(current_categories: list, meta_categories: list):
 
         if not category_found:
             # カテゴリが見つからなかった場合、メタ定義から追加
-            # ただし、メタ定義でeditable=Trueのカテゴリは、ユーザーが削除した場合に再追加しない
-            if not category_meta.get("editable", False): # Only re-add if meta category is NOT editable
-                new_category = {
-                    "id": category_meta["id"],
-                    "label": category_meta["label"],
-                    "editable": category_meta.get("editable", False),
-                    "elements": []
-                }
-                for element_meta in category_meta.get("elements", []):
-                    new_category["elements"].append(_get_default_element_instance(element_meta))
-                current_categories.append(new_category)
+            # ユーザーが削除したeditable=Trueのカテゴリも初期状態では追加する
+            new_category = {
+                "id": category_meta["id"],
+                "label": category_meta["label"],
+                "editable": category_meta.get("editable", False),
+                "elements": []
+            }
+            for element_meta in category_meta.get("elements", []):
+                new_category["elements"].append(_get_default_element_instance(element_meta))
+            current_categories.append(new_category)
 
 
 def normalize_composition_elements(document: dict) -> None:
@@ -220,7 +236,7 @@ def update_composition_elements(document: dict, form_data) -> None:
     mapped_doc_type = doc_type_mapping.get(document["doc_type"])
 
     # --- 共通構成要素の処理 ---
-    common_categories = elements_data["common"].setdefault("categories", [])
+    common_categories = elements_data.setdefault("common", {}).setdefault("categories", [])
     for current_category_data in common_categories:
         category_id = current_category_data["id"]
         elements = current_category_data.setdefault("elements", [])
@@ -266,7 +282,7 @@ def update_composition_elements(document: dict, form_data) -> None:
                 element["value"] = form_data.get(form_value_name, "")
 
     # --- doc_type 固有構成要素の処理 ---
-    doc_type_specific_categories = elements_data["doc_type_specific"].setdefault("categories", [])
+    doc_type_specific_categories = elements_data.setdefault("doc_type_specific", {}).setdefault("categories", [])
     doc_type_meta_def = composition_meta["doc_types"].get(mapped_doc_type) # メタ定義もcomposition_metaから取得
 
     if doc_type_meta_def:
@@ -335,9 +351,9 @@ def update_composition_elements(document: dict, form_data) -> None:
                     element["label"] = form_data.get(form_label_name, "")
 
                 # valueの更新 (if such fields exist in HTML, current HTML doesn't show them but it's good for consistency)
-                form_value_name = f"element_value_{category_id}_{element_id}"
-                if form_value_name in form_data:
-                    element["value"] = form_data.get(form_value_name, "")
+            form_value_name = f"element_value_{category_id}_{element_id}"
+            if form_value_name in form_data:
+                element["value"] = form_data.get(form_value_name, "")
 
 
 # =========================
@@ -424,3 +440,4 @@ def update_intent(document: dict, form_data) -> None:
             fields[key]["value"] = form_data.get(value_key, "")
 
     document["intent"] = intent
+

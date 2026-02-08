@@ -28,6 +28,9 @@
     <li class="nav-item" role="presentation">
         <button class="nav-link" id="vectorization-tab" data-bs-toggle="tab" data-bs-target="#vectorization" type="button" role="tab" aria-controls="vectorization" aria-selected="false">数値化</button>
     </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="element-fit-tab" data-bs-toggle="tab" data-bs-target="#element-fit" type="button" role="tab" aria-controls="element-fit" aria-selected="false">Element Fit</button>
+    </li>
 </ul>
 
 <div class="tab-content" id="documentTabContent">
@@ -96,8 +99,8 @@
                 <h2 class="h4 mb-3">構成要素の定義</h2> {# 見出しを「定義」に変更 #}
 
                 {# 共通構成要素 #}
-                {% set common_meta_data = document.composition_meta.common_categories %}
-                {% set common_categories_data = document.composition_elements.common.categories %}
+                {% set common_meta_data = document.composition_meta.get('common_categories', {}) %}
+                {% set common_categories_data = document.composition_elements.get('common', {}).get('categories', []) %}
                 {% if common_meta_data.categories %}
                     <h3 class="h5 mt-4">{{ common_meta_data.label }}</h3>
                     {% for category in common_categories_data %}
@@ -150,7 +153,7 @@
                         </div>
                     {% endif %}
 
-                    {% set doc_type_categories_data = document.composition_elements.doc_type_specific.categories %}
+                    {% set doc_type_categories_data = document.composition_elements.get('doc_type_specific', {}).get('categories', []) %}
                     {% for category in doc_type_categories_data %}
                         {% set category_meta = doc_type_meta_data.categories | selectattr("id", "equalto", category.id) | first %}
                         <div class="card p-3 mb-3">
@@ -310,6 +313,46 @@
             {% endif %}
         </div>
     </div>
+    <div class="tab-pane fade" id="element-fit" role="tabpanel" aria-labelledby="element-fit-tab">
+        <div class="card p-4 shadow-sm mt-3">
+            <h2 class="h4 mb-3">構成要素 適合度 (Element Fit)</h2>
+            <p>「構成要素」で定義された理想の役割と、「数値化」されたAI提案との適合度（距離）を計算します。スコアが小さいほど、その役割に近いことを示します。</p>
+            <div class="d-flex gap-2">
+                <form id="element-fit-form" action="{{ url_for('element_fit', doc_id=document.id) }}" method="POST">
+                    <button type="submit" id="element-fit-button" class="btn btn-primary">適合度を計算</button>
+                </form>
+            </div>
+            <hr>
+
+            {% if document.fit_results %}
+                <h3 class="h5 mt-3">適合度の計算結果</h3>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th>候補テキスト</th>
+                                <th>最も適合する役割</th>
+                                <th>Fitスコア (距離)</th>
+                                <th>カテゴリ</th>
+                                <th>元の要素名</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for item in document.fit_results %}
+                            <tr>
+                                <td><small>{{ item.text }}</small></td>
+                                <td><strong>{{ item.fit.best_fit_element }}</strong></td>
+                                <td>{{ "%.2f"|format(item.fit.score) }}</td>
+                                <td>{{ item.category }}</td>
+                                <td>{{ item.element }}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% endif %}
+        </div>
+    </div>
 </div>
 <script>
     // Initial data from the backend
@@ -319,13 +362,13 @@
 
     // Extract all unique category labels from the document's composition elements
     const allCategoryLabels = [];
-    {% if document.composition_elements.common.categories %}
-        {% for category in document.composition_elements.common.categories %}
+    {% if document.composition_elements.get('common', {}).get('categories') %}
+        {% for category in document.composition_elements.get('common', {}).get('categories', []) %}
             allCategoryLabels.push("{{ category.label }}");
         {% endfor %}
     {% endif %}
-    {% if document.composition_elements.doc_type_specific.categories %}
-        {% for category in document.composition_elements.doc_type_specific.categories %}
+    {% if document.composition_elements.get('doc_type_specific', {}).get('categories') %}
+        {% for category in document.composition_elements.get('doc_type_specific', {}).get('categories', []) %}
             allCategoryLabels.push("{{ category.label }}");
         {% endfor %}
     {% endif %}
@@ -668,6 +711,19 @@
             button.innerHTML = `
                 <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
                 数値化を実行中...
+            `;
+        });
+    }
+
+    // JavaScript for Element Fit Tab
+    const elementFitForm = document.getElementById('element-fit-form');
+    if (elementFitForm) {
+        elementFitForm.addEventListener('submit', function() {
+            const button = document.getElementById('element-fit-button');
+            button.disabled = true;
+            button.innerHTML = `
+                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                計算中...
             `;
         });
     }

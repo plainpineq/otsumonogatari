@@ -43,6 +43,9 @@ def _cleanup_old_generated_files(user_id: str):
             try:
                 os.remove(file_path)
                 print(f"Cleaned up old generated file: {file_path}")
+            except PermissionError as e:
+                print(f"ERROR: Permission denied when deleting {file_path}: {e}")
+                # ここではflashはしない。バックグラウンド処理のため。
             except OSError as e:
                 print(f"Error deleting file {file_path}: {e}")
 
@@ -62,6 +65,8 @@ from services.domain_bridge import (
 from intent_service import normalize_intent as normalize_intent_service
 from semantic_labeler import label_suggestions
 from feature_extractor import FeatureExtractor
+from element_fitter import apply_fit_to_candidates
+
 
 
 
@@ -285,12 +290,24 @@ def view_document(doc_id):
         save_user_data(session["user_id"], data)
         return redirect(f"/document/{doc_id}#composition") # 常に構成要素タブにリダイレクト
 
+    # GETリクエストの場合も、テンプレートに渡す前にcomposition_elementsを正規化
+    normalize_composition_elements(document)
+
     labels = UI_LABELS[document["doc_type"]]
 
     # 日本語の doc_type を英語のキーにマッピング
     doc_type_mapping = {meta["label"]: doc_id for doc_id, meta in DEFAULT_COMPOSITION_META["doc_types"].items()}
     mapped_doc_type_id = doc_type_mapping.get(document["doc_type"])
 
+    # Ensure all expected document keys are present for the template to avoid Undefined errors
+    document.setdefault("llm_suggestions", [])
+    document.setdefault("semantic_labels", [])
+    document.setdefault("numerical_features", [])
+    document.setdefault("fit_results", [])
+    document.setdefault("composition_elements", {})
+    document.setdefault("composition_meta", {})
+    document.setdefault("intent", {"fields": {}}) # Add default for intent
+    
     response = make_response(render_template(
         "document.html",
         document=document,
@@ -461,15 +478,34 @@ def generate_composition_ideas(doc_id):
     user_data_dir = get_user_data_path(session["user_id"])
     os.makedirs(user_data_dir, exist_ok=True)
     llm_output_file_path = os.path.join(user_data_dir, f"generated_llm{suffix}.txt")
-    with open(llm_output_file_path, "w", encoding="utf-8") as f:
-        f.write(raw_text if 'raw_text' in locals() else "No LLM response received.")
-    print(f"Raw LLM response written to: {llm_output_file_path}")
+    try:
+        with open(llm_output_file_path, "w", encoding="utf-8") as f:
+            f.write(raw_text if 'raw_text' in locals() else "No LLM response received.")
+        print(f"Raw LLM response written to: {llm_output_file_path}")
+    except PermissionError as e:
+        print(f"ERROR: Permission denied when writing to {llm_output_file_path}: {e}")
+        flash(f"ファイルの書き込み権限がありません: {llm_output_file_path}。ファイルのパーミッションを確認してください。", "error")
+        return jsonify({"error": f"ファイルの書き込み権限がありません: {e}"}), 500
+    except IOError as e:
+        print(f"ERROR: IO error when writing to {llm_output_file_path}: {e}")
+        flash(f"ファイル書き込み中にエラーが発生しました: {llm_output_file_path}。ディスク容量やファイルロックを確認してください。", "error")
+        return jsonify({"error": f"ファイル書き込み中にエラーが発生しました: {e}"}), 500
+
 
     # Save the structured LLM response (final accumulated suggestions) to a JSON file with suffix
     llm_json_output_file_path = os.path.join(user_data_dir, f"generated_llm{suffix}.json")
-    with open(llm_json_output_file_path, "w", encoding="utf-8") as f:
-        json.dump({"suggestions": final_suggestions_for_response}, f, ensure_ascii=False, indent=2)
-    print(f"Structured LLM response written to: {llm_json_output_file_path}")
+    try:
+        with open(llm_json_output_file_path, "w", encoding="utf-8") as f:
+            json.dump({"suggestions": final_suggestions_for_response}, f, ensure_ascii=False, indent=2)
+        print(f"Structured LLM response written to: {llm_json_output_file_path}")
+    except PermissionError as e:
+        print(f"ERROR: Permission denied when writing to {llm_json_output_file_path}: {e}")
+        flash(f"ファイルの書き込み権限がありません: {llm_json_output_file_path}。ファイルのパーミッションを確認してください。", "error")
+        return jsonify({"error": f"ファイルの書き込み権限がありません: {e}"}), 500
+    except IOError as e:
+        print(f"ERROR: IO error when writing to {llm_json_output_file_path}: {e}")
+        flash(f"ファイル書き込み中にエラーが発生しました: {llm_json_output_file_path}。ディスク容量やファイルロックを確認してください。", "error")
+        return jsonify({"error": f"ファイル書き込み中にエラーが発生しました: {e}"}), 500
 
     # If this is the first call in the generation sequence, clear old suggestions
     if is_first_category_in_session:
@@ -562,7 +598,19 @@ def download_document(doc_id):
     if document is None:
         return redirect("/dashboard")
 
-    document_json = json.dumps(document, ensure_ascii=False, indent=2)
+    # ダウンロード用にdocumentのコピーを作成し、不要なキーを削除
+    download_document_data = document.copy()
+    keys_to_remove = [
+        # "llm_suggestions", # ユーザーの要望によりダウンロード対象に含める
+        "semantic_labels",
+        "numerical_features",
+        "fit_results",
+        "units" # ユーザー提供の例にないため削除
+    ]
+    for key in keys_to_remove:
+        download_document_data.pop(key, None) # キーが存在しない場合はエラーにならないようにpop(key, None)を使用
+
+    document_json = json.dumps(download_document_data, ensure_ascii=False, indent=2)
     
     # Use io.BytesIO to create an in-memory file
     file_data = io.BytesIO(document_json.encode('utf-8'))
@@ -738,6 +786,61 @@ def vectorize_document(doc_id):
 
     return redirect(f"/document/{doc_id}#vectorization")
 
+
+@app.route("/document/<doc_id>/element_fit", methods=["POST"])
+def element_fit(doc_id):
+    if "user_id" not in session:
+        return redirect("/login")
+
+    data = load_user_data(session["user_id"])
+    document = find_document(data, doc_id)
+
+    # 1. Check for necessary data
+    candidates = document.get("numerical_features")
+    if not candidates:
+        flash("適合度を計算するには、先に「数値化」タブで提案を数値化してください。", "warning")
+        return redirect(f"/document/{doc_id}#element-fit")
+
+    composition_elements = document.get("composition_elements", {})
+    if not composition_elements:
+        flash("適合度を計算するには、先に「構成要素」タブで理想の役割を定義してください。", "warning")
+        return redirect(f"/document/{doc_id}#element-fit")
+
+    # 2. Extract ideal elements from composition data
+    ideal_elements_raw = []
+    for cat_group in composition_elements.values(): # "common", "doc_type_specific"
+        for category in cat_group.get("categories", []):
+            for element in category.get("elements", []):
+                # NOTE: The 'value' from the form is not used for featurizing.
+                # We are creating a "template" based on its name/role.
+                # The featurizer will assign default values.
+                ideal_elements_raw.append({
+                    "category": category.get("label"),
+                    "element": element.get("label"),
+                    "text": element.get("label"), # Use label as text for featurizing
+                    "labels": {} # No semantic labels, so featurizer will use defaults
+                })
+
+    if not ideal_elements_raw:
+        flash("適合度を計算するための理想の役割が「構成要素」タブで定義されていません。", "warning")
+        return redirect(f"/document/{doc_id}#element-fit")
+
+    # 3. Featurize ideal elements
+    try:
+        extractor = FeatureExtractor()
+        ideal_elements_with_features = extractor.create_numerical_features(ideal_elements_raw)
+    except (FileNotFoundError, ValueError) as e:
+        flash(f"理想役割の数値化中にエラーが発生しました: {e}", "error")
+        return redirect(f"/document/{doc_id}#element-fit")
+
+    # 4. Calculate fit
+    fit_results = apply_fit_to_candidates(candidates, ideal_elements_with_features)
+
+    # 5. Save results and redirect
+    document["fit_results"] = fit_results
+    save_user_data(session["user_id"], data)
+    flash("適合度の計算が完了しました。", "success")
+    return redirect(f"/document/{doc_id}#element-fit")
 
 
 if __name__ == "__main__":
