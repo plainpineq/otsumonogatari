@@ -603,7 +603,7 @@ def download_document(doc_id):
     keys_to_remove = [
         # "llm_suggestions", # ユーザーの要望によりダウンロード対象に含める
         # "semantic_labels", # ユーザーの要望によりダウンロード対象に含める
-        "numerical_features",
+        # "numerical_features",
         "fit_results",
         "units" # ユーザー提供の例にないため削除
     ]

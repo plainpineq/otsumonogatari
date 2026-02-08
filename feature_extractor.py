@@ -16,14 +16,17 @@ class FeatureExtractor:
         except (FileNotFoundError, json.JSONDecodeError) as e:
             raise ValueError(f"設定ファイル '{config_path}' の読み込みに失敗しました: {e}")
 
-        self.label_types_config = config.get("label_types", {})
-        self.scalar_label_maps = self.label_types_config.get("scalar_value", {})
-        self.vector_label_orders = self.label_types_config.get("vector_value", {})
-        
-        # ベクトル特徴量のためのインデックスマッピングを動的に生成
+        self.scalar_label_maps = {}
+        self.vector_label_orders = {}
         self.vector_index_maps = {}
-        for key, value_order in self.vector_label_orders.items():
-            self.vector_index_maps[key] = {value: i for i, value in enumerate(value_order)}
+
+        config_labels = config.get("labels", {})
+        for key, value_map in config_labels.items():
+            if key == "reader_effect": # Hardcoded as vector based on novel_label.md
+                self.vector_label_orders[key] = list(value_map.keys())
+                self.vector_index_maps[key] = {value: i for i, value in enumerate(self.vector_label_orders[key])}
+            else: # All other labels are treated as scalar
+                self.scalar_label_maps[key] = value_map
 
     def featurize_suggestion(self, suggestion: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -70,5 +73,6 @@ class FeatureExtractor:
         """
         if not semantic_labels_list:
             return []
+        
         return [self.featurize_suggestion(s) for s in semantic_labels_list]
 

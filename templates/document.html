@@ -299,10 +299,10 @@
                                 <td>{{ item.category }}</td>
                                 <td>{{ item.element }}</td>
                                 <td><small>{{ item.text }}</small></td>
-                                <td>{{ item.features.change }}</td>
-                                <td>{{ item.features.causal }}</td>
-                                <td>{{ item.features.conflict }}</td>
-                                <td><code>{{ item.features.effects | join(', ') }}</code></td>
+                                <td>{{ item.features.scalar_features.change_type }}</td>
+                                <td>{{ item.features.scalar_features.causal_exposure }}</td>
+                                <td>{{ item.features.scalar_features.conflict_type }}</td>
+                                <td><code>{{ item.features.vector_features.reader_effect | join(', ') }}</code></td>
                             </tr>
                         {% endfor %}
                         </tbody>
