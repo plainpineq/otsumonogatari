@@ -48,64 +48,126 @@
     </div>
 </div>
 
-<div class="card p-4">
-            <h3 class="card-title">LLM & 量子サーバー設定</h3>
-            <form action="/save_config" method="post">
-                <div class="mb-3">
-                    <label for="llm_provider" class="form-label">LLM プロバイダー</label>
-                    <select class="form-select" id="llm_provider" name="llm_provider">
-                        <option value="gemini" {% if user_config.llm.provider == 'gemini' %}selected{% endif %}>Gemini</option>
-                        <option value="chatgpt" {% if user_config.llm.provider == 'chatgpt' %}selected{% endif %}>ChatGPT</option>
-                        <option value="other" {% if user_config.llm.provider == 'other' %}selected{% endif %}>その他</option>
-                    </select>
-                </div>
+{# Macro to render LLM configuration fields to avoid repetition #}
+{% macro render_llm_config(role, role_label, config) %}
+<div class="mb-3">
+    <label for="llm_provider_{{ role }}" class="form-label">LLM プロバイダー</label>
+    <select class="form-select llm-provider-select" id="llm_provider_{{ role }}" name="llm_servers[{{ role }}][provider]" data-role="{{ role }}">
+        <option value="gemini" {% if config.provider == 'gemini' %}selected{% endif %}>Gemini</option>
+        <option value="chatgpt" {% if config.provider == 'chatgpt' %}selected{% endif %}>ChatGPT</option>
+        <option value="other" {% if config.provider == 'other' %}selected{% endif %}>その他 (OpenAI互換)</option>
+    </select>
+</div>
 
-                <div class="mb-3" id="llm_api_key_group">
-                    <label for="llm_api_key" class="form-label">LLM API キー</label>
-                    <input type="password" class="form-control" id="llm_api_key" name="llm_api_key" value="{{ user_config.llm.api_key if user_config and user_config.llm }}" placeholder="sk-..." autocomplete="off">
-                </div>
-                <div class="mb-3" id="llm_model_name_group">
-                    <label for="llm_model_name" class="form-label">LLM モデル名</label>
-                    <input type="text" class="form-control" id="llm_model_name" name="llm_model_name" value="{{ user_config.llm.model_name if user_config and user_config.llm }}" placeholder="例: gemini-pro, gpt-4o-mini">
-                </div>
-                <div class="mb-3" id="llm_base_url_group">
-                    <label for="llm_base_url" class="form-label">LLM ベース URL (OpenAI互換API用)</label>
-                    <input type="text" class="form-control" id="llm_base_url" name="llm_base_url" value="{{ user_config.llm.base_url if user_config and user_config.llm }}" placeholder="例: https://api.openai.com/v1, http://localhost:11434/v1">
-                    <small class="form-text text-muted">OpenAI互換APIを使用する場合にのみ指定してください。例: Ollama, Anyscale, Together AIなど。</small>
-                </div>
-                <div class="mb-3">
-                    <label for="quantum_server_api_key" class="form-label">量子サーバー API キー</label>
-                    <input type="password" class="form-control" id="quantum_server_api_key" name="quantum_server_api_key" value="{{ user_config.quantum.api_key if user_config and user_config.quantum }}" placeholder="量子サーバーのAPIキー" autocomplete="off">
-                </div>
-                <button type="submit" class="btn btn-primary">設定を保存</button>
-            </form>
+<div class="mb-3">
+    <label for="llm_api_key_{{ role }}" class="form-label">API キー</label>
+    <input type="password" class="form-control" id="llm_api_key_{{ role }}" name="llm_servers[{{ role }}][api_key]" value="{{ config.api_key }}" placeholder="sk-..." autocomplete="off">
+</div>
+
+<div class="mb-3 llm-model-name-group" id="llm_model_name_group_{{ role }}">
+    <label for="llm_model_name_{{ role }}" class="form-label">モデル名</label>
+    <input type="text" class="form-control" id="llm_model_name_{{ role }}" name="llm_servers[{{ role }}][model_name]" value="{{ config.model_name }}" placeholder="例: gemini-pro, gpt-4o-mini">
+</div>
+
+<div class="mb-3 llm-base-url-group" id="llm_base_url_group_{{ role }}">
+    <label for="llm_base_url_{{ role }}" class="form-label">ベース URL (OpenAI互換API用)</label>
+    <input type="text" class="form-control" id="llm_base_url_{{ role }}" name="llm_servers[{{ role }}][base_url]" value="{{ config.base_url }}" placeholder="例: http://localhost:11434/v1">
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="mb-3">
+            <label for="llm_temperature_{{ role }}" class="form-label">Temperature</label>
+            <input type="number" step="0.1" min="0" max="2" class="form-control" id="llm_temperature_{{ role }}" name="llm_servers[{{ role }}][temperature]" value="{{ config.temperature | default(0.7) }}">
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="mb-3">
+            <label for="llm_max_tokens_{{ role }}" class="form-label">Max Tokens</label>
+            <input type="number" step="1" min="1" class="form-control" id="llm_max_tokens_{{ role }}" name="llm_servers[{{ role }}][max_tokens]" value="{{ config.max_tokens | default(2048) }}">
         </div>
     </div>
 </div>
+{% endmacro %}
+
+
+<form action="/save_servers_config" method="post">
+<div class="row">
+    <div class="col-lg-8 mb-4">
+        <div class="card p-4">
+            <h3 class="card-title">LLMサーバー</h3>
+            <ul class="nav nav-tabs" id="llmServerTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="generation-tab" data-bs-toggle="tab" data-bs-target="#generation" type="button" role="tab" aria-controls="generation" aria-selected="true">構成要素生成</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="evaluation-tab" data-bs-toggle="tab" data-bs-target="#evaluation" type="button" role="tab" aria-controls="evaluation" aria-selected="false">構成要素評価</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="drafting-tab" data-bs-toggle="tab" data-bs-target="#drafting" type="button" role="tab" aria-controls="drafting" aria-selected="false">下書き生成</button>
+                </li>
+            </ul>
+            <div class="tab-content pt-3">
+                <div class="tab-pane fade show active" id="generation" role="tabpanel" aria-labelledby="generation-tab">
+                    {{ render_llm_config('generation', '構成要素生成', user_config.llm_servers.generation) }}
+                </div>
+                <div class="tab-pane fade" id="evaluation" role="tabpanel" aria-labelledby="evaluation-tab">
+                    {{ render_llm_config('evaluation', '構成要素評価', user_config.llm_servers.evaluation) }}
+                </div>
+                <div class="tab-pane fade" id="drafting" role="tabpanel" aria-labelledby="drafting-tab">
+                    {{ render_llm_config('drafting', '下書き生成', user_config.llm_servers.drafting) }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4 mb-4">
+        <div class="card p-4 h-100">
+            <h3 class="card-title">量子サーバー</h3>
+            <div class="mb-3">
+                <label for="quantum_server_api_key" class="form-label">API キー</label>
+                <input type="password" class="form-control" id="quantum_server_api_key" name="quantum_server[api_key]" value="{{ user_config.quantum_server.api_key }}" placeholder="量子サーバーのAPIキー" autocomplete="off">
+            </div>
+        </div>
+    </div>
+</div>
+<div class="row">
+    <div class="col-12 text-end">
+        <button type="submit" class="btn btn-primary">全サーバー設定を保存</button>
+    </div>
+</div>
+</form>
 
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const llmProviderSelect = document.getElementById('llm_provider');
-        const llmModelNameGroup = document.getElementById('llm_model_name_group');
-        const llmBaseUrlGroup = document.getElementById('llm_base_url_group');
-        const llmApiKeyGroup = document.getElementById('llm_api_key_group');
+document.addEventListener('DOMContentLoaded', function() {
+    function toggleLlmFields(role) {
+        const providerSelect = document.getElementById(`llm_provider_${role}`);
+        const modelNameGroup = document.getElementById(`llm_model_name_group_${role}`);
+        const baseUrlGroup = document.getElementById(`llm_base_url_group_${role}`);
+        
+        if (!providerSelect) return;
 
-        function toggleLlmFields() {
-            const selectedProvider = llmProviderSelect.value;
-            if (selectedProvider === 'other') {
-                llmModelNameGroup.style.display = 'block';
-                llmBaseUrlGroup.style.display = 'block';
-            } else {
-                llmModelNameGroup.style.display = 'none';
-                llmBaseUrlGroup.style.display = 'none';
-            }
+        const selectedProvider = providerSelect.value;
+
+        if (selectedProvider === 'other') {
+            modelNameGroup.style.display = 'block';
+            baseUrlGroup.style.display = 'block';
+        } else {
+            modelNameGroup.style.display = 'none';
+            baseUrlGroup.style.display = 'none';
         }
+    }
 
-        llmProviderSelect.addEventListener('change', toggleLlmFields);
-
-        // Initial call to set correct state based on current value
-        toggleLlmFields();
+    const roles = ['generation', 'evaluation', 'drafting'];
+    roles.forEach(role => {
+        const providerSelect = document.getElementById(`llm_provider_${role}`);
+        if (providerSelect) {
+            providerSelect.addEventListener('change', () => toggleLlmFields(role));
+            // Initial call to set correct state
+            toggleLlmFields(role);
+        }
     });
+});
 </script>
 
 <div class="card p-4 mb-4">

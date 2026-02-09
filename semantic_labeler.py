@@ -169,6 +169,8 @@ def label_suggestions(input_data: Dict[str, Any], llm_config: Dict[str, Any], lo
         logger.warning("警告: `llm_suggestions` が見つからないか、空です。")
         return
 
+    print(f"[LLM] PROVIDER: {llm_config["provider"]}: Model: {llm_config["model_name"]}")
+
     for suggestion_group in suggestions:
         category = suggestion_group.get("category", "不明なカテゴリ")
         elements = suggestion_group.get("elements", {})

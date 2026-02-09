@@ -126,16 +126,17 @@ def dashboard():
     data = load_user_data(session["user_id"])
     documents = data.get("documents", [])
     
+    # Get persistent server configurations
+    llm_servers = data.get("llm_servers", {})
+    quantum_server = data.get("quantum_server", {})
+
+    # Ensure all roles have a default dictionary to prevent template errors
+    for role in ["generation", "evaluation", "drafting"]:
+        llm_servers.setdefault(role, {})
+
     user_config = {
-        "llm": {
-            "api_key": session.get("llm_api_key", ""),
-            "model_name": session.get("llm_model_name", ""),
-            "base_url": session.get("llm_base_url", ""),
-            "provider": session.get("llm_provider", "gemini")
-        },
-        "quantum": {
-            "api_key": session.get("quantum_server_api_key", "")
-        },
+        "llm_servers": llm_servers,
+        "quantum_server": quantum_server,
         "suggestion_count": session.get("suggestion_count", 3)
     }
 
@@ -200,34 +201,6 @@ def upload():
     flash("ファイルをアップロードしました。")
     return redirect("/dashboard")
 
-@app.route("/save_config", methods=["POST"])
-def save_config():
-    if "user_id" not in session:
-        flash("ログインしてください。", "error")
-        return redirect("/login")
-
-    # Store LLM config in session
-    session["llm_api_key"] = request.form["llm_api_key"]
-    
-    llm_provider = request.form.get("llm_provider", "gemini")
-    session["llm_provider"] = llm_provider
-
-    if llm_provider == "gemini":
-        session["llm_model_name"] = "gemini-pro" # Default for Gemini
-        session["llm_base_url"] = "" # Gemini typically doesn't use a custom base_url
-    elif llm_provider == "chatgpt":
-        session["llm_model_name"] = "gpt-4o-mini" # Default for ChatGPT
-        session["llm_base_url"] = "" # ChatGPT typically doesn't use a custom base_url
-    else: # other
-        # For 'other', use the values provided in the form
-        session["llm_model_name"] = request.form["llm_model_name"]
-        session["llm_base_url"] = request.form["llm_base_url"]
-    
-    session["quantum_server_api_key"] = request.form["quantum_server_api_key"]
-    
-    flash("設定を保存しました。", "success")
-    return redirect("/dashboard")
-
 @app.route("/update_suggestion_count", methods=["POST"])
 def update_suggestion_count():
     if "user_id" not in session:
@@ -246,6 +219,50 @@ def update_suggestion_count():
         flash(f"予期せぬエラーが発生しました: {e}", "error")
     
     return redirect("/dashboard")
+
+
+@app.route("/save_servers_config", methods=["POST"])
+def save_servers_config():
+    if "user_id" not in session:
+        flash("ログインしてください。", "error")
+        return redirect("/login")
+
+    data = load_user_data(session["user_id"])
+    
+    # --- LLMサーバー設定の解析 ---
+    llm_servers = {}
+    roles = ["generation", "evaluation", "drafting"]
+    for role in roles:
+        role_config = {
+            "provider": request.form.get(f"llm_servers[{role}][provider]", "gemini"),
+            "api_key": request.form.get(f"llm_servers[{role}][api_key]", ""),
+            "model_name": request.form.get(f"llm_servers[{role}][model_name]", ""),
+            "base_url": request.form.get(f"llm_servers[{role}][base_url]", ""),
+            "temperature": request.form.get(f"llm_servers[{role}][temperature]", "0.7"),
+            "max_tokens": request.form.get(f"llm_servers[{role}][max_tokens]", "2048"),
+        }
+        # providerに応じたデフォルトモデル名の設定
+        if role_config["provider"] == "gemini" and not role_config["model_name"]:
+            role_config["model_name"] = "gemini-pro"
+        elif role_config["provider"] == "chatgpt" and not role_config["model_name"]:
+            role_config["model_name"] = "gpt-4o-mini"
+            
+        llm_servers[role] = role_config
+
+    # --- 量子サーバー設定の解析 ---
+    quantum_server = {
+        "api_key": request.form.get("quantum_server[api_key]", "")
+    }
+
+    # --- 保存 ---
+    data["llm_servers"] = llm_servers
+    data["quantum_server"] = quantum_server
+    
+    save_user_data(session["user_id"], data)
+    
+    flash("サーバー設定を保存しました。", "success")
+    return redirect("/dashboard")
+
 
 # ---------- ドキュメント ----------
 
@@ -365,19 +382,25 @@ def generate_composition_ideas(doc_id):
     current_generation_number = _get_next_generation_number(session["user_id"])
     suffix = f"_{current_generation_number}"
 
-    # Get LLM configuration from session
-    llm_api_key = session.get("llm_api_key")
-    llm_model_name = session.get("llm_model_name")
-    llm_base_url = session.get("llm_base_url")
-    llm_provider = session.get("llm_provider", "gemini") # Retrieve llm_provider
-    suggestion_count = session.get("suggestion_count", 3) # Retrieve suggestion_count
+    # Get LLM configuration for the 'generation' role from persistent user data
+    llm_servers = data.get("llm_servers", {})
+    generation_config = llm_servers.get("generation", {})
+    
+    llm_provider = generation_config.get("provider")
+    llm_api_key = generation_config.get("api_key")
+    llm_model_name = generation_config.get("model_name")
+    llm_base_url = generation_config.get("base_url")
+    suggestion_count = session.get("suggestion_count", 3)
 
+    print(f"[LLM] PROVIDER: {llm_provider}: Model: {llm_model_name}")
+    
     # Refined mock fallback logic
-    # Mock if API key is missing for Gemini/ChatGPT, or if any of the three are missing for 'other'
     is_config_incomplete = False
-    if llm_provider in ["gemini", "chatgpt"] and not llm_api_key:
+    if not llm_provider or not llm_model_name:
         is_config_incomplete = True
-    elif llm_provider == "other" and (not llm_model_name or not llm_base_url):
+    elif llm_provider in ["gemini", "chatgpt"] and not llm_api_key:
+        is_config_incomplete = True
+    elif llm_provider == "other" and not llm_base_url: # API key for local models is often not required
         is_config_incomplete = True
     
     if is_config_incomplete:
@@ -637,17 +660,19 @@ def evaluate_document(doc_id):
     if "user_id" not in session:
         return redirect("/login")
 
-    # LLM設定が不完全な場合はエラーを表示して中断
-    llm_provider = session.get("llm_provider")
-    is_config_incomplete = (llm_provider in ["gemini", "chatgpt"] and not session.get("llm_api_key")) or \
-                           (llm_provider == "other" and (not session.get("llm_model_name") or not session.get("llm_base_url")))
-
-    if is_config_incomplete:
-        flash("評価を実行するには、まず「設定」タブでLLM設定を完了してください。", "warning")
-        return redirect(f"/document/{doc_id}#evaluation")
-
     data = load_user_data(session["user_id"])
     document = find_document(data, doc_id)
+
+    # LLM設定が不完全な場合はエラーを表示して中断
+    evaluation_config = data.get("llm_servers", {}).get("evaluation", {})
+    llm_provider = evaluation_config.get("provider")
+    is_config_incomplete = not llm_provider or not evaluation_config.get("model_name") or \
+                           (llm_provider in ["gemini", "chatgpt"] and not evaluation_config.get("api_key")) or \
+                           (llm_provider == "other" and not evaluation_config.get("base_url"))
+
+    if is_config_incomplete:
+        flash("評価を実行するには、まずダッシュボードで「構成要素評価 用 LLM」設定を完了してください。", "warning")
+        return redirect(f"/document/{doc_id}#evaluation")
 
     if not document or "llm_suggestions" not in document or not document["llm_suggestions"]:
         flash("評価対象のAI提案がありません。「提案」タブで先にアイデアを生成してください。", "warning")
@@ -669,18 +694,12 @@ def evaluate_stream(doc_id):
     if "user_id" not in session:
         return Response("Unauthorized", status=401)
 
-    # ジェネレータが実行される前に、リクエストコンテキストから必要な情報を取得
-    user_id = session["user_id"]
-    llm_config = {
-        "api_key": session.get("llm_api_key"),
-        "model_name": session.get("llm_model_name"),
-        "provider": session.get("llm_provider"),
-        "base_url": session.get("llm_base_url")
-    }
-
-    def generate_labels(user_id_arg, llm_config_arg):
+    def generate_labels(user_id_arg):
         data = load_user_data(user_id_arg)
         document = find_document(data, doc_id)
+
+        # Get LLM configuration for the 'evaluation' role from persistent user data
+        llm_config = data.get("llm_servers", {}).get("evaluation", {})
 
         if not document or "llm_suggestions" not in document or not document["llm_suggestions"]:
             yield f"data: {json.dumps({'error': '評価対象のデータが見つかりません。'})}\n\n"
@@ -706,7 +725,7 @@ def evaluate_stream(doc_id):
 
         current_processed_count = 0
         try:
-            for labeled_result in label_suggestions(evaluation_input, llm_config=llm_config_arg, log_file_path=log_file_path):
+            for labeled_result in label_suggestions(evaluation_input, llm_config=llm_config, log_file_path=log_file_path):
                 all_results.append(labeled_result)
                 current_processed_count += 1
                 yield f"data: {json.dumps(labeled_result, ensure_ascii=False)}\n\n"
@@ -726,7 +745,7 @@ def evaluate_stream(doc_id):
                 logger_to_cleanup.removeHandler(handler)
 
     # ジェネレータに必要な情報を引数として渡す
-    return Response(generate_labels(user_id, llm_config), mimetype='text/event-stream')
+    return Response(generate_labels(session["user_id"]), mimetype='text/event-stream')
 
 
 
