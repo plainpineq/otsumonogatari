@@ -29,7 +29,7 @@
         <button class="nav-link" id="vectorization-tab" data-bs-toggle="tab" data-bs-target="#vectorization" type="button" role="tab" aria-controls="vectorization" aria-selected="false">数値化</button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="element-fit-tab" data-bs-toggle="tab" data-bs-target="#element-fit" type="button" role="tab" aria-controls="element-fit" aria-selected="false">Element Fit</button>
+        <button class="nav-link" id="element-fit-tab" data-bs-toggle="tab" data-bs-target="#element-fit" type="button" role="tab" aria-controls="element-fit" aria-selected="false">適合度</button>
     </li>
 </ul>
 
@@ -315,7 +315,7 @@
     </div>
     <div class="tab-pane fade" id="element-fit" role="tabpanel" aria-labelledby="element-fit-tab">
         <div class="card p-4 shadow-sm mt-3">
-            <h2 class="h4 mb-3">構成要素 適合度 (Element Fit)</h2>
+            <h2 class="h4 mb-3">構成要素 適合度</h2>
             <p>「構成要素」で定義された理想の役割と、「数値化」されたAI提案との適合度（距離）を計算します。スコアが小さいほど、その役割に近いことを示します。</p>
             <div class="d-flex gap-2">
                 <form id="element-fit-form" action="{{ url_for('element_fit', doc_id=document.id) }}" method="POST">
@@ -715,7 +715,7 @@
         });
     }
 
-    // JavaScript for Element Fit Tab
+    // JavaScript for 適合度 Tab
     const elementFitForm = document.getElementById('element-fit-form');
     if (elementFitForm) {
         elementFitForm.addEventListener('submit', function() {
