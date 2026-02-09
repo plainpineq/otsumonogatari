@@ -20,23 +20,25 @@ def _compute_single_fit(candidate_features: Dict[str, Any],
     """
     fit_score = 0.0
     
-    # 1. スカラー特徴量の差分を計算 (change, causal, conflict)
+    # 1. スカラー特徴量の差分を計算 (change_type, causal_exposure, conflict_type)
     scalar_keys = ["change", "causal", "conflict"]
     for key in scalar_keys:
-        candidate_value = candidate_features.get(key, 0)
-        ideal_value = ideal_features.get(key, 0)
+        # 修正: ネストされたfeaturesディクショナリから正しいキーを抽出
+        candidate_value = candidate_features.get("scalar_features", {}).get(f"{key}_type", 0)
+        ideal_value = ideal_features.get("scalar_features", {}).get(f"{key}_type", 0)
         fit_score += abs(candidate_value - ideal_value)
 
     # 2. エフェクト特徴量のペナルティを計算
     # 理想が持つべきエフェクトのセット
-    ideal_effects_vector = ideal_features.get("effects", [])
+    # 修正: ネストされたfeaturesディクショナリから正しいキーを抽出
+    ideal_effects_vector = ideal_features.get("vector_features", {}).get("reader_effect", [])
     ideal_effects_present = set()
     for i, score in enumerate(ideal_effects_vector):
         if i < len(reader_effect_map) and score > 0:
             ideal_effects_present.add(reader_effect_map[i])
             
     # 候補が持つエフェクトのセット
-    candidate_effects_vector = candidate_features.get("effects", [])
+    candidate_effects_vector = candidate_features.get("vector_features", {}).get("reader_effect", [])
     candidate_effects_present = set()
     for i, score in enumerate(candidate_effects_vector):
         if i < len(reader_effect_map) and score > 0:

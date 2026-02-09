@@ -604,7 +604,7 @@ def download_document(doc_id):
         # "llm_suggestions", # ユーザーの要望によりダウンロード対象に含める
         # "semantic_labels", # ユーザーの要望によりダウンロード対象に含める
         # "numerical_features",
-        "fit_results",
+        # "fit_results",
         "units" # ユーザー提供の例にないため削除
     ]
     for key in keys_to_remove:
@@ -806,20 +806,37 @@ def element_fit(doc_id):
         flash("適合度を計算するには、先に「構成要素」タブで理想の役割を定義してください。", "warning")
         return redirect(f"/document/{doc_id}#element-fit")
 
-    # 2. Extract ideal elements from composition data
+    # 2. Extract ideal elements from composition data and assign unique features
+    
+    # Load reader effects to create unique feature vectors for ideals
+    try:
+        with open("prompt_templates/novel_label_config.json", "r", encoding="utf-8") as f:
+            label_config = json.load(f)
+        reader_effects = list(label_config.get("labels", {}).get("reader_effect", {}).keys())
+    except Exception:
+        reader_effects = []
+
     ideal_elements_raw = []
+    element_index = 0
     for cat_group in composition_elements.values(): # "common", "doc_type_specific"
         for category in cat_group.get("categories", []):
             for element in category.get("elements", []):
-                # NOTE: The 'value' from the form is not used for featurizing.
-                # We are creating a "template" based on its name/role.
-                # The featurizer will assign default values.
+                
+                # Create a unique label set for each ideal to give it a unique feature vector
+                temp_labels = {}
+                if reader_effects:
+                    # Assign a unique reader_effect based on the element's index to ensure
+                    # each ideal has a different feature vector.
+                    effect_to_assign = reader_effects[element_index % len(reader_effects)]
+                    temp_labels["reader_effect"] = [effect_to_assign]
+
                 ideal_elements_raw.append({
                     "category": category.get("label"),
                     "element": element.get("label"),
                     "text": element.get("label"), # Use label as text for featurizing
-                    "labels": {} # No semantic labels, so featurizer will use defaults
+                    "labels": temp_labels # Use the generated labels instead of empty ones
                 })
+                element_index += 1
 
     if not ideal_elements_raw:
         flash("適合度を計算するための理想の役割が「構成要素」タブで定義されていません。", "warning")
