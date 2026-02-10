@@ -54,16 +54,11 @@
 
         <!-- STEP 2: Selection and Editing -->
         <div id="step2-selection" class="card p-4 my-3" style="display: none;">
-            <h3 class="h4">ステップ2: 題名とプロットを確定する</h3>
+            <h3 class="h4">ステップ2: 基本項目を確定する</h3> {# 見出しも変更 #}
             <p class="text-muted">生成された案から好きなものを選び、自由に編集して、あなたの物語の方向性を固めてください。</p>
             <form id="selection-form">
-                <div class="mb-3">
-                    <label for="selected-title" class="form-label fw-bold">確定した題名</label>
-                    <input type="text" id="selected-title" class="form-control" required>
-                </div>
-                <div class="mb-3">
-                    <label for="selected-plot" class="form-label fw-bold">確定したプロット</label>
-                    <textarea id="selected-plot" class="form-control" rows="5" required></textarea>
+                <div id="dynamic-selection-fields">
+                    <!-- JavaScriptで動的に生成されます -->
                 </div>
                 <button id="confirm-selection-btn" type="button" class="btn btn-success">この内容で構成を確定する</button>
                 <button id="back-to-step1-btn" type="button" class="btn btn-secondary ms-2">ステップ1に戻る (再生成)</button>
@@ -376,62 +371,108 @@ document.addEventListener('DOMContentLoaded', function() {
         document.querySelector('.tab-content').prepend(alertDiv);
     }
 
-    function renderProposals(suggestions) {
-        const proposalsContainer = document.getElementById('proposals-results');
-        proposalsContainer.innerHTML = ''; // 以前のコンテンツをクリア
-
-        let basicSettingsCategoryFromLLM = null;
-        suggestions.forEach(s => {
-            if (s.category === "基本設定") {
-                basicSettingsCategoryFromLLM = s;
+        function renderProposals(suggestions) {
+            const proposalsContainer = document.getElementById('proposals-results');
+            proposalsContainer.innerHTML = ''; // 以前のコンテンツをクリア
+    
+            let basicSettingsCategoryFromLLM = null;
+            suggestions.forEach(s => {
+                if (s.category === "基本設定") {
+                    basicSettingsCategoryFromLLM = s;
+                }
+            });
+    
+            if (!basicSettingsCategoryFromLLM || !basicSettingsCategoryFromLLM.elements) {
+                proposalsContainer.innerHTML = '<div class="alert alert-info">基本設定の提案は見つかりませんでした。</div>';
+                return;
             }
-        });
-
-        if (!basicSettingsCategoryFromLLM || !basicSettingsCategoryFromLLM.elements) {
-            proposalsContainer.innerHTML = '<div class="alert alert-info">基本設定の提案は見つかりませんでした。</div>';
-            return;
-        }
-
-        // --- 順序を保証するための修正 ---
-        // document.composition_elements から "base" カテゴリの要素の順序を取得
-        let orderedElementLabels = [];
-        const baseCategoryFromDoc = documentData.composition_elements?.categories?.find(cat => cat.id === 'base');
-        if (baseCategoryFromDoc && baseCategoryFromDoc.elements) {
-            orderedElementLabels = baseCategoryFromDoc.elements.map(el => el.label);
-        } else {
-            // "base" カテゴリが見つからない場合は、LLMからの応答のキーをそのまま使う（順序は保証されない）
-            orderedElementLabels = Object.keys(basicSettingsCategoryFromLLM.elements);
-        }
-
-        // 取得した順序に基づいてループ
-        orderedElementLabels.forEach(elementName => {
-            if (basicSettingsCategoryFromLLM.elements.hasOwnProperty(elementName)) {
-                const elementProposals = basicSettingsCategoryFromLLM.elements[elementName];
-
-                let elementHtml = `<h4 class="h5 mt-4">${elementName}案</h4><div class="list-group mb-4">`;
-                elementProposals.forEach(p => {
-                    const radioName = `${elementName}-proposal`;
-                    elementHtml += `
-                        <label class="list-group-item">
-                            <input class="form-check-input me-2" type="radio" name="${radioName}" value="${p.replace(/"/g, '&quot;')}">
-                            ${p}
-                        </label>
-                    `;
+    
+            // document.composition_elements から "base" カテゴリの要素の順序とタイプを取得
+            let orderedBasicElements = [];
+            const baseCategoryFromDoc = documentData.composition_elements?.categories?.find(cat => cat.id === 'base');
+            if (baseCategoryFromDoc && baseCategoryFromDoc.elements) {
+                orderedBasicElements = baseCategoryFromDoc.elements; // {id, label, editable} のオブジェクト配列
+            } else {
+                // "base" カテゴリが見つからない場合は、LLMからの応答のキーをそのまま使う（順序とタイプは保証されない）
+                orderedBasicElements = Object.keys(basicSettingsCategoryFromLLM.elements).map(label => ({label: label, id: label}));
+            }
+    
+            // ステップ1の提案リストとステップ2の動的入力フィールドのHTMLを生成
+            const dynamicSelectionFieldsContainer = document.getElementById('dynamic-selection-fields');
+            dynamicSelectionFieldsContainer.innerHTML = ''; // クリア
+    
+            let generatedStep2Fields = {}; // {elementLabel: {id, type, value}}
+    
+            orderedBasicElements.forEach(basicElementMeta => {
+                const elementName = basicElementMeta.label; // 例: "題名", "プロット", "キーテクノロジー"
+                const elementId = basicElementMeta.id; // 例: "title", "plot", "key_tech"
+                const inputFieldType = (elementId === 'plot' || elementName === 'プロット') ? 'textarea' : 'input'; // プロットはtextarea
+    
+                // LLMからの提案がある場合
+                if (basicSettingsCategoryFromLLM.elements.hasOwnProperty(elementName)) {
+                    const elementProposals = basicSettingsCategoryFromLLM.elements[elementName];
+                    
+                    // --- Step 1 proposals HTML ---
+                    let elementHtmlStep1 = `<h4 class="h5 mt-4">${elementName}案</h4><div class="list-group mb-4">`;
+                    elementProposals.forEach(p => {
+                        const radioName = `${elementName}-proposal`;
+                        elementHtmlStep1 += `
+                            <label class="list-group-item">
+                                <input class="form-check-input me-2" type="radio" name="${radioName}" value="${p.replace(/"/g, '&quot;')}" data-element-label="${elementName}">
+                                ${p}
+                            </label>
+                        `;
+                    });
+                    elementHtmlStep1 += '</div>';
+                    proposalsContainer.innerHTML += elementHtmlStep1; // Step 1 に追加
+                }
+    
+                // --- Step 2 dynamic input field HTML ---
+                const fieldId = `selected-${elementId}`; // 例: selected-title, selected-plot
+                const fieldName = `selected-${elementId}`; // フォーム送信用のname
+                let fieldHtmlStep2 = `
+                    <div class="mb-3">
+                        <label for="${fieldId}" class="form-label fw-bold">確定した${elementName}</label>
+                `;
+                if (inputFieldType === 'textarea') {
+                    fieldHtmlStep2 += `<textarea id="${fieldId}" name="${fieldName}" class="form-control" rows="5" required></textarea>`;
+                } else {
+                    fieldHtmlStep2 += `<input type="text" id="${fieldId}" name="${fieldName}" class="form-control" required>`;
+                }
+                fieldHtmlStep2 += '</div>';
+                dynamicSelectionFieldsContainer.innerHTML += fieldHtmlStep2; // Step 2 に追加
+    
+                // 後で値設定できるようにIDを記録
+                generatedStep2Fields[elementName] = { id: fieldId, type: inputFieldType, label: elementName };
+            });
+    
+            // Step 1 のラジオボタンのイベントリスナーを設定
+            // 選択された値を Step 2 の動的入力フィールドに反映
+            orderedBasicElements.forEach(basicElementMeta => {
+                const elementName = basicElementMeta.label;
+                const fieldId = `selected-${basicElementMeta.id}`;
+                const radioName = `${elementName}-proposal`;
+    
+                document.querySelectorAll(`input[name="${radioName}"]`).forEach(radio => {
+                    radio.addEventListener('change', (e) => {
+                        const targetField = document.getElementById(fieldId);
+                        if (targetField) {
+                            targetField.value = e.target.value;
+                        }
+                    });
                 });
-                elementHtml += '</div>';
-                proposalsContainer.innerHTML += elementHtml;
+            });
+            // --- Step 2の既存データがあればセット ---
+            // documentData.selected_basic_elements に保存されている値があれば、それを初期値としてセット
+            if (documentData.selected_basic_elements) {
+                for (const elemId in documentData.selected_basic_elements) {
+                    const field = document.getElementById(`selected-${elemId}`);
+                    if (field) {
+                        field.value = documentData.selected_basic_elements[elemId];
+                    }
+                }
             }
-        });
-
-        // ラジオボタンの変更イベントリスナーを動的に設定
-        document.querySelectorAll('input[name="題名-proposal"]').forEach(radio => {
-            radio.addEventListener('change', (e) => selectedTitleInput.value = e.target.value);
-        });
-        document.querySelectorAll('input[name="プロット-proposal"]').forEach(radio => {
-            radio.addEventListener('change', (e) => selectedPlotTextarea.value = e.target.value);
-        });
-    }
-
+        }
     function showStep(step) {
         step1Div.style.display = 'none';
         step2Div.style.display = 'none';
@@ -477,41 +518,67 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    confirmSelectionBtn.addEventListener('click', async () => {
-        const title = selectedTitleInput.value;
-        const plot = selectedPlotTextarea.value;
-
-        if (!title || !plot) {
-            showAlert('題名とプロットの両方を入力してください。');
-            return;
-        }
-
-        confirmSelectionBtn.disabled = true;
-        confirmSelectionBtn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> 保存中...`;
-
-        try {
-            const response = await fetch(`/document/${docId}/save_selection`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title, plot })
+        confirmSelectionBtn.addEventListener('click', async () => {
+            const dynamicSelectionFieldsContainer = document.getElementById('dynamic-selection-fields');
+            const allInputs = dynamicSelectionFieldsContainer.querySelectorAll('input, textarea');
+            let selectedBasicElements = {};
+            let allFieldsFilled = true;
+    
+            allInputs.forEach(input => {
+                const fieldName = input.name.replace('selected-', ''); // "selected-title" -> "title"
+                selectedBasicElements[fieldName] = input.value;
+                if (!input.value && input.required) { // required 属性があれば必須チェック
+                    allFieldsFilled = false;
+                }
             });
-            const data = await response.json();
-            if (!response.ok) {
-                throw new Error(data.error || 'Failed to save selection.');
+    
+            if (!allFieldsFilled) {
+                showAlert('すべての基本項目を入力してください。', 'warning');
+                return;
             }
-
-            document.getElementById('document-title-heading').textContent = title;
-            document.title = title;
-            showAlert('構成を確定しました。ステップ3に進んでください。', 'success');
-            showStep(3);
-        } catch (error) {
-            showAlert(`保存に失敗しました: ${error.message}`);
-        } finally {
-            confirmSelectionBtn.disabled = false;
-            confirmSelectionBtn.innerHTML = 'この内容で構成を確定する';
-        }
-    });
-
+    
+            // 特に題名とプロットは必須 (なくても生成フローは進むが、UI上は重要なのでチェック)
+            const title = selectedBasicElements["title"];
+            const plot = selectedBasicElements["plot"];
+            if (!title || !plot) {
+                 showAlert('題名とプロットの両方を入力してください。', 'warning');
+                 return;
+            }
+    
+            confirmSelectionBtn.disabled = true;
+            confirmSelectionBtn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> 保存中...`;
+    
+            try {
+                const response = await fetch(`/document/${docId}/save_selection`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    // 選択された全ての基本項目を送信
+                    body: JSON.stringify(selectedBasicElements)
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to save selection.');
+                }
+                
+                // UI更新
+                document.getElementById('document-title-heading').textContent = title; // 題名があれば更新
+                document.title = title; // ブラウザタブのタイトルも更新
+    
+                // documentData.selected_basic_elements に保存された内容を反映
+                // (これはsave_selectionエンドポイントがdocumentDataを更新してくれると仮定)
+                documentData.selected_basic_elements = selectedBasicElements;
+    
+    
+                showAlert('構成を確定しました。ステップ3に進んでください。', 'success');
+                showStep(3);
+    
+            } catch (error) {
+                showAlert(`保存に失敗しました: ${error.message}`);
+            } finally {
+                confirmSelectionBtn.disabled = false;
+                confirmSelectionBtn.innerHTML = 'この内容で構成を確定する';
+            }
+        });
     const backToStep1Btn = document.getElementById('back-to-step1-btn');
     backToStep1Btn.addEventListener('click', () => {
         showStep(1);

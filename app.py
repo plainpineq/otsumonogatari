@@ -439,14 +439,19 @@ def save_selection(doc_id):
     if document is None:
         return jsonify({"error": "Document not found"}), 404
 
-    request_data = request.get_json()
+    request_data = request.get_json() # 動的に生成された基本項目がここにJSONとして渡される
+
+    # 'title' と 'plot' は必須とする（JavaScript側でもチェックしているが、バックエンドでも念のため）
     selected_title = request_data.get("title")
     selected_plot = request_data.get("plot")
 
     if not selected_title or not selected_plot:
         return jsonify({"error": "Title and plot are required."}), 400
 
-    # Save the selections into the document data
+    # 全ての基本項目を document["selected_basic_elements"] に保存
+    document["selected_basic_elements"] = request_data
+    
+    # 互換性のため、selected_title と selected_plot も直接保存
     document["selected_title"] = selected_title
     document["selected_plot"] = selected_plot
 

@@ -50,16 +50,13 @@ def build_composition_ideas_prompt(document: dict, composition_meta: dict, user_
     elements_text = ""
     has_elements = False
 
-    # Find the target category
+    # Find the target category within the flattened document["composition_elements"]["categories"]
     target_category_data = None
-    # Check common categories
-    for cat_group in [document.get("composition_elements", {}).get("common", {}), document.get("composition_elements", {}).get("doc_type_specific", {})]:
-        if cat_group and cat_group.get("categories"):
-            for category in cat_group["categories"]:
-                if category.get("label") == target_category_label:
-                    target_category_data = category
-                    break
-        if target_category_data:
+    all_document_categories = document.get("composition_elements", {}).get("categories", []) # 新しいパス
+
+    for category in all_document_categories:
+        if category.get("label") == target_category_label:
+            target_category_data = category
             break
 
     if target_category_data and target_category_data.get("elements"):
@@ -147,50 +144,37 @@ def _build_dynamic_json_example(document: dict, target_category_label: Optional[
     """
     dynamic_suggestions_list = []
 
-    # Helper to process categories (common or doc_type_specific)
-    def process_categories(categories_data):
-        if not categories_data:
-            return
+    all_document_categories = document.get("composition_elements", {}).get("categories", []) # 新しいパス
 
-        for category_obj in categories_data:
-            category_name = category_obj.get("label")
-            if not category_name:
-                continue
-            
-            # Filter by target_category_label if provided
-            if target_category_label and category_name != target_category_label:
-                continue
+    for category_obj in all_document_categories:
+        category_name = category_obj.get("label")
+        if not category_name:
+            continue
+        
+        # Filter by target_category_label if provided
+        if target_category_label and category_name != target_category_label:
+            continue
 
-            elements_dict = {}
-            elements_in_category = category_obj.get("elements")
-            if elements_in_category:
-                for element_obj in elements_in_category:
-                    element_label = element_obj.get("label")
-                    if element_label:
-                        # Use generic suggestion placeholders
-                        elements_dict[element_label] = [f"提案{i+1}" for i in range(suggestion_count)]
-            
-            # Only add category if it has elements
-            if elements_dict:
-                dynamic_suggestions_list.append({
-                    "category": category_name,
-                    "elements": elements_dict
-                })
+        elements_dict = {}
+        elements_in_category = category_obj.get("elements")
+        if elements_in_category:
+            for element_obj in elements_in_category:
+                element_label = element_obj.get("label")
+                if element_label:
+                    # Use generic suggestion placeholders
+                    elements_dict[element_label] = [f"提案{i+1}" for i in range(suggestion_count)]
+        
+        # Only add category if it has elements
+        if elements_dict:
+            dynamic_suggestions_list.append({
+                "category": category_name,
+                "elements": elements_dict
+            })
 
-    # Process common categories
-    common_categories = document.get("composition_elements", {}).get("common", {}).get("categories")
-    process_categories(common_categories)
-
-    # Process doc_type_specific categories
-    doc_type_specific_categories = document.get("composition_elements", {}).get("doc_type_specific", {}).get("categories")
-    process_categories(doc_type_specific_categories)
-    
     # Wrap in the final "suggestions" structure
     final_json_structure = {"suggestions": dynamic_suggestions_list}
 
     # Generate JSON string with proper indentation and Japanese character handling
-    # Escaping curly braces for Python's .format() is not needed here
-    # as this string is already the final JSON.
     return json.dumps(final_json_structure, indent=2, ensure_ascii=False)
 
 
