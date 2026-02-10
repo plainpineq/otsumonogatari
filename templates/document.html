@@ -4,6 +4,7 @@
 <div class="card p-4 mb-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h1 class="h2 mb-0" id="document-title-heading">{{ document.title }}</h1>
+        <div id="document-data" data-doc='{{ document | tojson | default({}, true) }}'></div> {# documentデータをdata属性に埋め込む #}
         <div>
             <a href="/dashboard" class="btn btn-outline-secondary me-2">ダッシュボード</a>
             <form action="/document/{{ document.id }}/download" method="GET" style="display:inline-block;">
@@ -47,10 +48,7 @@
                 <p class="mt-2">生成中...</p>
             </div>
             <div id="proposals-results" class="mt-4" style="display: none;">
-                <h4 class="h5">題名案</h4>
-                <div id="title-proposals-list" class="list-group mb-4"></div>
-                <h4 class="h5">プロット案</h4>
-                <div id="plot-proposals-list" class="list-group"></div>
+                <!-- JavaScriptで動的に生成されます -->
             </div>
         </div>
 
@@ -167,7 +165,7 @@
                             {% else %}
                                 <span>{{ category.label }}</span>
                             {% endif %}
-                            
+
                             {% if doc_type_meta_data and doc_type_meta_data.editable and category.editable %}
                                 <button type="submit" name="remove_doc_type_category" value="{{ category.id }}" class="btn btn-danger btn-sm ms-2">分類削除</button>
                             {% endif %}
@@ -189,7 +187,7 @@
                                 </div>
                             {% endfor %}
                         {% endif %}
-                        
+
                         {% if category.editable %}
                             <button type="submit" name="add_element_{{ category_id }}" value="1" class="btn btn-success btn-sm mt-2">＋ {{ category.label }}を追加</button>
                         {% endif %}
@@ -222,7 +220,7 @@
                     <div id="evaluation-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
                 </div>
             </div>
-            
+
             <hr>
             {% if document.semantic_labels %}
                 <h3 class="h5 mt-3">評価結果</h3>
@@ -306,7 +304,7 @@
     <div class="tab-pane fade" id="element-fit" role="tabpanel" aria-labelledby="element-fit-tab">
         <div class="card p-4 shadow-sm mt-3">
             <h2 class="h4 mb-3">構成要素 適合度</h2>
-            <p>「構成要素」で定義された理想の役割と、「数値化」されたAI提案との適合度（距離）を計算します。スコアが小さいほど、その役割に近いことを示します。</p>
+			<p>「構成要素」で定義された理想の役割と、「数値化」されたAI提案との適合度（距離）を計算します。スコアが小さいほど、その役割に近いことを示します。</p>        
             <div class="d-flex gap-2">
                 <form id="element-fit-form" action="{{ url_for('element_fit', doc_id=document.id) }}" method="POST">
                     <button type="submit" id="element-fit-button" class="btn btn-primary">適合度を計算</button>
@@ -347,7 +345,8 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const docId = "{{ document.id }}";
-    const documentData = {{ document | tojson | default('{}', true) }};
+    const documentDataElement = document.getElementById('document-data');
+    const documentData = JSON.parse(documentDataElement.dataset.doc || '{}');
 
     // --- UI Elements ---
     const step1Div = document.getElementById('step1-proposals');
@@ -357,13 +356,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const generateProposalsBtn = document.getElementById('generate-proposals-btn');
     const proposalsLoadingDiv = document.getElementById('proposals-loading');
     const proposalsResultsDiv = document.getElementById('proposals-results');
-    const titleProposalsList = document.getElementById('title-proposals-list');
-    const plotProposalsList = document.getElementById('plot-proposals-list');
 
     const selectedTitleInput = document.getElementById('selected-title');
     const selectedPlotTextarea = document.getElementById('selected-plot');
     const confirmSelectionBtn = document.getElementById('confirm-selection-btn');
-    
+
     const generateCompositionBtn = document.getElementById('generate-composition-btn');
     const compositionResultsDiv = document.getElementById('composition-results');
 
@@ -378,38 +375,59 @@ document.addEventListener('DOMContentLoaded', function() {
         `;
         document.querySelector('.tab-content').prepend(alertDiv);
     }
-    
-    function renderProposals(suggestions) {
-        let titleProposals = [];
-        let plotProposals = [];
 
+    function renderProposals(suggestions) {
+        const proposalsContainer = document.getElementById('proposals-results');
+        proposalsContainer.innerHTML = ''; // 以前のコンテンツをクリア
+
+        let basicSettingsCategoryFromLLM = null;
         suggestions.forEach(s => {
-            if(s.category === "基本設定" && s.elements["題名"]) {
-                titleProposals = s.elements["題名"];
-            }
-            if(s.category === "基本設定" && s.elements["プロット"]) {
-                plotProposals = s.elements["プロット"];
+            if (s.category === "基本設定") {
+                basicSettingsCategoryFromLLM = s;
             }
         });
 
-        titleProposalsList.innerHTML = titleProposals.map((p, i) => `
-            <label class="list-group-item">
-                <input class="form-check-input me-2" type="radio" name="title-proposal" value="${p.replace(/"/g, '&quot;')}">
-                ${p}
-            </label>
-        `).join('');
+        if (!basicSettingsCategoryFromLLM || !basicSettingsCategoryFromLLM.elements) {
+            proposalsContainer.innerHTML = '<div class="alert alert-info">基本設定の提案は見つかりませんでした。</div>';
+            return;
+        }
 
-        plotProposalsList.innerHTML = plotProposals.map((p, i) => `
-            <label class="list-group-item">
-                <input class="form-check-input me-2" type="radio" name="plot-proposal" value="${p.replace(/"/g, '&quot;')}">
-                ${p}
-            </label>
-        `).join('');
+        // --- 順序を保証するための修正 ---
+        // document.composition_elements から "base" カテゴリの要素の順序を取得
+        let orderedElementLabels = [];
+        const baseCategoryFromDoc = documentData.composition_elements?.categories?.find(cat => cat.id === 'base');
+        if (baseCategoryFromDoc && baseCategoryFromDoc.elements) {
+            orderedElementLabels = baseCategoryFromDoc.elements.map(el => el.label);
+        } else {
+            // "base" カテゴリが見つからない場合は、LLMからの応答のキーをそのまま使う（順序は保証されない）
+            orderedElementLabels = Object.keys(basicSettingsCategoryFromLLM.elements);
+        }
 
-        document.querySelectorAll('input[name="title-proposal"]').forEach(radio => {
+        // 取得した順序に基づいてループ
+        orderedElementLabels.forEach(elementName => {
+            if (basicSettingsCategoryFromLLM.elements.hasOwnProperty(elementName)) {
+                const elementProposals = basicSettingsCategoryFromLLM.elements[elementName];
+
+                let elementHtml = `<h4 class="h5 mt-4">${elementName}案</h4><div class="list-group mb-4">`;
+                elementProposals.forEach(p => {
+                    const radioName = `${elementName}-proposal`;
+                    elementHtml += `
+                        <label class="list-group-item">
+                            <input class="form-check-input me-2" type="radio" name="${radioName}" value="${p.replace(/"/g, '&quot;')}">
+                            ${p}
+                        </label>
+                    `;
+                });
+                elementHtml += '</div>';
+                proposalsContainer.innerHTML += elementHtml;
+            }
+        });
+
+        // ラジオボタンの変更イベントリスナーを動的に設定
+        document.querySelectorAll('input[name="題名-proposal"]').forEach(radio => {
             radio.addEventListener('change', (e) => selectedTitleInput.value = e.target.value);
         });
-        document.querySelectorAll('input[name="plot-proposal"]').forEach(radio => {
+        document.querySelectorAll('input[name="プロット-proposal"]').forEach(radio => {
             radio.addEventListener('change', (e) => selectedPlotTextarea.value = e.target.value);
         });
     }
@@ -436,8 +454,6 @@ document.addEventListener('DOMContentLoaded', function() {
         generateProposalsBtn.disabled = true;
         proposalsLoadingDiv.style.display = 'block';
         proposalsResultsDiv.style.display = 'none';
-        titleProposalsList.innerHTML = '';
-        plotProposalsList.innerHTML = '';
 
         try {
             const response = await fetch(`/document/${docId}/generate_proposals`, { method: 'POST' });
@@ -483,7 +499,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!response.ok) {
                 throw new Error(data.error || 'Failed to save selection.');
             }
-            
+
             document.getElementById('document-title-heading').textContent = title;
             document.title = title;
             showAlert('構成を確定しました。ステップ3に進んでください。', 'success');
@@ -500,7 +516,7 @@ document.addEventListener('DOMContentLoaded', function() {
     backToStep1Btn.addEventListener('click', () => {
         showStep(1);
     });
-    
+
     generateCompositionBtn.addEventListener('click', async () => {
         generateCompositionBtn.disabled = true;
         generateCompositionBtn.textContent = '全体を生成中...';
@@ -520,7 +536,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                 </div>
             `;
-            
+
             try {
                 const response = await fetch(`/document/${docId}/generate_composition`, {
                     method: 'POST',
@@ -528,7 +544,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     body: JSON.stringify({ category_label: categoryLabel })
                 });
                 const data = await response.json();
-                
+
                 const categorySection = document.getElementById(categorySectionId);
                 if (!response.ok) {
                      categorySection.innerHTML = `
@@ -537,7 +553,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     `;
                     continue;
                 }
-                
+
                 renderSingleCategorySuggestions(categorySectionId, data.suggestions[0]);
             } catch (error) {
                 const categorySection = document.getElementById(categorySectionId);
@@ -563,7 +579,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         let htmlContent = `<h5>分類: ${categoryObj.category}</h5><div class="list-group">`;
-        
+
         for (const elementName in categoryObj.elements) {
             if (categoryObj.elements.hasOwnProperty(elementName)) {
                 const suggestionsForElement = categoryObj.elements[elementName];

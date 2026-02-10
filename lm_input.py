@@ -3,6 +3,7 @@ import json
 import os
 from user_files import get_user_data_path
 from typing import Optional
+from services.services import DEFAULT_COMPOSITION_META # DEFAULT_COMPOSITION_META をインポート
 
 # ... existing code ...
 
@@ -193,10 +194,10 @@ def _build_dynamic_json_example(document: dict, target_category_label: Optional[
     return json.dumps(final_json_structure, indent=2, ensure_ascii=False)
 
 
-def build_title_plot_proposals_prompt(document: dict, user_id: str, suffix: str = "", suggestion_count: int = 3) -> str:
+def build_title_plot_proposals_prompt(document: dict, composition_meta: dict, user_id: str, suffix: str = "", suggestion_count: int = 3) -> str:
     """
-    Builds a prompt for the LLM to generate initial title and plot proposals.
-    The suffix is used for naming generated files.
+    Builds a prompt for the LLM to generate initial title and plot proposals based on
+    the "base" category elements in document["composition_elements"].
     """
     template_file_path = os.path.join("prompt_templates", "novel_title_plot_proposals.md")
 
@@ -204,15 +205,48 @@ def build_title_plot_proposals_prompt(document: dict, user_id: str, suffix: str 
         template_content = f.read()
 
     intent_fields = document.get("intent", {}).get("fields", {})
-    
-    # Format intent fields into a JSON string for the prompt
     intent_dict = {field.get("label"): field.get("value") for key, field in intent_fields.items() if field.get("label") and field.get("value")}
     formatted_intent_json = json.dumps(intent_dict, indent=2, ensure_ascii=False)
+
+    # --- Extract "base" category elements from document["composition_elements"] for the prompt ---
+    elements_text = ""
+    dynamic_json_example_for_base = {}
+    base_category_label = "基本設定" # composition_meta.json で定義されているラベル (変更なし)
+
+    # document["composition_elements"]["categories"] から "base" カテゴリを探す
+    base_category_data = None
+    if "composition_elements" in document and "categories" in document["composition_elements"]:
+        for category in document["composition_elements"]["categories"]:
+            # id が "base" または label が "基本設定" のカテゴリを探す
+            if category.get("id") == "base" or category.get("label") == base_category_label:
+                base_category_data = category
+                break
+
+    if base_category_data and base_category_data.get("elements"):
+        elements_text += f"- 分類名: {base_category_data['label']}\n"
+        elements_dict = {}
+        for element in base_category_data["elements"]:
+            if element.get("label"):
+                elements_text += f"  - 要素名: {element['label']}\n"
+                elements_dict[element["label"]] = [f"提案{i+1}" for i in range(suggestion_count)]
+        
+        dynamic_json_example_for_base = {
+            "suggestions": [{
+                "category": base_category_label,
+                "elements": elements_dict
+            }]
+        }
+    
+    if not elements_text:
+        elements_text = "（基本項目は定義されていません）\n"
+        dynamic_json_example_for_base = {"suggestions": [{"category": base_category_label, "elements": {}}]}
+
 
     # Fill template placeholders
     prompt = template_content.replace("{{ intent }}", formatted_intent_json)
     prompt = prompt.replace("{{ suggestion_count }}", str(suggestion_count))
-
+    prompt = prompt.replace("{elements_text}", elements_text)
+    prompt = prompt.replace("{dynamic_json_example}", json.dumps(dynamic_json_example_for_base, indent=2, ensure_ascii=False))
 
     # Output the generated prompt to a file for debugging/verification
     user_data_dir = get_user_data_path(user_id)

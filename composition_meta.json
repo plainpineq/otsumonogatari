@@ -9,7 +9,7 @@
         {
           "id": "base",
           "label": "基本設定",
-          "editable": false,
+          "editable": true,
           "elements": [
             {
               "id": "title",

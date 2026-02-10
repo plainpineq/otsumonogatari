@@ -410,7 +410,7 @@ def generate_proposals(doc_id):
         }), 200
 
     try:
-        prompt = build_title_plot_proposals_prompt(document, session["user_id"], suffix=suffix, suggestion_count=suggestion_count)
+        prompt = build_title_plot_proposals_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"], suffix=suffix, suggestion_count=suggestion_count)
         raw_text, suggestions_dict = call_llm(llm_api_key, llm_model_name, prompt, llm_provider, base_url=llm_base_url)
         
         # Save raw and structured responses
