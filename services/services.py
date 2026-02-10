@@ -48,6 +48,9 @@ def create_document(
         "composition_meta": copy.deepcopy(DEFAULT_COMPOSITION_META) # デフォルトのメタ定義を追加
     }
 
+    # 新規ドキュメント作成時に構成要素を正規化
+    normalize_composition_elements(document)
+
     # 日本語の doc_type を英語のキーにマッピング (mapped_doc_type_idを取得するため)
     doc_type_mapping = {meta["label"]: doc_id for doc_id, meta in DEFAULT_COMPOSITION_META["doc_types"].items()}
     mapped_doc_type_id = doc_type_mapping.get(doc_type)

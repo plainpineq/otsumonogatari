@@ -23,6 +23,11 @@ def build_composition_ideas_prompt(document: dict, composition_meta: dict, user_
     template_file_name = f"{doc_type_id}.md"
     template_file_path = os.path.join("prompt_templates", template_file_name)
 
+    # --- DEBUG PRINTS ---
+    print(f"--- Debugging build_composition_ideas_prompt ---")
+    print(f"Received target_category_label: '{target_category_label}'")
+    # --- END DEBUG PRINTS ---
+
     # Fallback to default.md if doc_type specific template does not exist
     if not os.path.exists(template_file_path):
         template_file_path = os.path.join("prompt_templates", "default.md")
@@ -41,37 +46,28 @@ def build_composition_ideas_prompt(document: dict, composition_meta: dict, user_
         formatted_intent = "（作者の意図は特に指定されていません）"
 
     # Extract composition elements based on all defined categories and format them for the prompt
-    elements_text = "" # Start with an empty string
-    
+    elements_text = ""
     has_elements = False
 
-    # Helper function to append categories and elements
-    def append_elements_to_text(categories_data):
-        nonlocal has_elements
-        nonlocal elements_text # Declare elements_text as nonlocal
-        if categories_data:
-            for category in categories_data:
-                # Filter by target_category_label if provided
-                if target_category_label and category.get("label") != target_category_label:
-                    continue
+    # Find the target category
+    target_category_data = None
+    # Check common categories
+    for cat_group in [document.get("composition_elements", {}).get("common", {}), document.get("composition_elements", {}).get("doc_type_specific", {})]:
+        if cat_group and cat_group.get("categories"):
+            for category in cat_group["categories"]:
+                if category.get("label") == target_category_label:
+                    target_category_data = category
+                    break
+        if target_category_data:
+            break
 
-                elements_text_local = "" # Use a local string to check if elements are added
-                if category.get("elements"):
-                    elements_text_local += f"- 分類名: {category['label']}\n" # Category heading
-                    for element in category["elements"]:
-                        if element.get("label"):
-                            elements_text_local += f"  - 要素名: {element['label']}\n" # Indented element
-                            has_elements = True
-                    elements_text += elements_text_local
+    if target_category_data and target_category_data.get("elements"):
+        elements_text += f"- 分類名: {target_category_data['label']}\n"
+        for element in target_category_data["elements"]:
+            if element.get("label"):
+                elements_text += f"  - 要素名: {element['label']}\n"
+                has_elements = True
 
-    # Process common categories
-    common_categories = document.get("composition_elements", {}).get("common", {}).get("categories")
-    append_elements_to_text(common_categories)
-
-    # Process doc_type_specific categories
-    doc_type_specific_categories = document.get("composition_elements", {}).get("doc_type_specific", {}).get("categories")
-    append_elements_to_text(doc_type_specific_categories)
-    
     if not has_elements:
         elements_text = "（構成要素は定義されていません）\n"
 
@@ -82,11 +78,12 @@ def build_composition_ideas_prompt(document: dict, composition_meta: dict, user_
     # Fill template placeholders
     prompt = template_content.format(
         document_title=document_title,
-        doc_type=doc_type_label, # Use the human-readable label for the prompt
+        doc_type=doc_type_label,
         intent_text=formatted_intent,
         elements_text=elements_text,
-        dynamic_json_example=dynamic_json_example, # New placeholder
-        suggestion_count=suggestion_count
+        dynamic_json_example=dynamic_json_example,
+        suggestion_count=suggestion_count,
+        confirmed_plot=f"確定済みの題名: {document.get('selected_title', '未設定')}\n確定済みのプロット: {document.get('selected_plot', '未設定')}"
     )
 
     # Output the generated prompt to a file for debugging/verification
@@ -194,3 +191,38 @@ def _build_dynamic_json_example(document: dict, target_category_label: Optional[
     # Escaping curly braces for Python's .format() is not needed here
     # as this string is already the final JSON.
     return json.dumps(final_json_structure, indent=2, ensure_ascii=False)
+
+
+def build_title_plot_proposals_prompt(document: dict, user_id: str, suffix: str = "", suggestion_count: int = 3) -> str:
+    """
+    Builds a prompt for the LLM to generate initial title and plot proposals.
+    The suffix is used for naming generated files.
+    """
+    template_file_path = os.path.join("prompt_templates", "novel_title_plot_proposals.md")
+
+    with open(template_file_path, "r", encoding="utf-8") as f:
+        template_content = f.read()
+
+    intent_fields = document.get("intent", {}).get("fields", {})
+    
+    # Format intent fields into a JSON string for the prompt
+    intent_dict = {field.get("label"): field.get("value") for key, field in intent_fields.items() if field.get("label") and field.get("value")}
+    formatted_intent_json = json.dumps(intent_dict, indent=2, ensure_ascii=False)
+
+    # Fill template placeholders
+    prompt = template_content.replace("{{ intent }}", formatted_intent_json)
+    prompt = prompt.replace("{{ suggestion_count }}", str(suggestion_count))
+
+
+    # Output the generated prompt to a file for debugging/verification
+    user_data_dir = get_user_data_path(user_id)
+    os.makedirs(user_data_dir, exist_ok=True) # Ensure the directory exists
+    output_file_path = os.path.join(user_data_dir, f"generated_prompt{suffix}.md")
+    try:
+        with open(output_file_path, "w", encoding="utf-8") as f:
+            f.write(prompt)
+        print(f"Generated prompt for proposals written to: {output_file_path}")
+    except Exception as e:
+        print(f"Error writing prompt to file: {e}")
+
+    return prompt

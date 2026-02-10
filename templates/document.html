@@ -3,7 +3,7 @@
 {% block content %}
 <div class="card p-4 mb-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h1 class="h2 mb-0">{{ document.title }}</h1>
+        <h1 class="h2 mb-0" id="document-title-heading">{{ document.title }}</h1>
         <div>
             <a href="/dashboard" class="btn btn-outline-secondary me-2">ダッシュボード</a>
             <form action="/document/{{ document.id }}/download" method="GET" style="display:inline-block;">
@@ -20,7 +20,7 @@
         <button class="nav-link" id="composition-tab" data-bs-toggle="tab" data-bs-target="#composition" type="button" role="tab" aria-controls="composition" aria-selected="false">構成要素</button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="suggestions-tab" data-bs-toggle="tab" data-bs-target="#suggestions" type="button" role="tab" aria-controls="suggestions" aria-selected="false">提案</button>
+        <button class="nav-link" id="suggestions-tab" data-bs-toggle="tab" data-bs-target="#suggestions" type="button" role="tab" aria-controls="suggestions" aria-selected="false">生成</button>
     </li>
     <li class="nav-item" role="presentation">
         <button class="nav-link" id="evaluation-tab" data-bs-toggle="tab" data-bs-target="#evaluation" type="button" role="tab" aria-controls="evaluation" aria-selected="false">評価</button>
@@ -34,6 +34,54 @@
 </ul>
 
 <div class="tab-content" id="documentTabContent">
+    <div class="tab-pane fade" id="suggestions" role="tabpanel" aria-labelledby="suggestions-tab">
+        <!-- STEP 1: Title/Plot Proposal Generation -->
+        <div id="step1-proposals" class="card p-4 my-3">
+            <h3 class="h4">ステップ1: 題名とプロットの案を生成する</h3>
+            <p class="text-muted">「作者の意図」タブの内容に基づいて、物語の核となる題名とプロットの案を複数生成します。</p>
+            <button id="generate-proposals-btn" class="btn btn-primary">生成開始</button>
+            <div id="proposals-loading" class="text-center my-3" style="display: none;">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">生成中...</p>
+            </div>
+            <div id="proposals-results" class="mt-4" style="display: none;">
+                <h4 class="h5">題名案</h4>
+                <div id="title-proposals-list" class="list-group mb-4"></div>
+                <h4 class="h5">プロット案</h4>
+                <div id="plot-proposals-list" class="list-group"></div>
+            </div>
+        </div>
+
+        <!-- STEP 2: Selection and Editing -->
+        <div id="step2-selection" class="card p-4 my-3" style="display: none;">
+            <h3 class="h4">ステップ2: 題名とプロットを確定する</h3>
+            <p class="text-muted">生成された案から好きなものを選び、自由に編集して、あなたの物語の方向性を固めてください。</p>
+            <form id="selection-form">
+                <div class="mb-3">
+                    <label for="selected-title" class="form-label fw-bold">確定した題名</label>
+                    <input type="text" id="selected-title" class="form-control" required>
+                </div>
+                <div class="mb-3">
+                    <label for="selected-plot" class="form-label fw-bold">確定したプロット</label>
+                    <textarea id="selected-plot" class="form-control" rows="5" required></textarea>
+                </div>
+                <button id="confirm-selection-btn" type="button" class="btn btn-success">この内容で構成を確定する</button>
+                <button id="back-to-step1-btn" type="button" class="btn btn-secondary ms-2">ステップ1に戻る (再生成)</button>
+            </form>
+        </div>
+
+        <!-- STEP 3: Full Composition Generation -->
+        <div id="step3-composition" class="card p-4 my-3" style="display: none;">
+            <h3 class="h4">ステップ3: 物語の全体像を生成する</h3>
+            <p class="text-muted">確定した題名とプロットに基づいて、物語の全ての構成要素（導入、事件、転機、結末など）を生成します。</p>
+            <button id="generate-composition-btn" class="btn btn-primary">全体生成を開始</button>
+            <div id="composition-results" class="mt-3">
+                <!-- Suggestions will be loaded here -->
+            </div>
+        </div>
+    </div>
     <div class="tab-pane fade" id="intent" role="tabpanel" aria-labelledby="intent-tab">
         <div class="card p-4">
             <h2 class="h4 mb-3">作者の意図（Intent）</h2>            <form method="post" action="/document/{{ document.id }}/intent">
@@ -187,7 +235,7 @@
                             {% endif %}
                             
                             {% if category.editable %}
-                                <button type="submit" name="add_element_{{ category_id }}" value="1" class="btn btn-success btn-sm mt-2">＋ {{ category.label }}を追加</button>
+                                <button type="submit" name="add_element_{{ category.id }}" value="1" class="btn btn-success btn-sm mt-2">＋ {{ category.label }}を追加</button>
                             {% endif %}
                         </div>
                     {% endfor %}
@@ -197,18 +245,6 @@
                 <button type="submit" class="btn btn-primary mt-3 me-2">構成要素の構造を保存</button>
                 <a href="/dashboard" class="btn btn-secondary mt-3">← ダッシュボードへ</a>
             </form>
-        </div>
-    </div>
-    <div class="tab-pane fade" id="suggestions" role="tabpanel" aria-labelledby="suggestions-tab">
-        <div class="card p-4 shadow-sm mt-3">
-            <h2 class="h4 mb-3">AIによる構成要素の提案</h2>
-            <button type="button" id="generate-ideas-btn" class="btn btn-success mb-3">提案を生成</button>
-            <div id="suggestion-container" class="mt-3" style="display: none;">
-                <h4 class="h5">AIからの提案リスト</h4>
-                <div id="suggestion-list" class="list-group">
-                    <!-- Suggestions will be loaded here by JavaScript -->
-                </div>
-            </div>
         </div>
     </div>
     <div class="tab-pane fade" id="evaluation" role="tabpanel" aria-labelledby="evaluation-tab">
@@ -355,110 +391,277 @@
     </div>
 </div>
 <script>
-    // Initial data from the backend
-    // Ensure this is properly JSON-encoded to handle special characters and nulls
-    const initialLlmSuggestions = {{ document.llm_suggestions | tojson | default('[]', true) }}; // Pass existing suggestions from backend
-    const documentData = {{ document | tojson | default('{}', true) }}; // Full document data for order reference
+document.addEventListener('DOMContentLoaded', function() {
+    const docId = "{{ document.id }}";
+    const documentData = {{ document | tojson | default('{}', true) }};
 
-    // Extract all unique category labels from the document's composition elements
-    const allCategoryLabels = [];
-    {% if document.composition_elements.get('common', {}).get('categories') %}
-        {% for category in document.composition_elements.get('common', {}).get('categories', []) %}
-            allCategoryLabels.push("{{ category.label }}");
-        {% endfor %}
-    {% endif %}
-    {% if document.composition_elements.get('doc_type_specific', {}).get('categories') %}
-        {% for category in document.composition_elements.get('doc_type_specific', {}).get('categories', []) %}
-            allCategoryLabels.push("{{ category.label }}");
-        {% endfor %}
-    {% endif %}
+    // --- UI Elements ---
+    const step1Div = document.getElementById('step1-proposals');
+    const step2Div = document.getElementById('step2-selection');
+    const step3Div = document.getElementById('step3-composition');
 
-    // New function to render suggestions for a single category
+    const generateProposalsBtn = document.getElementById('generate-proposals-btn');
+    const proposalsLoadingDiv = document.getElementById('proposals-loading');
+    const proposalsResultsDiv = document.getElementById('proposals-results');
+    const titleProposalsList = document.getElementById('title-proposals-list');
+    const plotProposalsList = document.getElementById('plot-proposals-list');
+
+    const selectedTitleInput = document.getElementById('selected-title');
+    const selectedPlotTextarea = document.getElementById('selected-plot');
+    const confirmSelectionBtn = document.getElementById('confirm-selection-btn');
+    
+    const generateCompositionBtn = document.getElementById('generate-composition-btn');
+    const compositionResultsDiv = document.getElementById('composition-results');
+
+    // --- Functions ---
+    function showAlert(message, type = 'danger') {
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+        alertDiv.role = 'alert';
+        alertDiv.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        // Insert at the top of the main content area
+        document.querySelector('.tab-content').prepend(alertDiv);
+    }
+    
+    function renderProposals(suggestions) {
+        let titleProposals = [];
+        let plotProposals = [];
+
+        suggestions.forEach(s => {
+            if(s.category === "基本設定" && s.elements["題名"]) {
+                titleProposals = s.elements["題名"];
+            }
+            if(s.category === "基本設定" && s.elements["あらすじ"]) {
+                plotProposals = s.elements["あらすじ"];
+            }
+        });
+
+        const generatedTitleHtml = titleProposals.map((p, i) => `
+            <label class="list-group-item">
+                <input class="form-check-input me-2" type="radio" name="title-proposal" value="${p.replace(/"/g, '&quot;')}">
+                ${p}
+            </label>
+        `).join('');
+        console.log('Generated Title HTML:', generatedTitleHtml); // ★追加
+
+        const generatedPlotHtml = plotProposals.map((p, i) => `
+            <label class="list-group-item">
+                <input class="form-check-input me-2" type="radio" name="plot-proposal" value="${p.replace(/"/g, '&quot;')}">
+                ${p}
+            </label>
+        `).join('');
+        console.log('Generated Plot HTML:', generatedPlotHtml); // ★追加
+
+        titleProposalsList.innerHTML = generatedTitleHtml;
+        plotProposalsList.innerHTML = generatedPlotHtml;
+
+        // Add event listeners to radio buttons
+        document.querySelectorAll('input[name="title-proposal"]').forEach(radio => {
+            radio.addEventListener('change', (e) => selectedTitleInput.value = e.target.value);
+        });
+        document.querySelectorAll('input[name="plot-proposal"]').forEach(radio => {
+            radio.addEventListener('change', (e) => selectedPlotTextarea.value = e.target.value);
+        });
+    }
+
+    function showStep(step) {
+        // 全てのステップを一旦非表示にするのではなく、現在のステップと前のステップを表示する
+        step1Div.style.display = 'none';
+        step2Div.style.display = 'none';
+        step3Div.style.display = 'none';
+
+        if (step === 1) {
+            step1Div.style.display = 'block';
+        } else if (step === 2) {
+            step1Div.style.display = 'block'; // Step 1を表示したまま
+            step2Div.style.display = 'block'; // Step 2を表示
+        } else if (step === 3) {
+            step1Div.style.display = 'block'; // Step 1を表示したまま
+            step2Div.style.display = 'block'; // Step 2を表示したまま
+            step3Div.style.display = 'block'; // Step 3を表示
+        }
+    }
+
+    // --- Event Listeners ---
+
+    // STEP 1: Generate Proposals
+    generateProposalsBtn.addEventListener('click', async () => {
+        generateProposalsBtn.disabled = true;
+        proposalsLoadingDiv.style.display = 'block';
+        proposalsResultsDiv.style.display = 'none'; // Hide previous results display state
+        titleProposalsList.innerHTML = ''; // Clear previous title proposals
+        plotProposalsList.innerHTML = '';   // Clear previous plot proposals
+
+        try {
+            const response = await fetch(`/document/${docId}/generate_proposals`, { method: 'POST' });
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to generate proposals.');
+            }
+
+            if (data.message) showAlert(data.message, 'info');
+
+            renderProposals(data.suggestions);
+            proposalsResultsDiv.style.display = 'block';
+            showStep(2); // Move to next step only on success
+        } catch (error) {
+            showAlert(`提案の生成に失敗しました: ${error.message}`);
+            showStep(1); // Stay on step 1 if generation fails
+        } finally {
+            generateProposalsBtn.disabled = false;
+            proposalsLoadingDiv.style.display = 'none';
+        }
+    });
+
+    // STEP 2: Confirm Selection
+    confirmSelectionBtn.addEventListener('click', async () => {
+        const title = selectedTitleInput.value;
+        const plot = selectedPlotTextarea.value;
+
+        if (!title || !plot) {
+            showAlert('題名とプロットの両方を入力してください。');
+            return;
+        }
+
+        confirmSelectionBtn.disabled = true;
+        confirmSelectionBtn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> 保存中...`;
+
+        try {
+            const response = await fetch(`/document/${docId}/save_selection`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, plot })
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to save selection.');
+            }
+            
+            // Update UI
+            document.getElementById('document-title-heading').textContent = title;
+            document.title = title; // Update browser tab title
+            showAlert('構成を確定しました。ステップ3に進んでください。', 'success');
+            showStep(3);
+
+        } catch (error) {
+            showAlert(`保存に失敗しました: ${error.message}`);
+        } finally {
+            confirmSelectionBtn.disabled = false;
+            confirmSelectionBtn.innerHTML = 'この内容で構成を確定する';
+        }
+    });
+
+    // STEP 2: Back to Step 1 Button
+    const backToStep1Btn = document.getElementById('back-to-step1-btn');
+    backToStep1Btn.addEventListener('click', () => {
+        showStep(1);
+        // Optionally, clear selections to make it clear we're starting over
+        // For now, keep them to allow easy modification if desired
+    });
+    
+    // STEP 3: Generate Full Composition
+    generateCompositionBtn.addEventListener('click', async () => {
+        generateCompositionBtn.disabled = true;
+        generateCompositionBtn.textContent = '全体を生成中...';
+        compositionResultsDiv.innerHTML = ''; // Clear previous results
+
+        const allCategoryLabels = [];
+        {% if document.composition_elements.get('common', {}).get('categories') %}
+            {% for category in document.composition_elements.get('common', {}).get('categories', []) %}
+                allCategoryLabels.push("{{ category.label }}");
+            {% endfor %}
+        {% endif %}
+        {% if document.composition_elements.get('doc_type_specific', {}).get('categories') %}
+            {% for category in document.composition_elements.get('doc_type_specific', {}).get('categories', []) %}
+                allCategoryLabels.push("{{ category.label }}");
+            {% endfor %}
+        {% endif %}
+        
+        // Exclude the '基本設定' category which contains title/plot
+        const categoriesToGenerate = allCategoryLabels.filter(label => label !== '共通構成要素');
+
+
+        for (const categoryLabel of categoriesToGenerate) {
+            const categorySectionId = `composition-for-${categoryLabel.replace(/\s/g, '-')}`;
+            compositionResultsDiv.innerHTML += `
+                <div id="${categorySectionId}" class="card p-3 mb-2">
+                    <h5>分類: ${categoryLabel}</h5>
+                    <div class="text-center my-2">
+                        <div class="spinner-border text-secondary spinner-border-sm" role="status"></div>
+                        <p class="mt-1 text-muted">生成中...</p>
+                    </div>
+                </div>
+            `;
+            
+            try {
+                const response = await fetch(`/document/${docId}/generate_composition`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ category_label: categoryLabel })
+                });
+                const data = await response.json();
+                
+                const categorySection = document.getElementById(categorySectionId);
+                if (!response.ok) {
+                     categorySection.innerHTML = `
+                        <h5>分類: ${categoryLabel}</h5>
+                        <div class="alert alert-danger mb-0">${data.error || "提案の生成に失敗しました。"}</div>
+                    `;
+                    continue;
+                }
+                
+                // Reuse the old rendering logic for single categories
+                renderSingleCategorySuggestions(categorySectionId, data.suggestions[0]);
+
+            } catch (error) {
+                const categorySection = document.getElementById(categorySectionId);
+                categorySection.innerHTML = `
+                    <h5>分類: ${categoryLabel}</h5>
+                    <div class="alert alert-danger mb-0">エラーが発生しました: ${error.message}</div>
+                `;
+            }
+        }
+
+        generateCompositionBtn.textContent = '全体生成を再実行';
+        generateCompositionBtn.disabled = false;
+    });
+
+    // Re-use from old script to render step 3 results
     function renderSingleCategorySuggestions(sectionId, categoryObj) {
         const categorySection = document.getElementById(sectionId);
         categorySection.innerHTML = ""; // Clear loading spinner
 
         if (!categoryObj || !categoryObj.elements) {
-            categorySection.innerHTML = `
-                <h5>分類: ${categoryObj.category}</h5>
-                <div class="alert alert-info mb-0">提案は見つかりませんでした。</div>
-            `;
+            // categoryObj が undefined の場合を考慮して、単に「提案が見つかりませんでした」と表示
+            const categoryLabel = categoryObj ? categoryObj.category : '不明な分類'; // categoryObj があればラベルを取得
+            categorySection.innerHTML = `<h5>分類: ${categoryLabel}</h5><div class="alert alert-info mb-0">提案は見つかりませんでした。</div>`;
             return;
         }
 
-        let htmlContent = `<h5>分類: ${categoryObj.category}</h5>`;
-        htmlContent += `<div class="list-group">`; // Wrap elements in a list-group
-
-        // Determine the expected order of elements for this category from the original document structure
-        let expectedElementOrder = [];
-        const currentCategoryLabel = categoryObj.category;
-
-        // Helper to find category elements from documentData
-        function findElementsInDocumentData(categoriesData) {
-            if (!categoriesData) return;
-            for (const cat of categoriesData) {
-                if (cat.label === currentCategoryLabel && cat.elements) {
-                    expectedElementOrder = cat.elements.map(el => el.label);
-                    return; // Found and extracted, exit
-                }
-            }
-        }
-
-        // Process common categories in documentData
-        const commonCategoriesInDoc = documentData.composition_elements.common.categories;
-        findElementsInDocumentData(commonCategoriesInDoc);
-
-        // Process doc_type_specific categories in documentData if not found in common
-        if (expectedElementOrder.length === 0) {
-            const docTypeSpecificCategoriesInDoc = documentData.composition_elements.doc_type_specific.categories;
-            findElementsInDocumentData(docTypeSpecificCategoriesInDoc);
-        }
-
-        // Now, iterate based on the expected order
-        expectedElementOrder.forEach(elementName => {
-            // Only display if the element actually exists in the LLM's returned suggestions
+        let htmlContent = `<h5>分類: ${categoryObj.category}</h5><div class="list-group">`;
+        
+        for (const elementName in categoryObj.elements) {
             if (categoryObj.elements.hasOwnProperty(elementName)) {
                 const suggestionsForElement = categoryObj.elements[elementName];
-                
-                htmlContent += `<h6 class="ms-3 mb-1 mt-2">要素名: ${elementName}</h6>`; // Element Name
-
+                htmlContent += `<h6 class="ms-3 mb-1 mt-2">要素名: ${elementName}</h6>`;
                 htmlContent += `<ul class="list-group mb-2 ms-4">`;
                 suggestionsForElement.forEach(suggestion => {
-                    htmlContent += `
-                        <li class="list-group-item d-flex justify-content-between align-items-center py-1">
-                            <span>${suggestion}</span>
-                            <button type="button" class="btn btn-sm btn-outline-primary add-suggestion-btn" data-suggestion="${suggestion}" data-element="${elementName}">追加</button>
-                        </li>
-                    `;
+                    htmlContent += `<li class="list-group-item py-1">${suggestion}</li>`;
                 });
                 htmlContent += `</ul>`;
             }
-        });
-        htmlContent += `</div>`; // Close list-group
+        }
+        htmlContent += `</div>`;
         categorySection.innerHTML = htmlContent;
     }
 
-    // Adapt renderSuggestions for initial load of multiple categories
-    function renderSuggestions(suggestionsData) { // This function is for initial load
-        const suggestionList = document.getElementById("suggestion-list");
-        suggestionList.innerHTML = ""; // Clear all initial suggestions
-        const suggestionContainer = document.getElementById("suggestion-container");
 
-        if (suggestionsData && suggestionsData.length > 0) {
-            suggestionContainer.style.display = "block";
-            suggestionsData.forEach(categoryObj => {
-                const categoryLabel = categoryObj.category;
-                const categorySectionId = `suggestions-for-${categoryLabel.replace(/\s/g, '-')}`;
-                suggestionList.innerHTML += `<div id="${categorySectionId}" class="card p-3 mb-2"></div>`; // Create div for category
-                renderSingleCategorySuggestions(categorySectionId, categoryObj);
-            });
-        } else {
-            suggestionList.innerHTML = `<div class="alert alert-info">提案は見つかりませんでした。</div>`;
-            suggestionContainer.style.display = "block";
-        }
-    }
-
-    document.addEventListener('DOMContentLoaded', function() {
+    // --- Initial State ---
+    function initializeView() {
         // Activate tab based on URL hash
         let hash = window.location.hash;
         let tabToActivate;
@@ -470,262 +673,38 @@
         if (tabToActivate) {
             new bootstrap.Tab(tabToActivate).show();
         } else {
-            // Activate the default tab ('intent') if no hash or hash is invalid
+            // Default to the new 'intent' tab as it's the first in the reordered list
             let defaultTab = document.getElementById('intent-tab');
             if (defaultTab) {
                 new bootstrap.Tab(defaultTab).show();
             }
         }
 
-        // --- Load initial suggestions if available ---
-        if (initialLlmSuggestions && initialLlmSuggestions.length > 0) {
-            renderSuggestions(initialLlmSuggestions);
+        // Determine which step to show based on saved data
+        if (documentData.selected_title && documentData.selected_plot) {
+            selectedTitleInput.value = documentData.selected_title;
+            selectedPlotTextarea.value = documentData.selected_plot;
+            showStep(3);
+        } else {
+            showStep(1);
         }
-    });
 
-    // JavaScript for Suggestions Tab
-    document.getElementById("generate-ideas-btn").addEventListener("click", async function() {
-        const docId = "{{ document.id }}";
-        const suggestionContainer = document.getElementById("suggestion-container");
-        const suggestionList = document.getElementById("suggestion-list");
+        // Check if composition elements are defined and disable generation buttons if not
+        const hasCommonCategories = documentData.composition_elements?.common?.categories?.length > 0;
+        const hasDocTypeCategories = documentData.composition_elements?.doc_type_specific?.categories?.length > 0;
+        
+        const isCompositionDefined = hasCommonCategories || hasDocTypeCategories;
 
-        // Clear previous suggestions entirely before starting a new generation cycle
-        suggestionList.innerHTML = ""; 
-        suggestionContainer.style.display = "block";
-
-        // Disable button during generation
-        const generateBtn = this;
-        generateBtn.disabled = true;
-        generateBtn.textContent = "生成中...";
-
-        // Flag to indicate the very first category request in this session
-        let isFirstCategory = true;
-
-        for (const categoryLabel of allCategoryLabels) {
-            // Display loading state for the current category
-            const categorySectionId = `suggestions-for-${categoryLabel.replace(/\s/g, '-')}`;
-            suggestionList.innerHTML += `
-                <div id="${categorySectionId}" class="card p-3 mb-2">
-                    <h5>分類: ${categoryLabel}</h5>
-                    <div class="text-center my-2">
-                        <div class="spinner-border text-secondary spinner-border-sm" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                        <p class="mt-1">提案を生成中...</p>
-                    </div>
-                </div>
-            `;
-            // Scroll to the bottom to show new loading spinners
-            suggestionList.scrollTop = suggestionList.scrollHeight;
-
-
-            try {
-                const response = await fetch(`/document/${docId}/generate_ideas`, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({ 
-                        category_label: categoryLabel,
-                        is_first_category_in_session: isFirstCategory // Pass the flag
-                    }),
-                    credentials: "same-origin" // Ensure session cookie is sent
-                });
-
-                // After the first request, set the flag to false for subsequent requests
-                isFirstCategory = false;
-
-                const categorySection = document.getElementById(categorySectionId);
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    categorySection.innerHTML = `
-                        <h5>分類: ${categoryLabel}</h5>
-                        <div class="alert alert-danger mb-0">${errorData.error || "提案の生成に失敗しました。"}</div>
-                    `;
-                    continue; // Continue to next category
-                }
-
-                const data = await response.json();
-                // --- Call a new rendering function for just this category ---
-                // Backend now returns suggestions for only ONE category in the "suggestions" array
-                if (data.suggestions && data.suggestions.length > 0) {
-                    renderSingleCategorySuggestions(categorySectionId, data.suggestions[0]); 
-                } else {
-                     categorySection.innerHTML = `
-                        <h5>分類: ${categoryLabel}</h5>
-                        <div class="alert alert-info mb-0">この分類の提案は見つかりませんでした。</div>
-                    `;
-                }
-
-            } catch (error) {
-                console.error(`Error generating suggestions for ${categoryLabel}:`, error);
-                const categorySection = document.getElementById(categorySectionId);
-                categorySection.innerHTML = `
-                    <h5>分類: ${categoryLabel}</h5>
-                    <div class="alert alert-danger mb-0">エラーが発生しました: ${error.message}</div>
-                `;
-            }
+        if (!isCompositionDefined) {
+            generateProposalsBtn.disabled = true;
+            generateCompositionBtn.disabled = true;
+            // Optionally add a tooltip or message here
+            generateProposalsBtn.title = "構成要素を定義してから生成を開始してください。";
+            generateCompositionBtn.title = "構成要素を定義してから生成を開始してください。";
         }
-        generateBtn.disabled = false;
-        generateBtn.textContent = "提案を生成";
-    });
-
-    // Event delegation for Add Suggestion buttons
-    document.getElementById("suggestion-list").addEventListener("click", async function(event) {
-        if (event.target.classList.contains("add-suggestion-btn")) {
-            const suggestion = event.target.dataset.suggestion;
-            const elementName = event.target.dataset.element; // Get element name from data attribute
-            const docId = "{{ document.id }}";
-            
-            // To add a suggestion, we need to know which element it belongs to
-            // The backend's add_composition_element currently expects just 'label'
-            // We might need to enhance add_composition_element to accept element_name or category_id
-            
-            try {
-                const addResponse = await fetch(`/document/${docId}/add_composition_element`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ label: suggestion, element_name: elementName }) // Pass element_name
-                });
-
-                if (addResponse.ok) {
-                    alert("提案が追加されました。");
-                    // Reload the page to show the updated composition elements
-                    window.location.reload(); 
-                } else {
-                    const errorData = await addResponse.json();
-                    alert(`提案の追加に失敗しました: ${errorData.error || "不明なエラー"}`);
-                }
-            } catch (error) {
-                console.error("Error adding suggestion:", error);
-                alert(`提案の追加中にエラーが発生しました: ${error.message}`);
-            }
-        }
-    });
-
-    // JavaScript for Evaluation Tab (Real-time progress)
-    const evalBtn = document.getElementById('run-evaluation-btn');
-    if (evalBtn) {
-        evalBtn.addEventListener('click', function(event) {
-            event.preventDefault(); // Prevent form submission
-
-            const button = this;
-            button.disabled = true;
-            button.innerHTML = `
-                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                評価中...
-            `;
-
-            // Clear existing evaluation results if any
-            const evaluationResultsBody = document.getElementById('evaluation-results-body');
-            if (evaluationResultsBody) {
-                evaluationResultsBody.innerHTML = ''; // Clear the table body
-            }
-
-                        const statusDiv = document.getElementById('evaluation-status');
-                        const progressBarContainer = document.getElementById('evaluation-progress-container');
-                        const progressBar = document.getElementById('evaluation-progress-bar');
-                        
-                        statusDiv.innerHTML = '<div class="alert alert-info">評価サーバーに接続中...</div>';
-                        progressBarContainer.style.display = 'none'; // Hide progress bar initially
-                        progressBar.style.width = '0%'; // Reset width
-                        progressBar.textContent = '0%'; // Reset text
-                        progressBar.setAttribute('aria-valuenow', 0); // Reset value
-                        
-                        const docId = "{{ document.id }}";
-                        const eventSource = new EventSource(`/document/${docId}/evaluate/stream`);
-            eventSource.onmessage = function(e) {
-                const data = JSON.parse(e.data);
-
-                if (data.error) {
-                    statusDiv.innerHTML = `<div class="alert alert-danger">エラー: ${data.error}</div>`;
-                    eventSource.close();
-                    button.disabled = false;
-                    button.textContent = '評価を実行';
-                    progressBarContainer.style.display = 'none'; // Hide progress bar on error
-                    return;
-                }
-
-                if (data.event && data.event === 'total_items') {
-                    totalItems = data.count;
-                    progressBarContainer.style.display = 'block';
-                    progressBar.setAttribute('aria-valuenow', 0);
-                    progressBar.setAttribute('aria-valuemax', totalItems);
-                    progressBar.style.width = '0%';
-                    progressBar.textContent = '0%';
-                    statusDiv.innerHTML = '<div class="alert alert-info">評価処理を開始します...</div>';
-                    return;
-                }
-
-                if (data.event && data.event === 'progress') {
-                    const percentage = totalItems > 0 ? Math.round((data.current / totalItems) * 100) : 0;
-                    progressBar.style.width = `${percentage}%`;
-                    progressBar.setAttribute('aria-valuenow', data.current);
-                    progressBar.textContent = `${percentage}%`;
-                    return;
-                }
-
-                if (data.event && data.event === 'close') {
-                    statusDiv.innerHTML = `<div class="alert alert-success">${data.message} ページを更新します...</div>`;
-                    progressBar.style.width = '100%';
-                    progressBar.setAttribute('aria-valuenow', totalItems); // Set to totalItems for final display
-                    progressBar.textContent = '100%';
-                    eventSource.close();
-                    button.disabled = false; // Add this line
-                    button.textContent = '評価を実行'; // Add this line
-                    setTimeout(() => { window.location.hash = '#evaluation'; window.location.reload(); }, 2000);
-                    return;
-                }
-                
-                // It's a regular data item - display all, no filtering
-                statusDiv.innerHTML = '<div class="alert alert-primary">評価を処理中...</div>';
-                // The actual table will be reloaded on page refresh, so no need to append streaming items directly
-                // const listItem = document.createElement('li'); // Removed
-                // listItem.className = 'list-group-item list-group-item-action'; // Removed
-                // listItem.innerHTML = ` // Removed
-                //     <div class="d-flex w-100 justify-content-between"> // Removed
-                //         <h6 class="mb-1">${data.category} / ${data.element}</h6> // Removed
-                //     </div> // Removed
-                //     <p class="mb-1 text-muted"><small>${data.text}</small></p> // Removed
-                // `; // Removed
-                // resultsList.appendChild(listItem); // Removed
-                // resultsList.scrollTop = resultsList.scrollHeight; // Removed
-            };
-
-            eventSource.onerror = function(e) {
-                statusDiv.innerHTML = '<div class="alert alert-danger">ストリーム接続でエラーが発生しました。ページをリロードして再試行してください。</div>';
-                eventSource.close();
-                button.disabled = false;
-                button.textContent = '評価を実行';
-                progressBarContainer.style.display = 'none'; // Hide progress bar on error
-            };
-        });
     }
 
-    // JavaScript for Vectorization Tab
-    const vectorizeForm = document.getElementById('vectorization-form');
-    if (vectorizeForm) {
-        vectorizeForm.addEventListener('submit', function() {
-            const button = document.getElementById('vectorization-button');
-            button.disabled = true;
-            button.innerHTML = `
-                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                数値化を実行中...
-            `;
-        });
-    }
-
-    // JavaScript for 適合度 Tab
-    const elementFitForm = document.getElementById('element-fit-form');
-    if (elementFitForm) {
-        elementFitForm.addEventListener('submit', function() {
-            const button = document.getElementById('element-fit-button');
-            button.disabled = true;
-            button.innerHTML = `
-                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                計算中...
-            `;
-        });
-    }
+    initializeView();
+});
 </script>
 {% endblock %}

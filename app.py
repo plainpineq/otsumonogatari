@@ -23,7 +23,7 @@ def _get_next_generation_number(user_id: str) -> int:
 
 from ui_labels import UI_LABELS
 from intent_templates import COMMON_INTENTS, DOC_TYPE_INTENTS
-from lm_input import build_composition_ideas_prompt, mock_llm_call
+from lm_input import build_composition_ideas_prompt, mock_llm_call, build_title_plot_proposals_prompt
 
 # Helper function for cleaning up old generated files
 def _cleanup_old_generated_files(user_id: str):
@@ -33,9 +33,9 @@ def _cleanup_old_generated_files(user_id: str):
 
     # Patterns for files to delete
     patterns = [
-        os.path.join(user_data_dir, "generated_prompt_*.md"),
-        os.path.join(user_data_dir, "generated_llm_*.txt"),
-        os.path.join(user_data_dir, "generated_llm_*.json")
+        os.path.join(user_data_dir, "generated_prompt*.md"), # `_` を削除し、より広い範囲にマッチ
+        os.path.join(user_data_dir, "generated_llm*.txt"),  # `_` を削除し、より広い範囲にマッチ
+        os.path.join(user_data_dir, "generated_llm*.json") # `_` を削除し、より広い範囲にマッチ
     ]
 
     for pattern in patterns:
@@ -360,8 +360,16 @@ def edit_intent(doc_id):
 
 from services.llm_client import call_llm # Import the generic LLM client
 
-@app.route("/document/<doc_id>/generate_ideas", methods=["POST"])
-def generate_composition_ideas(doc_id):
+
+# ====================================================================
+# NEW STAGED GENERATION FLOW (STEP 1, 2, 3)
+# ====================================================================
+
+@app.route("/document/<doc_id>/generate_proposals", methods=["POST"])
+def generate_proposals(doc_id):
+    """
+    STEP 1: Generate initial Title and Plot proposals.
+    """
     if "user_id" not in session:
         return jsonify({"error": "Unauthorized"}), 401
     data = load_user_data(session["user_id"])
@@ -369,23 +377,16 @@ def generate_composition_ideas(doc_id):
     if document is None:
         return jsonify({"error": "Document not found"}), 404
 
-    request_data = request.get_json()
-    category_label = request_data.get("category_label") # Get category label from request
-    is_first_category_in_session = request_data.get("is_first_category_in_session", False)
-
-    # If this is the first category request in a new generation session, clean up and reset counter
-    if is_first_category_in_session:
-        _cleanup_old_generated_files(session["user_id"])
-        _reset_generation_counter(session["user_id"])
-
-    # Get the next sequential number for this generation
+    # Cleanup old files and reset counter for a new full generation cycle
+    _cleanup_old_generated_files(session["user_id"])
+    _reset_generation_counter(session["user_id"])
+    
     current_generation_number = _get_next_generation_number(session["user_id"])
-    suffix = f"_{current_generation_number}"
+    suffix = f"_{current_generation_number}_proposals"
 
-    # Get LLM configuration for the 'generation' role from persistent user data
+    # Get LLM config
     llm_servers = data.get("llm_servers", {})
     generation_config = llm_servers.get("generation", {})
-    
     llm_provider = generation_config.get("provider")
     llm_api_key = generation_config.get("api_key")
     llm_model_name = generation_config.get("model_name")
@@ -393,169 +394,147 @@ def generate_composition_ideas(doc_id):
     suggestion_count = session.get("suggestion_count", 3)
 
     print(f"[LLM] PROVIDER: {llm_provider}: Model: {llm_model_name}")
-    
-    # Refined mock fallback logic
-    is_config_incomplete = False
-    if not llm_provider or not llm_model_name:
-        is_config_incomplete = True
-    elif llm_provider in ["gemini", "chatgpt"] and not llm_api_key:
-        is_config_incomplete = True
-    elif llm_provider == "other" and not llm_base_url: # API key for local models is often not required
-        is_config_incomplete = True
-    
+
+    is_config_incomplete = not llm_provider or not llm_model_name or \
+                           (llm_provider in ["gemini", "chatgpt"] and not llm_api_key) or \
+                           (llm_provider == "other" and not llm_base_url)
+
     if is_config_incomplete:
-        prompt = build_composition_ideas_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"], target_category_label=category_label, suffix=suffix, suggestion_count=suggestion_count)
-        suggestions_dict = mock_llm_call(prompt, suggestion_count=suggestion_count)
-        return jsonify({"suggestions": suggestions_dict.get("suggestions", []), "message": "LLM設定が不完全なため、モックデータを使用しました。"}), 200
+        # Mock call if config is incomplete
+        return jsonify({
+            "suggestions": [
+                {"category": "基本設定", "elements": {"題名": [f"模擬タイトル案{i+1}" for i in range(suggestion_count)]}},
+                {"category": "基本設定", "elements": {"あらすじ": [f"模擬プロット案{i+1}: これはモックデータです。" for i in range(suggestion_count)]}}
+            ],
+            "message": "LLM設定が不完全なため、モックデータを使用しました。"
+        }), 200
 
-    # --- Retry logic for LLM call ---
-    MAX_RETRIES_PER_CATEGORY_ELEMENT = 3
-    accumulated_suggestions_for_category = {}
-    
-    # Get the elements for the target_category_label to properly check completion
-    target_elements_in_document = []
-    # Helper to process categories (common or doc_type_specific)
-    def extract_elements_from_doc(categories_data):
-        if not categories_data:
-            return
-        for category_obj in categories_data:
-            if category_obj.get("label") == category_label:
-                if category_obj.get("elements"):
-                    for element_obj in category_obj["elements"]:
-                        if element_obj.get("label"):
-                            target_elements_in_document.append(element_obj["label"])
-                break # Found the category, no need to check further
-
-    common_categories = document.get("composition_elements", {}).get("common", {}).get("categories")
-    extract_elements_from_doc(common_categories)
-    doc_type_specific_categories = document.get("composition_elements", {}).get("doc_type_specific", {}).get("categories")
-    extract_elements_from_doc(doc_type_specific_categories)
-    
-    # Initialize accumulated suggestions for each element to empty lists
-    for element_label in target_elements_in_document:
-        accumulated_suggestions_for_category[element_label] = []
-
-    final_suggestions_for_response = []
-
-    for retry_attempt in range(MAX_RETRIES_PER_CATEGORY_ELEMENT + 1):
-        try:
-            # Build prompt for LLM (same prompt for retries for simplicity)
-            prompt = build_composition_ideas_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"], target_category_label=category_label, suffix=suffix, suggestion_count=suggestion_count)
-            
-            raw_text, suggestions_dict = call_llm(llm_api_key, llm_model_name, prompt, llm_provider, base_url=llm_base_url)
-
-            # Find the target category's suggestions from the LLM response
-            current_llm_suggestions = suggestions_dict.get("suggestions", [])
-            target_category_llm_response = next(
-                (sug_cat for sug_cat in current_llm_suggestions if sug_cat.get("category") == category_label),
-                None
-            )
-
-            if target_category_llm_response:
-                elements_from_llm = target_category_llm_response.get("elements", {})
-                for element_label, new_suggestions in elements_from_llm.items():
-                    if element_label in target_elements_in_document: # Only process elements that exist in the document
-                        current_list = accumulated_suggestions_for_category.setdefault(element_label, [])
-                        updated_list = list(set(current_list + new_suggestions)) # Ensure uniqueness and accumulate
-                        accumulated_suggestions_for_category[element_label] = updated_list[:suggestion_count] # Trim to suggestion_count
-
-            # Check if all target elements have reached the desired suggestion_count
-            all_elements_complete = True
-            for element_label in target_elements_in_document:
-                if len(accumulated_suggestions_for_category.get(element_label, [])) < suggestion_count:
-                    all_elements_complete = False
-                    break
-            
-            if all_elements_complete:
-                break # Exit retry loop if all elements are complete
-
-        except ValueError as e:
-            if retry_attempt == MAX_RETRIES_PER_CATEGORY_ELEMENT:
-                return jsonify({"error": str(e)}), 400
-            print(f"ValueError during LLM call, retrying... ({e})")
-            continue
-        except RuntimeError as e:
-            if retry_attempt == MAX_RETRIES_PER_CATEGORY_ELEMENT:
-                return jsonify({"error": f"LLM呼び出しエラー: {str(e)}", "message": "LLM呼び出しでエラーが発生しました。設定とプロンプトを確認してください。"}), 500
-            print(f"RuntimeError during LLM call, retrying... ({e})")
-            continue
-        except Exception as e:
-            if retry_attempt == MAX_RETRIES_PER_CATEGORY_ELEMENT:
-                return jsonify({"error": f"予期せぬエラー: {str(e)}", "message": "予期せぬエラーが発生しました。"}), 500
-            print(f"Unexpected error during LLM call, retrying... ({e})")
-            continue
-
-    # --- End of Retry logic ---
-
-    # Construct the final suggestions for the response based on accumulated_suggestions_for_category
-    if accumulated_suggestions_for_category:
-        final_suggestions_for_response.append({
-            "category": category_label,
-            "elements": accumulated_suggestions_for_category
-        })
-    else:
-        # If no suggestions were accumulated after all retries (e.g., LLM consistently failed or returned nothing)
-        return jsonify({"suggestions": [], "message": "提案を生成できませんでした。"}), 500
-
-    # Save the raw LLM response (from the last successful or attempted call) to a text file with suffix
-    user_data_dir = get_user_data_path(session["user_id"])
-    os.makedirs(user_data_dir, exist_ok=True)
-    llm_output_file_path = os.path.join(user_data_dir, f"generated_llm{suffix}.txt")
     try:
-        with open(llm_output_file_path, "w", encoding="utf-8") as f:
-            f.write(raw_text if 'raw_text' in locals() else "No LLM response received.")
-        print(f"Raw LLM response written to: {llm_output_file_path}")
-    except PermissionError as e:
-        print(f"ERROR: Permission denied when writing to {llm_output_file_path}: {e}")
-        flash(f"ファイルの書き込み権限がありません: {llm_output_file_path}。ファイルのパーミッションを確認してください。", "error")
-        return jsonify({"error": f"ファイルの書き込み権限がありません: {e}"}), 500
-    except IOError as e:
-        print(f"ERROR: IO error when writing to {llm_output_file_path}: {e}")
-        flash(f"ファイル書き込み中にエラーが発生しました: {llm_output_file_path}。ディスク容量やファイルロックを確認してください。", "error")
-        return jsonify({"error": f"ファイル書き込み中にエラーが発生しました: {e}"}), 500
+        prompt = build_title_plot_proposals_prompt(document, session["user_id"], suffix=suffix, suggestion_count=suggestion_count)
+        raw_text, suggestions_dict = call_llm(llm_api_key, llm_model_name, prompt, llm_provider, base_url=llm_base_url)
+        
+        # Save raw and structured responses
+        user_data_dir = get_user_data_path(session["user_id"])
+        with open(os.path.join(user_data_dir, f"generated_llm{suffix}.txt"), "w", encoding="utf-8") as f:
+            f.write(raw_text)
+        with open(os.path.join(user_data_dir, f"generated_llm{suffix}.json"), "w", encoding="utf-8") as f:
+            json.dump(suggestions_dict, f, ensure_ascii=False, indent=2)
+
+        return jsonify(suggestions_dict)
+
+    except (ValueError, RuntimeError, Exception) as e:
+        return jsonify({"error": f"LLM呼び出し中にエラーが発生しました: {str(e)}"}), 500
 
 
-    # Save the structured LLM response (final accumulated suggestions) to a JSON file with suffix
-    llm_json_output_file_path = os.path.join(user_data_dir, f"generated_llm{suffix}.json")
-    try:
-        with open(llm_json_output_file_path, "w", encoding="utf-8") as f:
-            json.dump({"suggestions": final_suggestions_for_response}, f, ensure_ascii=False, indent=2)
-        print(f"Structured LLM response written to: {llm_json_output_file_path}")
-    except PermissionError as e:
-        print(f"ERROR: Permission denied when writing to {llm_json_output_file_path}: {e}")
-        flash(f"ファイルの書き込み権限がありません: {llm_json_output_file_path}。ファイルのパーミッションを確認してください。", "error")
-        return jsonify({"error": f"ファイルの書き込み権限がありません: {e}"}), 500
-    except IOError as e:
-        print(f"ERROR: IO error when writing to {llm_json_output_file_path}: {e}")
-        flash(f"ファイル書き込み中にエラーが発生しました: {llm_json_output_file_path}。ディスク容量やファイルロックを確認してください。", "error")
-        return jsonify({"error": f"ファイル書き込み中にエラーが発生しました: {e}"}), 500
-
-    # If this is the first call in the generation sequence, clear old suggestions
-    if is_first_category_in_session:
-        document["llm_suggestions"] = []
+@app.route("/document/<doc_id>/save_selection", methods=["POST"])
+def save_selection(doc_id):
+    """
+    STEP 2: Save the user-selected and edited title and plot.
+    """
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
     
-    # Ensure llm_suggestions key exists and is a list
-    if "llm_suggestions" not in document or not isinstance(document["llm_suggestions"], list):
-        document["llm_suggestions"] = []
+    data = load_user_data(session["user_id"])
+    document = find_document(data, doc_id)
+    if document is None:
+        return jsonify({"error": "Document not found"}), 404
 
-    # Update/append new suggestions for the target category
-    existing_category_index = -1
-    for idx, existing_sug_cat in enumerate(document["llm_suggestions"]):
-        if existing_sug_cat.get("category") == category_label:
-            existing_category_index = idx
-            break
+    request_data = request.get_json()
+    selected_title = request_data.get("title")
+    selected_plot = request_data.get("plot")
 
-    if existing_category_index != -1:
-        # Update existing category
-        document["llm_suggestions"][existing_category_index] = final_suggestions_for_response[0]
-    else:
-        # Append new category
-        if final_suggestions_for_response:
-            document["llm_suggestions"].extend(final_suggestions_for_response)
-            
+    if not selected_title or not selected_plot:
+        return jsonify({"error": "Title and plot are required."}), 400
+
+    # Save the selections into the document data
+    document["selected_title"] = selected_title
+    document["selected_plot"] = selected_plot
+
     save_user_data(session["user_id"], data)
+    
+    return jsonify({"success": True, "message": "Selection saved."})
 
-    return jsonify({"suggestions": final_suggestions_for_response})
+
+@app.route("/document/<doc_id>/generate_composition", methods=["POST"])
+def generate_composition(doc_id):
+    """
+    STEP 3: Generate the rest of the composition elements based on the selected title and plot.
+    This is a modified version of the original generate_composition_ideas.
+    It now iterates through categories and generates suggestions for each.
+    """
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    data = load_user_data(session["user_id"])
+    document = find_document(data, doc_id)
+    if document is None:
+        return jsonify({"error": "Document not found"}), 404
+
+    # This endpoint is called for each category, so we get the label from the request
+    request_data = request.get_json()
+    category_label = request_data.get("category_label")
+    if not category_label:
+        return jsonify({"error": "Category label is required"}), 400
+
+    # --- DEBUG PRINTS ---
+    print(f"--- Debugging generate_composition ---")
+    print(f"Target Category Label: '{category_label}'")
+    print(f"Document composition_elements: {json.dumps(document.get('composition_elements', {}), ensure_ascii=False, indent=2)}")
+    # --- END DEBUG PRINTS ---
+        
+    # Suffix for file generation should be unique per category
+    current_generation_number = _get_next_generation_number(session["user_id"])
+    suffix = f"_{current_generation_number}_{category_label.replace(' ', '_')}"
+
+    # Get LLM config
+    llm_servers = data.get("llm_servers", {})
+    generation_config = llm_servers.get("generation", {})
+    llm_provider = generation_config.get("provider")
+    llm_api_key = generation_config.get("api_key")
+    llm_model_name = generation_config.get("model_name")
+    llm_base_url = generation_config.get("base_url")
+    suggestion_count = session.get("suggestion_count", 3)
+
+    is_config_incomplete = not llm_provider or not llm_model_name or \
+                           (llm_provider in ["gemini", "chatgpt"] and not llm_api_key) or \
+                           (llm_provider == "other" and not llm_base_url)
+
+    # Note: No mock call here, assuming config is complete by this stage.
+    if is_config_incomplete:
+        return jsonify({"error": "LLM configuration is incomplete."}), 400
+
+    # The logic here is very similar to the original `generate_composition_ideas`,
+    # but the prompt builder needs to be aware of the selected_title and selected_plot.
+    # We will modify `build_composition_ideas_prompt` later if needed, but for now,
+    # let's assume the existing prompt builder is sufficient if `intent` is well-defined.
+    
+    try:
+        # We now call the original prompt builder, but for a single category
+        prompt = build_composition_ideas_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"], target_category_label=category_label, suffix=suffix, suggestion_count=suggestion_count)
+        
+        raw_text, suggestions_dict = call_llm(llm_api_key, llm_model_name, prompt, llm_provider, base_url=llm_base_url)
+
+        # Save responses
+        user_data_dir = get_user_data_path(session["user_id"])
+        with open(os.path.join(user_data_dir, f"generated_llm{suffix}.txt"), "w", encoding="utf-8") as f:
+            f.write(raw_text)
+        with open(os.path.join(user_data_dir, f"generated_llm{suffix}.json"), "w", encoding="utf-8") as f:
+            json.dump(suggestions_dict, f, ensure_ascii=False, indent=2)
+
+        # Append suggestions to the main document object
+        if "llm_suggestions" not in document or not isinstance(document["llm_suggestions"], list):
+            document["llm_suggestions"] = []
+
+        # This logic assumes the response contains suggestions for the requested category
+        new_suggestions = suggestions_dict.get("suggestions", [])
+        if new_suggestions:
+            document["llm_suggestions"].extend(new_suggestions)
+        
+        save_user_data(session["user_id"], data)
+
+        return jsonify(suggestions_dict)
+
+    except (ValueError, RuntimeError, Exception) as e:
+        return jsonify({"error": f"LLM_ERROR: {str(e)}"}), 500
 
 @app.route("/document/<doc_id>/add_composition_element", methods=["POST"])
 def add_composition_element(doc_id):
