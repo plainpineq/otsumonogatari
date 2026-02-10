@@ -659,28 +659,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         let htmlContent = `<h5>分類: ${categoryObj.category}</h5><div class="list-group">`;
 
-        // 1. Get the ordered elements for this category from documentData.composition_elements
-        const compositionCategory = documentData.composition_elements?.categories?.find(
-            cat => cat.label === categoryObj.category
-        );
-
-        let orderedLlmElements = [];
-        if (compositionCategory && compositionCategory.elements) {
-            // Use the order defined in documentData.composition_elements
-            orderedLlmElements = compositionCategory.elements.map(elem => elem.label);
-            // Ensure any LLM-generated elements not in compositionCategory are appended
-            Object.keys(categoryObj.elements).forEach(llmElementName => {
-                if (!orderedLlmElements.includes(llmElementName)) {
-                    orderedLlmElements.push(llmElementName);
-                }
-            });
-        } else {
-            // Fallback: If no order defined in documentData, use LLM's keys (less ideal but keeps content)
-            orderedLlmElements = Object.keys(categoryObj.elements);
-        }
-
-        // 2. Iterate through the ordered elements and display suggestions
-        orderedLlmElements.forEach(elementName => {
+        for (const elementName in categoryObj.elements) {
             if (categoryObj.elements.hasOwnProperty(elementName)) {
                 const suggestionsForElement = categoryObj.elements[elementName];
                 htmlContent += `<h6 class="ms-3 mb-1 mt-2">要素名: ${elementName}</h6>`;
@@ -690,7 +669,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
                 htmlContent += `</ul>`;
             }
-        });
+        }
         htmlContent += `</div>`;
         categorySection.innerHTML = htmlContent;
     }
