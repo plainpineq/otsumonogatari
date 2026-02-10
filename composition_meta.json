@@ -1,34 +1,28 @@
 {
   "version": "2.0",
   "description": "構成要素カテゴリのメタ定義（完全ユーザ拡張型）",
-  "common_categories": {
-    "label": "共通構成要素",
-    "editable": false,
-    "categories": [
-      {
-        "id": "common",
-        "label": "共通構成要素",
-        "editable": false,
-        "elements": [
-          {
-            "id": "title",
-            "label": "題名",
-            "editable": true
-          },
-          {
-            "id": "overview",
-            "label": "概要",
-            "editable": true
-          }
-        ]
-      }
-    ]
-  },
   "doc_types": {
     "novel": {
       "label": "小説",
       "editable": true,
       "categories": [
+        {
+          "id": "base",
+          "label": "基本設定",
+          "editable": false,
+          "elements": [
+            {
+              "id": "title",
+              "label": "題名",
+              "editable": true
+            },
+            {
+              "id": "plot",
+              "label": "プロット",
+              "editable": true
+            }
+          ]
+        },
         {
           "id": "scene",
           "label": "シーン案",

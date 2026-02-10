@@ -44,7 +44,7 @@ def create_document(
         "intent": {"fields": {}}, # Initialize intent with an empty fields dict
         "units": [], # Initialize as empty, will be populated from composition_meta
         "entities": [],
-        "composition_elements": {}, # 新しい構成要素の格納場所
+        "composition_elements": {"categories": []}, # 新しい構成要素の格納場所
         "composition_meta": copy.deepcopy(DEFAULT_COMPOSITION_META) # デフォルトのメタ定義を追加
     }
 
@@ -169,14 +169,11 @@ def _normalize_categories(current_categories: list, meta_categories: list):
 
 def normalize_composition_elements(document: dict) -> None:
     """
-document["composition_elements"] を初期化・正規化する
+document["composition_elements"] を初期化・正規化する (新しい構造に対応)
     """
     # composition_elements がなければ初期化
     if "composition_elements" not in document:
-        document["composition_elements"] = {
-            "common": {"categories": []},
-            "doc_type_specific": {"categories": []}
-        }
+        document["composition_elements"] = {"categories": []} # 新しい構造
 
     # composition_meta がなければデフォルトをコピー
     if "composition_meta" not in document:
@@ -185,14 +182,7 @@ document["composition_elements"] を初期化・正規化する
     elements_data = document["composition_elements"]
     composition_meta = document["composition_meta"]
 
-    # 共通構成要素の正規化
-    common_meta_def = composition_meta["common_categories"]
-    _normalize_categories(
-        elements_data.setdefault("common", {"categories": []}).setdefault("categories", []),
-        common_meta_def["categories"]
-    )
-
-    # doc_type 固有構成要素の正規化
+    # doc_type に対応するメタ定義を取得
     doc_type_mapping = {meta["label"]: doc_id for doc_id, meta in composition_meta["doc_types"].items()}
     mapped_doc_type = doc_type_mapping.get(document["doc_type"])
 
@@ -200,32 +190,32 @@ document["composition_elements"] を初期化・正規化する
         doc_type_meta_def = composition_meta["doc_types"].get(mapped_doc_type)
         if doc_type_meta_def and "categories" in doc_type_meta_def:
             _normalize_categories(
-                elements_data.setdefault("doc_type_specific", {"categories": []}).setdefault("categories", []),
+                elements_data.setdefault("categories", []), # 修正: 全カテゴリを直接扱う
                 doc_type_meta_def["categories"]
             )
-    
+    else:
+        # mapped_doc_type が見つからない場合は、composition_elements を空にするか、何もしない
+        # ここでは、不明なdoc_typeの場合でもcategoriesキーは存在するようにする
+        elements_data.setdefault("categories", [])
+
     # --- Synchronize document["units"] from composition_elements ---
-    # This ensures document["units"] reflects the current state of composition_elements,
-    # especially the 'scene' category, which functions as the document's structure.
-    
-    # Find the 'scene' category within the doc_type_specific composition elements
+    # Find the 'scene' category within the composition elements
     scene_elements = []
-    if mapped_doc_type: # Only attempt if a valid doc_type is mapped
-        for category in elements_data.get("doc_type_specific", {}).get("categories", []):
-            if category["id"] == "scene":
-                scene_elements = category.get("elements", [])
-                break
-    
+    # 修正: elements_data.get("doc_type_specific", {}).get("categories", []) から elements_data.get("categories", []) に変更
+    for category in elements_data.get("categories", []):
+        if category["id"] == "scene":
+            scene_elements = category.get("elements", [])
+            break
+
     # Regenerate document["units"] based on the current scene_elements
-    # Preserve existing content where possible
     new_units = []
     existing_unit_map = {unit["title"]: unit["content"] for unit in document.get("units", [])}
 
     for element in scene_elements:
         unit_title = element["label"]
-        unit_content = existing_unit_map.get(unit_title, "") # Preserve content if title matches
+        unit_content = existing_unit_map.get(unit_title, "")
         new_units.append({"title": unit_title, "content": unit_content})
-    
+
     document["units"] = new_units
 
 
@@ -238,17 +228,60 @@ def update_composition_elements(document: dict, form_data) -> None:
     doc_type_mapping = {meta["label"]: doc_id for doc_id, meta in composition_meta["doc_types"].items()}
     mapped_doc_type = doc_type_mapping.get(document["doc_type"])
 
-    # --- 共通構成要素の処理 ---
-    common_categories = elements_data.setdefault("common", {}).setdefault("categories", [])
-    for current_category_data in common_categories:
+def update_composition_elements(document: dict, form_data) -> None:
+
+    elements_data = document["composition_elements"]
+    composition_meta = document["composition_meta"]
+
+    # 日本語の doc_type を英語のキーにマッピング
+    doc_type_mapping = {meta["label"]: doc_id for doc_id, meta in composition_meta["doc_types"].items()}
+    mapped_doc_type = doc_type_mapping.get(document["doc_type"])
+
+    # --- 全カテゴリの処理 ---
+    all_categories = elements_data.setdefault("categories", []) # 修正: 全カテゴリを直接扱う
+    doc_type_meta_def = None
+    if mapped_doc_type:
+        doc_type_meta_def = composition_meta["doc_types"].get(mapped_doc_type)
+
+    if doc_type_meta_def: # doc_type_meta_def が存在する場合のみカテゴリの追加・削除を考慮
+        # doc_type 固有カテゴリの追加・削除 (doc_type自体がeditableな場合)
+        if doc_type_meta_def.get("editable", False): # ここはcomposition_meta全体のeditable設定
+            # --- カテゴリ自体を追加する処理 ---
+            if "add_doc_type_category" in form_data:
+                new_label = form_data.get("new_doc_type_category_label", "").strip()
+                if new_label:
+                    new_category_id = str(uuid.uuid4().hex[:8])
+                    new_category = {
+                        "id": new_category_id,
+                        "label": new_label,
+                        "editable": True, # ユーザーが追加したカテゴリはeditable
+                        "elements": []
+                    }
+                    all_categories.append(new_category)
+
+            # --- カテゴリ自体を削除する処理 ---
+            remove_category_id = form_data.get("remove_doc_type_category")
+            if remove_category_id:
+                elements_data["categories"][:] = [
+                    cat for cat in all_categories if cat["id"] != remove_category_id
+                ]
+
+    # カテゴリ内の要素の追加・削除・更新
+    for current_category_data in all_categories: # データ内のカテゴリをループ
         category_id = current_category_data["id"]
+
+        # カテゴリ自体のラベル更新 (editableなもののみ)
+        category_label_from_form = f"category_{category_id}_label"
+        if category_label_from_form in form_data and current_category_data.get("editable", False):
+            current_category_data["label"] = form_data.get(category_label_from_form, "")
+
         elements = current_category_data.setdefault("elements", [])
 
         # --- 要素の追加 ---
         if f"add_element_{category_id}" in form_data:
             new_element = {
-                "id": str(uuid.uuid4().hex[:8]), # 一時的なユニークID
-                "label": "新しい項目", # デフォルトラベル
+                "id": str(uuid.uuid4().hex[:8]),
+                "label": "新しい項目",
                 "value": "",
                 "editable": True
             }
@@ -256,21 +289,17 @@ def update_composition_elements(document: dict, form_data) -> None:
 
         # Identify the exact delete button that was clicked
         clicked_delete_id = None
-        # Iterate through all elements in the *current* category
         for element in elements:
-            # Construct the expected form_key for this element's delete button
             expected_form_key = f"remove_element_{category_id}_{element.get('id')}"
             if expected_form_key in form_data:
-                # And if its value matches the element's ID (double-check)
                 if form_data.get(expected_form_key) == element.get('id'):
                     clicked_delete_id = element.get('id')
-                    break # Found the specific button clicked
+                    break
         
         if clicked_delete_id:
             elements[:] = [elem for elem in elements if elem.get("id") != clicked_delete_id]
-
+        
         # --- 要素の更新 ---
-        # Iterate through elements in the document data, and for each, check if its label/value was updated in form_data
         for element in elements:
             element_id = element.get("id")
 
@@ -280,80 +309,6 @@ def update_composition_elements(document: dict, form_data) -> None:
                 element["label"] = form_data.get(form_label_name, "")
 
             # valueの更新 (if such fields exist in HTML, current HTML doesn't show them but it's good for consistency)
-            form_value_name = f"element_value_{category_id}_{element_id}"
-            if form_value_name in form_data:
-                element["value"] = form_data.get(form_value_name, "")
-
-    # --- doc_type 固有構成要素の処理 ---
-    doc_type_specific_categories = elements_data.setdefault("doc_type_specific", {}).setdefault("categories", [])
-    doc_type_meta_def = composition_meta["doc_types"].get(mapped_doc_type) # メタ定義もcomposition_metaから取得
-
-    if doc_type_meta_def:
-        # doc_type 固有カテゴリの追加・削除 (doc_type自体がeditableな場合)
-        if doc_type_meta_def.get("editable", False):
-            # --- カテゴリ自体を追加する処理 ---
-            if "add_doc_type_category" in form_data:
-                new_label = form_data.get("new_doc_type_category_label", "").strip()
-                if new_label:
-                    new_category_id = str(uuid.uuid4().hex[:8])
-                    new_category = {
-                        "id": new_category_id,
-                        "label": new_label,
-                        "editable": True,
-                        "elements": []
-                    }
-                    doc_type_specific_categories.append(new_category)
-
-            # --- カテゴリ自体を削除する処理 ---
-            remove_category_id = form_data.get("remove_doc_type_category")
-            if remove_category_id:
-                elements_data["doc_type_specific"]["categories"][:] = [
-                    cat for cat in doc_type_specific_categories if cat["id"] != remove_category_id
-                ]
-
-        # doc_type 固有カテゴリ内の要素の追加・削除・更新
-        for current_category_data in doc_type_specific_categories: # データ内のカテゴリをループ
-            category_id = current_category_data["id"]
-
-            # カテゴリ自体のラベル更新 (editableなもののみ)
-            category_label_from_form = f"category_{category_id}_label"
-            if category_label_from_form in form_data and current_category_data.get("editable", False):
-                current_category_data["label"] = form_data.get(category_label_from_form, "")
-
-            elements = current_category_data.setdefault("elements", [])
-
-            # --- 要素の追加 ---
-            if f"add_element_{category_id}" in form_data:
-                new_element = {
-                    "id": str(uuid.uuid4().hex[:8]),
-                    "label": "新しい項目",
-                    "value": "",
-                    "editable": True
-                }
-                elements.append(new_element)
-
-            # Identify the exact delete button that was clicked
-            clicked_delete_id = None
-            for element in elements:
-                expected_form_key = f"remove_element_{category_id}_{element.get('id')}"
-                if expected_form_key in form_data:
-                    if form_data.get(expected_form_key) == element.get('id'):
-                        clicked_delete_id = element.get('id')
-                        break
-            
-            if clicked_delete_id:
-                elements[:] = [elem for elem in elements if elem.get("id") != clicked_delete_id]
-            
-            # --- 要素の更新 ---
-            for element in elements:
-                element_id = element.get("id")
-
-                # labelの更新
-                form_label_name = f"element_label_{category_id}_{element_id}"
-                if form_label_name in form_data:
-                    element["label"] = form_data.get(form_label_name, "")
-
-                # valueの更新 (if such fields exist in HTML, current HTML doesn't show them but it's good for consistency)
             form_value_name = f"element_value_{category_id}_{element_id}"
             if form_value_name in form_data:
                 element["value"] = form_data.get(form_value_name, "")

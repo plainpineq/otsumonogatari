@@ -144,102 +144,57 @@
             <form method="post" action="/document/{{ document.id }}">
                 <input type="hidden" name="update_composition_elements" value="1">
 
-                <h2 class="h4 mb-3">構成要素の定義</h2> {# 見出しを「定義」に変更 #}
+                <h2 class="h4 mb-3">構成要素の定義</h2>
 
-                {# 共通構成要素 #}
-                {% set common_meta_data = document.composition_meta.get('common_categories', {}) %}
-                {% set common_categories_data = document.composition_elements.get('common', {}).get('categories', []) %}
-                {% if common_meta_data.categories %}
-                    <h3 class="h5 mt-4">{{ common_meta_data.label }}</h3>
-                    {% for category in common_categories_data %}
-                        {# Get meta for default categories, for user-added ones it will be none #}
-                        {% set category_meta = common_meta_data.categories | selectattr("id", "equalto", category.id) | first %}
-                        <div class="card p-3 mb-3">
-                            <h4 class="h6 mb-3 d-flex justify-content-between align-items-center">
-                                {% if category.editable %}
-                                    <input type="text" name="category_{{ category.id }}_label" value="{{ category.label }}" class="form-control me-2 category-input">
-                                {% else %}
-                                    <span>{{ category.label }}</span>
-                                {% endif %}
-                                {% if category.editable %}
-                                    <button type="submit" name="remove_common_category" value="{{ category.id }}" class="btn btn-danger btn-sm ms-2">削除</button>
-                                {% endif %}
-                            </h4>
-                            {% set category_id = category.id %}
-                            {% set elements = category.elements %}
-
-                            {% if elements %}
-                                {% for element in elements %}
-                                    <div class="element-item mb-2 d-flex align-items-center">
-                                        <input
-                                            type="text"
-                                            name="element_label_{{ category_id }}_{{ element.id }}"
-                                            value="{{ element.label }}"
-                                            class="form-control me-2"
-                                            placeholder="{{ category.label }} #{{ loop.index + 1 }}"
-                                        >
-                                        <button type="submit" name="remove_element_{{ category_id }}_{{ element.id }}" value="{{ element.id }}" class="btn btn-danger btn-sm">削除</button>
-                                    </div>
-                                {% endfor %}
-                            {% endif %}
-                            
-                            
-                                <button type="submit" name="add_element_{{ category_id }}" value="1" class="btn btn-success btn-sm mt-2">＋ {{ category.label }}を追加</button>
-                            
-                        </div>
-                    {% endfor %}
-                {% endif %}
-
-                {# doc_type 固有構成要素 #}
                 {% set doc_type_meta_data = document.composition_meta.doc_types.get(mapped_doc_type_id) %}
-                {% if doc_type_meta_data and doc_type_meta_data.categories %}
-                    <h3 class="h5 mt-5">主構成要素 ({{ doc_type_meta_data.label }})</h3>
+                {% if doc_type_meta_data %}
+                    <h3 class="h5 mt-4">{{ doc_type_meta_data.label }}の構成要素</h3>
                     {% if doc_type_meta_data.editable %}
                         <div class="mb-3 d-flex">
                             <input type="text" name="new_doc_type_category_label" placeholder="新しい分類のラベル" class="form-control me-2">
                             <button type="submit" name="add_doc_type_category" value="1" class="btn btn-primary">分類追加</button>
                         </div>
                     {% endif %}
+                {% endif %}
 
-                    {% set doc_type_categories_data = document.composition_elements.get('doc_type_specific', {}).get('categories', []) %}
-                    {% for category in doc_type_categories_data %}
-                        {% set category_meta = doc_type_meta_data.categories | selectattr("id", "equalto", category.id) | first %}
-                        <div class="card p-3 mb-3">
-                            <h4 class="h6 mb-3 d-flex justify-content-between align-items-center">
-                                {% if category.editable %}
-                                    <input type="text" name="category_{{ category.id }}_label" value="{{ category.label }}" class="form-control me-2 category-input">
-                                {% else %}
-                                    <span>{{ category.label }}</span>
-                                {% endif %}
-                                
-                                {% if doc_type_meta_data.editable and category.editable %}
-                                    <button type="submit" name="remove_doc_type_category" value="{{ category.id }}" class="btn btn-danger btn-sm ms-2">分類削除</button>
-                                {% endif %}
-                            </h4>
-                            {% set category_id = category.id %}
-                            {% set elements = category.elements %}
-
-                            {% if elements %}
-                                {% for element in elements %}
-                                    <div class="element-item mb-2 d-flex align-items-center">
-                                        <input
-                                            type="text"
-                                            name="element_label_{{ category_id }}_{{ element.id }}" {# ラベル編集用 #}
-                                            value="{{ element.label }}"
-                                            class="form-control me-2"
-                                            placeholder="{{ category.label }} #{{ loop.index + 1 }}"
-                                        >
-                                        <button type="submit" name="remove_element_{{ category_id }}_{{ element.id }}" value="{{ element.id }}" class="btn btn-danger btn-sm">削除</button>
-                                    </div>
-                                {% endfor %}
+                {% set all_categories_data = document.composition_elements.get('categories', []) %}
+                {% for category in all_categories_data %}
+                    {% set category_meta = (doc_type_meta_data.categories | selectattr("id", "equalto", category.id) | first) if doc_type_meta_data else none %}
+                    <div class="card p-3 mb-3">
+                        <h4 class="h6 mb-3 d-flex justify-content-between align-items-center">
+                            {% if category.editable %}
+                                <input type="text" name="category_{{ category.id }}_label" value="{{ category.label }}" class="form-control me-2 category-input">
+                            {% else %}
+                                <span>{{ category.label }}</span>
                             {% endif %}
                             
-                            {% if category.editable %}
-                                <button type="submit" name="add_element_{{ category.id }}" value="1" class="btn btn-success btn-sm mt-2">＋ {{ category.label }}を追加</button>
+                            {% if doc_type_meta_data and doc_type_meta_data.editable and category.editable %}
+                                <button type="submit" name="remove_doc_type_category" value="{{ category.id }}" class="btn btn-danger btn-sm ms-2">分類削除</button>
                             {% endif %}
-                        </div>
-                    {% endfor %}
-                {% endif %}
+                        </h4>
+                        {% set category_id = category.id %}
+                        {% set elements = category.elements %}
+
+                        {% if elements %}
+                            {% for element in elements %}
+                                <div class="element-item mb-2 d-flex align-items-center">
+                                    <input
+                                        type="text"
+                                        name="element_label_{{ category_id }}_{{ element.id }}"
+                                        value="{{ element.label }}"
+                                        class="form-control me-2"
+                                        placeholder="{{ category.label }} #{{ loop.index + 1 }}"
+                                    >
+                                    <button type="submit" name="remove_element_{{ category_id }}_{{ element.id }}" value="{{ element.id }}" class="btn btn-danger btn-sm">削除</button>
+                                </div>
+                            {% endfor %}
+                        {% endif %}
+                        
+                        {% if category.editable %}
+                            <button type="submit" name="add_element_{{ category_id }}" value="1" class="btn btn-success btn-sm mt-2">＋ {{ category.label }}を追加</button>
+                        {% endif %}
+                    </div>
+                {% endfor %}
 
                 <hr class="my-4">
                 <button type="submit" class="btn btn-primary mt-3 me-2">構成要素の構造を保存</button>
@@ -253,7 +208,7 @@
             <p>「提案」タブで生成されたAIからの提案テキストに、物語的な役割や性質を示す「意味ラベル」を付与します。</p>
             <div class="d-flex gap-2">
                 <form id="evaluation-form" action="{{ url_for('evaluate_document', doc_id=document.id) }}" method="POST">
-                    <button type="button" id="run-evaluation-btn" class="btn btn-primary">評価を実行</button> {# type="submit"を"button"に変更 #}
+                    <button type="button" id="run-evaluation-btn" class="btn btn-primary">評価を実行</button>
                 </form>
                 {% if document.semantic_labels %}
                 <a href="{{ url_for('download_evaluation', doc_id=document.id) }}" class="btn btn-secondary">評価結果をCSVでダウンロード</a>
@@ -269,7 +224,6 @@
             </div>
             
             <hr>
-            {# 以前の静的な評価結果テーブルは削除 #}
             {% if document.semantic_labels %}
                 <h3 class="h5 mt-3">評価結果</h3>
                 <div class="table-responsive">
@@ -422,7 +376,6 @@ document.addEventListener('DOMContentLoaded', function() {
             ${message}
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         `;
-        // Insert at the top of the main content area
         document.querySelector('.tab-content').prepend(alertDiv);
     }
     
@@ -434,31 +387,25 @@ document.addEventListener('DOMContentLoaded', function() {
             if(s.category === "基本設定" && s.elements["題名"]) {
                 titleProposals = s.elements["題名"];
             }
-            if(s.category === "基本設定" && s.elements["あらすじ"]) {
-                plotProposals = s.elements["あらすじ"];
+            if(s.category === "基本設定" && s.elements["プロット"]) {
+                plotProposals = s.elements["プロット"];
             }
         });
 
-        const generatedTitleHtml = titleProposals.map((p, i) => `
+        titleProposalsList.innerHTML = titleProposals.map((p, i) => `
             <label class="list-group-item">
                 <input class="form-check-input me-2" type="radio" name="title-proposal" value="${p.replace(/"/g, '&quot;')}">
                 ${p}
             </label>
         `).join('');
-        console.log('Generated Title HTML:', generatedTitleHtml); // ★追加
 
-        const generatedPlotHtml = plotProposals.map((p, i) => `
+        plotProposalsList.innerHTML = plotProposals.map((p, i) => `
             <label class="list-group-item">
                 <input class="form-check-input me-2" type="radio" name="plot-proposal" value="${p.replace(/"/g, '&quot;')}">
                 ${p}
             </label>
         `).join('');
-        console.log('Generated Plot HTML:', generatedPlotHtml); // ★追加
 
-        titleProposalsList.innerHTML = generatedTitleHtml;
-        plotProposalsList.innerHTML = generatedPlotHtml;
-
-        // Add event listeners to radio buttons
         document.querySelectorAll('input[name="title-proposal"]').forEach(radio => {
             radio.addEventListener('change', (e) => selectedTitleInput.value = e.target.value);
         });
@@ -468,7 +415,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function showStep(step) {
-        // 全てのステップを一旦非表示にするのではなく、現在のステップと前のステップを表示する
         step1Div.style.display = 'none';
         step2Div.style.display = 'none';
         step3Div.style.display = 'none';
@@ -476,24 +422,22 @@ document.addEventListener('DOMContentLoaded', function() {
         if (step === 1) {
             step1Div.style.display = 'block';
         } else if (step === 2) {
-            step1Div.style.display = 'block'; // Step 1を表示したまま
-            step2Div.style.display = 'block'; // Step 2を表示
+            step1Div.style.display = 'block';
+            step2Div.style.display = 'block';
         } else if (step === 3) {
-            step1Div.style.display = 'block'; // Step 1を表示したまま
-            step2Div.style.display = 'block'; // Step 2を表示したまま
-            step3Div.style.display = 'block'; // Step 3を表示
+            step1Div.style.display = 'block';
+            step2Div.style.display = 'block';
+            step3Div.style.display = 'block';
         }
     }
 
     // --- Event Listeners ---
-
-    // STEP 1: Generate Proposals
     generateProposalsBtn.addEventListener('click', async () => {
         generateProposalsBtn.disabled = true;
         proposalsLoadingDiv.style.display = 'block';
-        proposalsResultsDiv.style.display = 'none'; // Hide previous results display state
-        titleProposalsList.innerHTML = ''; // Clear previous title proposals
-        plotProposalsList.innerHTML = '';   // Clear previous plot proposals
+        proposalsResultsDiv.style.display = 'none';
+        titleProposalsList.innerHTML = '';
+        plotProposalsList.innerHTML = '';
 
         try {
             const response = await fetch(`/document/${docId}/generate_proposals`, { method: 'POST' });
@@ -507,17 +451,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
             renderProposals(data.suggestions);
             proposalsResultsDiv.style.display = 'block';
-            showStep(2); // Move to next step only on success
+            showStep(2);
         } catch (error) {
             showAlert(`提案の生成に失敗しました: ${error.message}`);
-            showStep(1); // Stay on step 1 if generation fails
+            showStep(1);
         } finally {
             generateProposalsBtn.disabled = false;
             proposalsLoadingDiv.style.display = 'none';
         }
     });
 
-    // STEP 2: Confirm Selection
     confirmSelectionBtn.addEventListener('click', async () => {
         const title = selectedTitleInput.value;
         const plot = selectedPlotTextarea.value;
@@ -541,12 +484,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 throw new Error(data.error || 'Failed to save selection.');
             }
             
-            // Update UI
             document.getElementById('document-title-heading').textContent = title;
-            document.title = title; // Update browser tab title
+            document.title = title;
             showAlert('構成を確定しました。ステップ3に進んでください。', 'success');
             showStep(3);
-
         } catch (error) {
             showAlert(`保存に失敗しました: ${error.message}`);
         } finally {
@@ -555,35 +496,18 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // STEP 2: Back to Step 1 Button
     const backToStep1Btn = document.getElementById('back-to-step1-btn');
     backToStep1Btn.addEventListener('click', () => {
         showStep(1);
-        // Optionally, clear selections to make it clear we're starting over
-        // For now, keep them to allow easy modification if desired
     });
     
-    // STEP 3: Generate Full Composition
     generateCompositionBtn.addEventListener('click', async () => {
         generateCompositionBtn.disabled = true;
         generateCompositionBtn.textContent = '全体を生成中...';
-        compositionResultsDiv.innerHTML = ''; // Clear previous results
+        compositionResultsDiv.innerHTML = '';
 
-        const allCategoryLabels = [];
-        {% if document.composition_elements.get('common', {}).get('categories') %}
-            {% for category in document.composition_elements.get('common', {}).get('categories', []) %}
-                allCategoryLabels.push("{{ category.label }}");
-            {% endfor %}
-        {% endif %}
-        {% if document.composition_elements.get('doc_type_specific', {}).get('categories') %}
-            {% for category in document.composition_elements.get('doc_type_specific', {}).get('categories', []) %}
-                allCategoryLabels.push("{{ category.label }}");
-            {% endfor %}
-        {% endif %}
-        
-        // Exclude the '基本設定' category which contains title/plot
-        const categoriesToGenerate = allCategoryLabels.filter(label => label !== '共通構成要素');
-
+        const allCategoryLabels = documentData.composition_elements?.categories?.map(c => c.label) || [];
+        const categoriesToGenerate = allCategoryLabels.filter(label => label !== '基本設定');
 
         for (const categoryLabel of categoriesToGenerate) {
             const categorySectionId = `composition-for-${categoryLabel.replace(/\s/g, '-')}`;
@@ -614,9 +538,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     continue;
                 }
                 
-                // Reuse the old rendering logic for single categories
                 renderSingleCategorySuggestions(categorySectionId, data.suggestions[0]);
-
             } catch (error) {
                 const categorySection = document.getElementById(categorySectionId);
                 categorySection.innerHTML = `
@@ -630,14 +552,12 @@ document.addEventListener('DOMContentLoaded', function() {
         generateCompositionBtn.disabled = false;
     });
 
-    // Re-use from old script to render step 3 results
     function renderSingleCategorySuggestions(sectionId, categoryObj) {
         const categorySection = document.getElementById(sectionId);
-        categorySection.innerHTML = ""; // Clear loading spinner
+        categorySection.innerHTML = "";
 
         if (!categoryObj || !categoryObj.elements) {
-            // categoryObj が undefined の場合を考慮して、単に「提案が見つかりませんでした」と表示
-            const categoryLabel = categoryObj ? categoryObj.category : '不明な分類'; // categoryObj があればラベルを取得
+            const categoryLabel = categoryObj ? categoryObj.category : '不明な分類';
             categorySection.innerHTML = `<h5>分類: ${categoryLabel}</h5><div class="alert alert-info mb-0">提案は見つかりませんでした。</div>`;
             return;
         }
@@ -659,10 +579,8 @@ document.addEventListener('DOMContentLoaded', function() {
         categorySection.innerHTML = htmlContent;
     }
 
-
     // --- Initial State ---
     function initializeView() {
-        // Activate tab based on URL hash
         let hash = window.location.hash;
         let tabToActivate;
 
@@ -673,14 +591,12 @@ document.addEventListener('DOMContentLoaded', function() {
         if (tabToActivate) {
             new bootstrap.Tab(tabToActivate).show();
         } else {
-            // Default to the new 'intent' tab as it's the first in the reordered list
             let defaultTab = document.getElementById('intent-tab');
             if (defaultTab) {
                 new bootstrap.Tab(defaultTab).show();
             }
         }
 
-        // Determine which step to show based on saved data
         if (documentData.selected_title && documentData.selected_plot) {
             selectedTitleInput.value = documentData.selected_title;
             selectedPlotTextarea.value = documentData.selected_plot;
@@ -689,16 +605,11 @@ document.addEventListener('DOMContentLoaded', function() {
             showStep(1);
         }
 
-        // Check if composition elements are defined and disable generation buttons if not
-        const hasCommonCategories = documentData.composition_elements?.common?.categories?.length > 0;
-        const hasDocTypeCategories = documentData.composition_elements?.doc_type_specific?.categories?.length > 0;
-        
-        const isCompositionDefined = hasCommonCategories || hasDocTypeCategories;
+        const isCompositionDefined = documentData.composition_elements?.categories?.length > 0;
 
         if (!isCompositionDefined) {
             generateProposalsBtn.disabled = true;
             generateCompositionBtn.disabled = true;
-            // Optionally add a tooltip or message here
             generateProposalsBtn.title = "構成要素を定義してから生成を開始してください。";
             generateCompositionBtn.title = "構成要素を定義してから生成を開始してください。";
         }
