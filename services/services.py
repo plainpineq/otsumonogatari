@@ -106,85 +106,66 @@ def _get_default_element_instance_for_new_category() -> dict:
 def _normalize_categories(current_categories: list, meta_categories: list):
     """カテゴリとその要素をメタ定義に基づいて初期化・正規化するヘルパー関数"""
 
-    # --- Reorder categories based on meta_categories and add missing ones ---
-    # Build a dictionary for quick lookup of existing categories by ID
-    existing_categories_map = {cat["id"]: cat for cat in current_categories}
-    
-    reordered_categories = []
-    processed_meta_ids = set()
+    # メタ定義にないカテゴリを削除（古いデータをクリーンアップ）
+    # ただし、ユーザーが追加した編集可能なカテゴリは残す
+    meta_category_ids = {cat["id"] for cat in meta_categories}
+    current_categories[:] = [
+        cat for cat in current_categories if cat["id"] in meta_category_ids or cat.get("editable")
+    ]
 
-    # Add categories from meta_categories in their defined order
+
     for category_meta in meta_categories:
         category_id = category_meta["id"]
-        processed_meta_ids.add(category_id)
-        
-        if category_id in existing_categories_map:
-            # Existing category, update its meta info and add to reordered list
-            existing_category = existing_categories_map[category_id]
-            existing_category["label"] = category_meta["label"]
-            existing_category["editable"] = category_meta.get("editable", False)
-            reordered_categories.append(existing_category)
-        else:
-            # New category from meta, add it
+        category_found = False
+
+        for existing_category in current_categories:
+            if existing_category["id"] == category_id:
+                # カテゴリが見つかったら、そのメタ情報を更新し、中の要素を正規化
+                existing_category["label"] = category_meta["label"]
+                existing_category["editable"] = category_meta.get("editable", False)
+
+                existing_elements = existing_category.setdefault("elements", [])
+
+                # メタ定義にない要素を削除（ただし、ユーザーが追加した編集可能なものは残す）
+                if 'elements' in category_meta:
+                    meta_element_ids = {elem["id"] for elem in category_meta.get("elements", [])}
+                    existing_category["elements"][:] = [
+                        elem for elem in existing_elements if elem["id"] in meta_element_ids or elem.get("editable")
+                    ]
+
+                # メタ定義に基づいて不足している要素を追加 (idで比較)
+                # ただし、editableがTrueのメタ要素はユーザーが削除可能なので、
+                # ここで自動的に再追加しないようにする。
+                for element_meta in category_meta.get("elements", []):
+                    # editableではないメタ要素のみを強制的に存在させる
+                    if not element_meta.get("editable", False):
+                        element_found = False
+                        for existing_element in existing_elements:
+                            if existing_element["id"] == element_meta["id"]:
+                                element_found = True
+                                # labelも更新される可能性があるのでここで上書き
+                                existing_element["label"] = element_meta["label"]
+                                existing_element.setdefault("value", "") # valueがなければ追加
+                                break
+                        if not element_found:
+                            existing_elements.append(_get_default_element_instance(element_meta))
+
+                category_found = True
+                break
+
+        if not category_found:
+            # カテゴリが見つからなかった場合、メタ定義から追加
+            # ユーザーが削除したeditable=Trueのカテゴリも初期状態では追加する
             new_category = {
                 "id": category_meta["id"],
                 "label": category_meta["label"],
                 "editable": category_meta.get("editable", False),
                 "elements": []
             }
-            reordered_categories.append(new_category)
-        
-        # Now normalize elements within this category
-        current_category_elements = reordered_categories[-1].setdefault("elements", [])
-        if "elements" in category_meta:
-            _normalize_elements(current_category_elements, category_meta["elements"])
-        else:
-            # If meta defines no elements, ensure only editable elements remain
-            current_category_elements[:] = [elem for elem in current_category_elements if elem.get("editable")]
+            for element_meta in category_meta.get("elements", []):
+                new_category["elements"].append(_get_default_element_instance(element_meta))
+            current_categories.append(new_category)
 
-    # Append any user-added editable categories that are not in meta_categories
-    for existing_category in current_categories:
-        if existing_category["id"] not in processed_meta_ids and existing_category.get("editable"):
-            reordered_categories.append(existing_category)
-
-    current_categories[:] = reordered_categories
-
-
-
-def _normalize_elements(current_elements: list, meta_elements: list):
-    """要素をメタ定義に基づいて初期化・正規化・並び替えるヘルパー関数"""
-    existing_elements_map = {elem["id"]: elem for elem in current_elements}
-    reordered_elements = []
-    processed_meta_ids = set()
-
-    for element_meta in meta_elements:
-        element_id = element_meta["id"]
-        processed_meta_ids.add(element_id)
-
-        if element_id in existing_elements_map:
-            existing_element = existing_elements_map[element_id]
-            existing_element["label"] = element_meta["label"]
-            existing_element.setdefault("value", "")
-            reordered_elements.append(existing_element)
-        else:
-            # New element from meta, add it
-            reordered_elements.append(_get_default_element_instance(element_meta))
-
-    # Append any user-added editable elements that are not in meta_elements
-    for existing_element in current_elements:
-        if existing_element["id"] not in processed_meta_ids and existing_element.get("editable"):
-            reordered_elements.append(existing_element)
-
-    current_elements[:] = reordered_elements
-
-def _get_default_element_instance(element_meta):
-    """新しい要素インスタンスを生成するヘルパー関数"""
-    return {
-        "id": element_meta["id"],
-        "label": element_meta["label"],
-        "editable": element_meta.get("editable", False),
-        "value": element_meta.get("value", "")
-    }
 
 def normalize_composition_elements(document: dict) -> None:
     """
