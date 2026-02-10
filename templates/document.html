@@ -391,25 +391,13 @@ document.addEventListener('DOMContentLoaded', function() {
             let orderedBasicElements = [];
             const baseCategoryFromDoc = documentData.composition_elements?.categories?.find(cat => cat.id === 'base');
             if (baseCategoryFromDoc && baseCategoryFromDoc.elements) {
-                            orderedBasicElements = baseCategoryFromDoc.elements; // {id, label, editable} のオブジェクト配列
-                        } else {
-                            // "base" カテゴリが見つからない場合は、LLMからの応答のキーをそのまま使う（順序とタイプは保証されない）
-                            // この場合、明示的なデフォルト順序を設定し、LLMからの追加要素を後から追加する
-                            orderedBasicElements = [
-                                { id: 'title', label: '題名', editable: true },
-                                { id: 'plot', label: 'プロット', editable: true },
-                                // 必要に応じて、ここに他の「基本設定」の要素を追加し、順序を定義する
-                            ];
-                            // LLMが上記デフォルトに含まれない追加の基本設定要素を提案した場合、それらもリストに追加
-                            Object.keys(basicSettingsCategoryFromLLM.elements).forEach(llmElementName => {
-                                // LLMの要素名が、orderedBasicElements内の既存の要素のlabelと一致しない場合のみ追加
-                                if (!orderedBasicElements.some(elem => elem.label === llmElementName)) {
-                                    // IDはlabelをそのまま使用するか、適切なルールで生成する
-                                    orderedBasicElements.push({ id: llmElementName, label: llmElementName, editable: true });
-                                }
-                            });
-                        }
-                            // ステップ1の提案リストとステップ2の動的入力フィールドのHTMLを生成
+                orderedBasicElements = baseCategoryFromDoc.elements; // {id, label, editable} のオブジェクト配列
+            } else {
+                // "base" カテゴリが見つからない場合は、LLMからの応答のキーをそのまま使う（順序とタイプは保証されない）
+                orderedBasicElements = Object.keys(basicSettingsCategoryFromLLM.elements).map(label => ({label: label, id: label}));
+            }
+    
+            // ステップ1の提案リストとステップ2の動的入力フィールドのHTMLを生成
             const dynamicSelectionFieldsContainer = document.getElementById('dynamic-selection-fields');
             dynamicSelectionFieldsContainer.innerHTML = ''; // クリア
     
