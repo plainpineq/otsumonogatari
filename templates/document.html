@@ -38,8 +38,8 @@
     <div class="tab-pane fade" id="suggestions" role="tabpanel" aria-labelledby="suggestions-tab">
         <!-- STEP 1: Title/Plot Proposal Generation -->
         <div id="step1-proposals" class="card p-4 my-3">
-            <h3 class="h4">ステップ1: 題名とプロットの案を生成する</h3>
-            <p class="text-muted">「作者の意図」タブの内容に基づいて、物語の核となる題名とプロットの案を複数生成します。</p>
+            <h3 class="h4">ステップ1: 基本設定の案を生成する</h3>
+            <p class="text-muted">「作者の意図」タブの内容に基づいて、物語の核となる基本設定の案を複数生成します。</p>
             <button id="generate-proposals-btn" class="btn btn-primary">生成開始</button>
             <div id="proposals-loading" class="text-center my-3" style="display: none;">
                 <div class="spinner-border" role="status">
@@ -54,7 +54,7 @@
 
         <!-- STEP 2: Selection and Editing -->
         <div id="step2-selection" class="card p-4 my-3" style="display: none;">
-            <h3 class="h4">ステップ2: 基本項目を確定する</h3> {# 見出しも変更 #}
+            <h3 class="h4">ステップ2: 基本設定を確定する</h3> {# 見出しも変更 #}
             <p class="text-muted">生成された案から好きなものを選び、自由に編集して、あなたの物語の方向性を固めてください。</p>
             <form id="selection-form">
                 <div id="dynamic-selection-fields">
@@ -68,7 +68,7 @@
         <!-- STEP 3: Full Composition Generation -->
         <div id="step3-composition" class="card p-4 my-3" style="display: none;">
             <h3 class="h4">ステップ3: 物語の全体像を生成する</h3>
-            <p class="text-muted">確定した題名とプロットに基づいて、物語の全ての構成要素（導入、事件、転機、結末など）を生成します。</p>
+            <p class="text-muted">確定した基本設定に基づいて、物語の全ての構成要素（導入、事件、転機、結末など）を生成します。</p>
             <button id="generate-composition-btn" class="btn btn-primary">全体生成を開始</button>
             <div id="composition-results" class="mt-3">
                 <!-- Suggestions will be loaded here -->
@@ -404,9 +404,9 @@ document.addEventListener('DOMContentLoaded', function() {
             let generatedStep2Fields = {}; // {elementLabel: {id, type, value}}
     
             orderedBasicElements.forEach(basicElementMeta => {
-                const elementName = basicElementMeta.label; // 例: "題名", "プロット", "キーテクノロジー"
-                const elementId = basicElementMeta.id; // 例: "title", "plot", "key_tech"
-                const inputFieldType = (elementId === 'plot' || elementName === 'プロット') ? 'textarea' : 'input'; // プロットはtextarea
+                const elementName = basicElementMeta.label; // 例: "題名", "あらすじ"
+                const elementId = basicElementMeta.id; // 例: "title", "plot"
+                const inputFieldType = (elementId === 'plot' || elementName === 'あらすじ') ? 'textarea' : 'input'; // あらすじはtextarea
     
                 // LLMからの提案がある場合
                 if (basicSettingsCategoryFromLLM.elements.hasOwnProperty(elementName)) {
@@ -533,15 +533,15 @@ document.addEventListener('DOMContentLoaded', function() {
             });
     
             if (!allFieldsFilled) {
-                showAlert('すべての基本項目を入力してください。', 'warning');
+                showAlert('すべての基本設定を入力してください。', 'warning');
                 return;
             }
     
-            // 特に題名とプロットは必須 (なくても生成フローは進むが、UI上は重要なのでチェック)
+            // 特に題名とあらすじは必須 (なくても生成フローは進むが、UI上は重要なのでチェック)
             const title = selectedBasicElements["title"];
             const plot = selectedBasicElements["plot"];
             if (!title || !plot) {
-                 showAlert('題名とプロットの両方を入力してください。', 'warning');
+                 showAlert('題名とあらすじの両方を入力してください。', 'warning');
                  return;
             }
     
@@ -552,7 +552,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const response = await fetch(`/document/${docId}/save_selection`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    // 選択された全ての基本項目を送信
+                    // 選択された全ての基本設定を送信
                     body: JSON.stringify(selectedBasicElements)
                 });
                 const data = await response.json();
@@ -647,7 +647,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
         let htmlContent = `<h5>分類: ${categoryObj.category}</h5><div class="list-group">`;
 
-        for (const elementName in categoryObj.elements) {
+        // document.composition_elements から現在のカテゴリの要素の順序とタイプを取得
+        let orderedElementsForCategory = [];
+        const currentCategoryFromDoc = documentData.composition_elements?.categories?.find(cat => cat.label === categoryObj.category);
+        if (currentCategoryFromDoc && currentCategoryFromDoc.elements) {
+            orderedElementsForCategory = currentCategoryFromDoc.elements;
+        } else {
+            // fallback: documentDataにカテゴリが見つからない場合は、LLMからの応答のキーをそのまま使う
+            orderedElementsForCategory = Object.keys(categoryObj.elements).map(label => ({label: label}));
+        }
+
+        orderedElementsForCategory.forEach(elementMeta => {
+            const elementName = elementMeta.label;
             if (categoryObj.elements.hasOwnProperty(elementName)) {
                 const suggestionsForElement = categoryObj.elements[elementName];
                 htmlContent += `<h6 class="ms-3 mb-1 mt-2">要素名: ${elementName}</h6>`;
@@ -657,7 +668,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
                 htmlContent += `</ul>`;
             }
-        }
+        });
         htmlContent += `</div>`;
         categorySection.innerHTML = htmlContent;
     }
