@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card p-4 mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="h2 mb-0">構成要素評価</h1>
+        <div>
+            <a href="/dashboard" class="btn btn-outline-secondary me-2">ダッシュボード</a>
+        </div>
+    </div>
+
+    <div class="alert alert-info" role="alert">
+        ここでは、あなたが「理想とする物語の構成要素プロファイル」（Ideal Profile）を生成し、
+        それに基づいてLLMが生成した提案の適合度を評価・計算します。
+    </div>
+
+    <!-- Ideal Profile Generation -->
+    <div class="card p-4 my-3">
+        <h3 class="h4">ステップ1: Ideal Profileの生成</h3>
+        <p class="text-muted">「作者の意図」と「構成要素」タブの内容に基づいて、理想のプロファイルをLLMに生成させます。</p>
+        <button id="generate-ideal-profile-btn" class="btn btn-primary">Ideal Profileを生成</button>
+        <div id="ideal-profile-loading" class="text-center my-3" style="display: none;">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">生成中...</p>
+        </div>
+
+        <div id="ideal-profile-display" class="mt-4" style="display: none;">
+            <h4 class="h5">生成されたIdeal Profile</h4>
+            <div class="form-text text-muted">
+                必要に応じて `base_profile` や `author_modifier` を編集し、「Ideal Profileを保存」ボタンで変更を確定してください。<br>
+                `author_modifier` は `base_profile` の数値を調整するために使用します。例えば、`{"主人公": {"change_type": 1}}` のように記述すると、`base_profile` の `主人公` の `change_type` が `1` 増加します。
+            </div>
+            <textarea id="ideal-profile-json" class="form-control mt-2" rows="20"></textarea>
+            <div class="d-flex justify-content-end mt-2">
+                <button id="save-ideal-profile-btn" class="btn btn-success">Ideal Profileを保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fit Calculation -->
+    <div class="card p-4 my-3">
+        <h3 class="h4">ステップ2: 適合度（Fitスコア）の計算</h3>
+        <p class="text-muted">現在のIdeal Profileと「評価」タブで付与された意味ラベルに基づいて、LLM提案の適合度を計算します。</p>
+        <button id="calculate-fit-btn" class="btn btn-info">適合度を計算</button>
+        <div id="fit-calculation-loading" class="text-center my-3" style="display: none;">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">計算中...</p>
+        </div>
+
+        <div id="fit-results-display" class="mt-4" style="display: none;">
+            <h4 class="h5">適合度計算結果</h4>
+            <div class="table-responsive">
+                <table class="table table-bordered table-sm">
+                    <thead class="table-light">
+                        <tr>
+                            <th>候補テキスト</th>
+                            <th>最も適合する理想要素</th>
+                            <th>Fitスコア (距離)</th>
+                            <th>カテゴリ</th>
+                            <th>元の要素名</th>
+                        </tr>
+                    </thead>
+                    <tbody id="fit-results-body">
+                        <!-- JavaScript will populate this -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const docId = "{{ document.id }}";
+    const idealProfileData = {{ document.ideal_profile | tojson | default({}) }};
+    const generateIdealProfileBtn = document.getElementById('generate-ideal-profile-btn');
+    const idealProfileLoading = document.getElementById('ideal-profile-loading');
+    const idealProfileDisplay = document.getElementById('ideal-profile-display');
+    const idealProfileJsonTextarea = document.getElementById('ideal-profile-json');
+    const saveIdealProfileBtn = document.getElementById('save-ideal-profile-btn');
+
+    const calculateFitBtn = document.getElementById('calculate-fit-btn');
+    const fitCalculationLoading = document.getElementById('fit-calculation-loading');
+    const fitResultsDisplay = document.getElementById('fit-results-display');
+    const fitResultsBody = document.getElementById('fit-results-body');
+
+    function showAlert(message, type = 'danger') {
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+        alertDiv.role = 'alert';
+        alertDiv.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        document.querySelector('.tab-content') ? document.querySelector('.tab-content').prepend(alertDiv) : document.querySelector('.card').prepend(alertDiv);
+    }
+
+    // Initialize ideal profile display if data exists
+    if (Object.keys(idealProfileData).length > 0) {
+        idealProfileJsonTextarea.value = JSON.stringify(idealProfileData, null, 2);
+        idealProfileDisplay.style.display = 'block';
+    }
+
+    // Initialize fit results display if data exists
+    if ({{ document.fit_results | tojson | default([]) | length }} > 0) {
+        renderFitResults({{ document.fit_results | tojson | default([]) }});
+        fitResultsDisplay.style.display = 'block';
+    }
+
+    generateIdealProfileBtn.addEventListener('click', async () => {
+        generateIdealProfileBtn.disabled = true;
+        idealProfileLoading.style.display = 'block';
+        idealProfileDisplay.style.display = 'none';
+
+        try {
+            const response = await fetch(`/document/${docId}/generate_ideal_profile`, { method: 'POST' });
+            const data = await response.json();
+
+            if (!response.ok) {
+                showAlert(data.error || 'Ideal Profileの生成に失敗しました。', 'danger');
+                throw new Error(data.error || 'Failed to generate Ideal Profile.');
+            }
+            
+            idealProfileJsonTextarea.value = JSON.stringify(data.ideal_profile, null, 2);
+            idealProfileDisplay.style.display = 'block';
+            showAlert('Ideal Profileが生成されました。', 'success');
+
+        } catch (error) {
+            showAlert(`エラー: ${error.message}`, 'danger');
+        } finally {
+            generateIdealProfileBtn.disabled = false;
+            idealProfileLoading.style.display = 'none';
+        }
+    });
+
+    saveIdealProfileBtn.addEventListener('click', async () => {
+        saveIdealProfileBtn.disabled = true;
+        try {
+            const updatedProfile = JSON.parse(idealProfileJsonTextarea.value);
+            const response = await fetch(`/document/${docId}/save_ideal_profile`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updatedProfile)
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                showAlert(data.error || 'Ideal Profileの保存に失敗しました。', 'danger');
+                throw new Error(data.error || 'Failed to save Ideal Profile.');
+            }
+            showAlert('Ideal Profileが保存されました。', 'success');
+
+        } catch (error) {
+            showAlert(`エラー: ${error.message}`, 'danger');
+        } finally {
+            saveIdealProfileBtn.disabled = false;
+        }
+    });
+
+
+    calculateFitBtn.addEventListener('click', async () => {
+        calculateFitBtn.disabled = true;
+        fitCalculationLoading.style.display = 'block';
+        fitResultsDisplay.style.display = 'none';
+        fitResultsBody.innerHTML = ''; // Clear previous results
+
+        try {
+            const response = await fetch(`/document/${docId}/calculate_fit`, { method: 'POST' });
+            const data = await response.json();
+
+            if (!response.ok) {
+                showAlert(data.error || 'Fitスコアの計算に失敗しました。', 'danger');
+                throw new Error(data.error || 'Failed to calculate Fit scores.');
+            }
+
+            renderFitResults(data.fit_results);
+            fitResultsDisplay.style.display = 'block';
+            showAlert('Fitスコアが計算されました。', 'success');
+
+        } catch (error) {
+            showAlert(`エラー: ${error.message}`, 'danger');
+        } finally {
+            calculateFitBtn.disabled = false;
+            fitCalculationLoading.style.display = 'none';
+        }
+    });
+
+    function renderFitResults(fitResults) {
+        fitResultsBody.innerHTML = '';
+        if (fitResults && fitResults.length > 0) {
+            fitResults.sort((a, b) => a.fit.score - b.fit.score); // Sort by score ascending
+            fitResults.forEach(item => {
+                const row = `
+                    <tr>
+                        <td><small>${item.text}</small></td>
+                        <td><strong>${item.fit.best_fit_element}</strong></td>
+                        <td>${item.fit.score.toFixed(2)}</td>
+                        <td>${item.category}</td>
+                        <td>${item.element}</td>
+                    </tr>
+                `;
+                fitResultsBody.innerHTML += row;
+            });
+        } else {
+            fitResultsBody.innerHTML = '<tr><td colspan="5">計算結果がありません。</td></tr>';
+        }
+    }
+});
+</script>
+{% endblock %}

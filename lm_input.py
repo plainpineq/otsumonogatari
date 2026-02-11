@@ -4,6 +4,7 @@ import os
 from user_files import get_user_data_path
 from typing import Optional
 from services.services import DEFAULT_COMPOSITION_META # DEFAULT_COMPOSITION_META をインポート
+from ui_labels import UI_LABELS
 
 # ... existing code ...
 
@@ -232,15 +233,131 @@ def build_title_plot_proposals_prompt(document: dict, composition_meta: dict, us
     prompt = prompt.replace("{elements_text}", elements_text)
     prompt = prompt.replace("{dynamic_json_example}", json.dumps(dynamic_json_example_for_base, indent=2, ensure_ascii=False))
 
+    return prompt
+
+def build_ideal_profile_prompt(document: dict, user_id: str, suggestion_count: int = 3) -> str:
+    """
+    Builds a prompt for the LLM to generate an ideal profile based on
+    author's intent, selected basic elements, composition elements, and semantic label definitions.
+    """
+    template_file_path = os.path.join("prompt_templates", "ideal_profile.md")
+
+    with open(template_file_path, "r", encoding="utf-8") as f:
+        template_content = f.read()
+
+    # 1. Collect Author's Intent
+    intent_fields = document.get("intent", {}).get("fields", {})
+    intent_dict = {field.get("label"): field.get("value") for key, field in intent_fields.items() if field.get("label") and field.get("value")}
+    formatted_intent_json = json.dumps(intent_dict, indent=2, ensure_ascii=False)
+
+    # 2. Collect Selected Basic Settings
+    selected_basic_elements = document.get("selected_basic_elements", {})
+    formatted_selected_basic_elements_json = json.dumps(selected_basic_elements, indent=2, ensure_ascii=False)
+
+    # 3. Collect Elements and Semantic Labels
+    elements_and_labels_lines = []
+    
+    # Load semantic label configuration
+    label_config_path = os.path.join("prompt_templates", "novel_label_config.json")
+    semantic_label_config = {}
+    try:
+        with open(label_config_path, "r", encoding="utf-8") as f:
+            semantic_label_config = json.load(f).get("labels", {})
+    except FileNotFoundError:
+        print(f"Warning: {label_config_path} not found. Semantic labels won't be included in prompt.")
+
+    # Iterate through composition elements to get all element labels
+    all_document_categories = document.get("composition_elements", {}).get("categories", [])
+    
+    for category_obj in all_document_categories:
+        category_label = category_obj.get("label")
+        if not category_label:
+            continue
+        
+        elements_and_labels_lines.append(f"- 分類名: {category_label}")
+        
+        elements_in_category = category_obj.get("elements")
+        if elements_in_category:
+            for element_obj in elements_in_category:
+                element_label = element_obj.get("label")
+                if element_label:
+                    elements_and_labels_lines.append(f"  - 要素名: {element_label}")
+                    for label_type, label_values in semantic_label_config.items():
+                        if label_type == "reader_effect":
+                            # For reader_effect, LLM should output a list of labels
+                            formatted_values = ", ".join([f"'{k}'" for k in label_values.keys()])
+                            elements_and_labels_lines.append(f"    - {label_type} ({UI_LABELS.get(label_type, label_type)}): [リスト形式で、以下のいずれかまたは複数: {formatted_values}]")
+                        else:
+                            # For scalar labels, output numerical range
+                            formatted_values = ", ".join([f"{k}:{v}" for k, v in label_values.items()])
+                            elements_and_labels_lines.append(f"    - {label_type} ({UI_LABELS.get(label_type, label_type)}): [{formatted_values}]")
+    
+    if not elements_and_labels_lines:
+        elements_and_labels_lines.append("（物語の構成要素は定義されていません）")
+    elements_and_labels_text = "\n".join(elements_and_labels_lines)
+
+    # 4. Construct dynamic_json_example
+    example_base_profile = {}
+    example_tolerance = {}
+    for category_obj in all_document_categories:
+        elements_in_category = category_obj.get("elements")
+        if elements_in_category:
+            for element_obj in elements_in_category:
+                element_label = element_obj.get("label")
+                if element_label:
+                    element_scores = {}
+                    element_tolerance = {}
+                    for label_type, label_values in semantic_label_config.items():
+                        if label_type == "reader_effect":
+                            # Example for reader_effect is a list of strings
+                            example_effect_list = []
+                            if label_values:
+                                # Pick a couple of example effects
+                                all_effects = list(label_values.keys())
+                                if len(all_effects) >= 2:
+                                    example_effect_list = [all_effects[0], all_effects[1]]
+                                elif len(all_effects) == 1:
+                                    example_effect_list = [all_effects[0]]
+                            element_scores[label_type] = example_effect_list
+                            element_tolerance[label_type] = 1.0 # Tolerance for list of effects can be simple scalar
+                        else:
+                            # For scalar labels
+                            example_score_value = 2 # Default example score within 0-3 range
+                            if label_values:
+                                # Try to find an existing value within 0-3 range if possible
+                                for k, v in label_values.items():
+                                    if 0 <= v <= 3:
+                                        example_score_value = v
+                                        break
+                            element_scores[label_type] = example_score_value
+                            element_tolerance[label_type] = 1.0 # Example tolerance for scalar
+
+                    example_base_profile[element_label] = element_scores
+                    example_tolerance[element_label] = element_tolerance # Add tolerance example per element
+
+    dynamic_json_example_structure = {
+        "base_profile": example_base_profile,
+        "author_modifier": {},
+        "tolerance": example_tolerance # Include an example tolerance
+    }
+    dynamic_json_example = json.dumps(dynamic_json_example_structure, indent=2, ensure_ascii=False)
+
+
+    # 5. Fill Template Placeholders
+    prompt = template_content.replace("{{ formatted_intent_json }}", formatted_intent_json)
+    prompt = prompt.replace("{{ formatted_selected_basic_elements_json }}", formatted_selected_basic_elements_json)
+    prompt = prompt.replace("{{ elements_and_labels_text }}", elements_and_labels_text)
+    prompt = prompt.replace("{{ dynamic_json_example }}", dynamic_json_example)
+
     # Output the generated prompt to a file for debugging/verification
     user_data_dir = get_user_data_path(user_id)
-    os.makedirs(user_data_dir, exist_ok=True) # Ensure the directory exists
-    output_file_path = os.path.join(user_data_dir, f"generated_prompt{suffix}.md")
+    os.makedirs(user_data_dir, exist_ok=True)
+    output_file_path = os.path.join(user_data_dir, f"generated_prompt_ideal_profile.md")
     try:
         with open(output_file_path, "w", encoding="utf-8") as f:
             f.write(prompt)
-        print(f"Generated prompt for proposals written to: {output_file_path}")
+        print(f"Generated ideal profile prompt written to: {output_file_path}")
     except Exception as e:
-        print(f"Error writing prompt to file: {e}")
+        print(f"Error writing ideal profile prompt to file: {e}")
 
     return prompt

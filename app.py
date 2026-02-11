@@ -10,6 +10,7 @@ from db import init_user_db, get_user_conn
 from auth import login
 from security import hash_password
 from user_files import load_user_data, save_user_data, get_user_data_path
+from evaluation_blueprint import evaluation_bp # NEW: Import the new blueprint
 
 def _reset_generation_counter(user_id: str):
     session[f"generation_counter_{user_id}"] = 0
@@ -75,6 +76,7 @@ app.secret_key = "storyforge-secret"
 app.permanent_session_lifetime = timedelta(hours=2)
 
 init_user_db()
+app.register_blueprint(evaluation_bp) # NEW: Register the evaluation blueprint
 
 # ---------- 認証 ----------
 
@@ -131,7 +133,7 @@ def dashboard():
     quantum_server = data.get("quantum_server", {})
 
     # Ensure all roles have a default dictionary to prevent template errors
-    for role in ["generation", "evaluation", "drafting"]:
+    for role in ["generation", "evaluation", "drafting", "ideal_profile_generation"]: # NEW: Added ideal_profile_generation
         llm_servers.setdefault(role, {})
 
     user_config = {
@@ -419,6 +421,17 @@ def generate_proposals(doc_id):
             f.write(raw_text)
         with open(os.path.join(user_data_dir, f"generated_llm{suffix}.json"), "w", encoding="utf-8") as f:
             json.dump(suggestions_dict, f, ensure_ascii=False, indent=2)
+
+        # Append suggestions to the main document object
+        if "llm_suggestions" not in document or not isinstance(document["llm_suggestions"], list):
+            document["llm_suggestions"] = []
+
+        # This logic assumes the response contains suggestions for the requested category
+        new_suggestions = suggestions_dict.get("suggestions", [])
+        if new_suggestions:
+            document["llm_suggestions"].extend(new_suggestions)
+        
+        save_user_data(session["user_id"], data)
 
         return jsonify(suggestions_dict)
 

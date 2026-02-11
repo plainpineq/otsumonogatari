@@ -32,6 +32,9 @@
     <li class="nav-item" role="presentation">
         <button class="nav-link" id="element-fit-tab" data-bs-toggle="tab" data-bs-target="#element-fit" type="button" role="tab" aria-controls="element-fit" aria-selected="false">適合度</button>
     </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="ideal-profile-tab" data-bs-toggle="tab" data-bs-target="#ideal-profile" type="button" role="tab" aria-controls="ideal-profile" aria-selected="false">構成要素評価</button>
+    </li>
 </ul>
 
 <div class="tab-content" id="documentTabContent">
@@ -336,6 +339,17 @@
             {% endif %}
         </div>
     </div>
+    <div class="tab-pane fade" id="ideal-profile" role="tabpanel" aria-labelledby="ideal-profile-tab">
+        <!-- Content for the new '構成要素評価' tab -->
+        <div class="card p-4 shadow-sm mt-3">
+            <h2 class="h4 mb-3">構成要素評価</h2>
+            <p>このタブは、`evaluation.html` の内容を読み込みます。</p>
+            <a href="{{ url_for('evaluation_bp.evaluation_tab', doc_id=document.id) }}" class="btn btn-primary">
+                構成要素評価ツールを開く
+            </a>
+        </div>
+    </div>
+
 </div>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -691,11 +705,69 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
-        if (documentData.selected_title && documentData.selected_plot) {
-            selectedTitleInput.value = documentData.selected_title;
-            selectedPlotTextarea.value = documentData.selected_plot;
-            showStep(3);
+        // --- Handle existing generated data ---
+        const proposalsResultsDiv = document.getElementById('proposals-results');
+        const compositionResultsDiv = document.getElementById('composition-results');
+
+        if (documentData.selected_basic_elements && Object.keys(documentData.selected_basic_elements).length > 0) {
+            // Populate Step 2 fields from selected_basic_elements
+            const dynamicSelectionFieldsContainer = document.getElementById('dynamic-selection-fields');
+            for (const elemId in documentData.selected_basic_elements) {
+                const field = dynamicSelectionFieldsContainer.querySelector(`#selected-${elemId}`);
+                if (field) {
+                    field.value = documentData.selected_basic_elements[elemId];
+                }
+            }
+            showStep(2); // Show Step 2 if basic elements are selected
+            document.getElementById('document-title-heading').textContent = documentData.selected_basic_elements.title || documentData.title;
+
+            // If there are also existing LLM suggestions, render them
+            if (documentData.llm_suggestions && documentData.llm_suggestions.length > 0) {
+                // Find basic settings suggestions if they exist
+                const basicSettingsSuggestions = documentData.llm_suggestions.find(s => s.category === "基本設定");
+                if (basicSettingsSuggestions) {
+                    renderProposals({ suggestions: [basicSettingsSuggestions] }); // renderProposals expects an array of suggestions
+                    proposalsResultsDiv.style.display = 'block';
+                }
+
+                // Render other composition suggestions
+                const otherCompositionSuggestions = documentData.llm_suggestions.filter(s => s.category !== "基本設定");
+                if (otherCompositionSuggestions.length > 0) {
+                    compositionResultsDiv.innerHTML = ''; // Clear for re-rendering
+                    otherCompositionSuggestions.forEach(categoryObj => {
+                        const categorySectionId = `composition-for-${categoryObj.category.replace(/\s/g, '-')}`;
+                        compositionResultsDiv.innerHTML += `
+                            <div id="${categorySectionId}" class="card p-3 mb-2">
+                                <h5>分類: ${categoryObj.category}</h5>
+                                <div class="text-center my-2"></div>
+                            </div>
+                        `;
+                        renderSingleCategorySuggestions(categorySectionId, categoryObj);
+                    });
+                    compositionResultsDiv.style.display = 'block';
+                    showStep(3); // Show Step 3 if other compositions are present
+                }
+            }
+
+            if (documentData.llm_suggestions && documentData.llm_suggestions.length > 0) {
+                 // Check if any non-basic-setting suggestions exist
+                const hasOtherSuggestions = documentData.llm_suggestions.some(s => s.category !== "基本設定");
+                if (hasOtherSuggestions) {
+                    showStep(3); // If other suggestions exist, display step 3
+                }
+            }
+
+
+        } else if (documentData.llm_suggestions && documentData.llm_suggestions.length > 0) {
+            // If only LLM suggestions exist but no selected basic elements, try to render Step 1 proposals
+            const basicSettingsSuggestions = documentData.llm_suggestions.find(s => s.category === "基本設定");
+            if (basicSettingsSuggestions) {
+                renderProposals({ suggestions: [basicSettingsSuggestions] });
+                proposalsResultsDiv.style.display = 'block';
+                showStep(2); // Show Step 2 to allow selection/editing
+            }
         } else {
+            // No existing generated data, start at Step 1
             showStep(1);
         }
 
