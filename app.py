@@ -405,7 +405,7 @@ def generate_proposals(doc_id):
         return jsonify({"suggestions": [{"category": "基本設定", "elements": {"題名": [f"模擬タイトル案{i+1}" for i in range(suggestion_count)]}}, {"category": "基本設定", "elements": {"あらすじ": [f"模擬プロット案{i+1}: これはモックデータです。" for i in range(suggestion_count)]}}], "message": "LLM設定が不完全なため、モックデータを使用しました。"}), 200
     
     try:
-        prompt = build_title_plot_proposals_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"], target_category_label=category_label, suffix=suffix, suggestion_count=suggestion_count)
+        prompt = build_title_plot_proposals_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"], suffix=suffix, suggestion_count=suggestion_count)
         raw_text, suggestions_dict = call_llm(llm_api_key, llm_model_name, prompt, llm_provider, base_url=llm_base_url)
 
         # Save responses
