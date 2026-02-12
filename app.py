@@ -5,6 +5,7 @@ import json
 import io
 import glob
 import pandas as pd
+import logging
 
 from db import init_user_db, get_user_conn
 from auth import login
@@ -129,9 +130,9 @@ def dashboard():
     data = load_user_data(session["user_id"])
     documents = data.get("documents", [])
     
-    # Get persistent server configurations
-    llm_servers = data.get("llm_servers", {})
-    quantum_server = data.get("quantum_server", {})
+    # Get server configurations from session
+    llm_servers = session.get("llm_servers", {})
+    quantum_server = session.get("quantum_server", {})
 
     # Ensure all roles have a default dictionary to prevent template errors
     for role in ["generation", "evaluation", "drafting", "ideal_profile_generation"]: # NEW: Added ideal_profile_generation
@@ -258,10 +259,8 @@ def save_servers_config():
     }
 
     # --- 保存 ---
-    data["llm_servers"] = llm_servers
-    data["quantum_server"] = quantum_server
-    
-    save_user_data(session["user_id"], data)
+    session["llm_servers"] = llm_servers
+    session["quantum_server"] = quantum_server
     
     flash("サーバー設定を保存しました。", "success")
     return redirect("/dashboard")
@@ -403,133 +402,10 @@ def generate_proposals(doc_id):
                            (llm_provider == "other" and not llm_base_url)
 
     if is_config_incomplete:
-        # Mock call if config is incomplete
-        return jsonify({
-            "suggestions": [
-                {"category": "基本設定", "elements": {"題名": [f"模擬タイトル案{i+1}" for i in range(suggestion_count)]}},
-                {"category": "基本設定", "elements": {"あらすじ": [f"模擬プロット案{i+1}: これはモックデータです。" for i in range(suggestion_count)]}}
-            ],
-            "message": "LLM設定が不完全なため、モックデータを使用しました。"
-        }), 200
-
-    try:
-        prompt = build_title_plot_proposals_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"], suffix=suffix, suggestion_count=suggestion_count)
-        raw_text, suggestions_dict = call_llm(llm_api_key, llm_model_name, prompt, llm_provider, base_url=llm_base_url)
-        
-        # Save raw and structured responses
-        user_data_dir = get_user_data_path(session["user_id"])
-        with open(os.path.join(user_data_dir, f"generated_llm{suffix}.txt"), "w", encoding="utf-8") as f:
-            f.write(raw_text)
-        with open(os.path.join(user_data_dir, f"generated_llm{suffix}.json"), "w", encoding="utf-8") as f:
-            json.dump(suggestions_dict, f, ensure_ascii=False, indent=2)
-
-        # Append suggestions to the main document object
-        if "llm_suggestions" not in document or not isinstance(document["llm_suggestions"], list):
-            document["llm_suggestions"] = []
-
-        # This logic assumes the response contains suggestions for the requested category
-        new_suggestions = suggestions_dict.get("suggestions", [])
-        if new_suggestions:
-            document["llm_suggestions"].extend(new_suggestions)
-        
-        save_user_data(session["user_id"], data)
-
-        return jsonify(suggestions_dict)
-
-    except (ValueError, RuntimeError, Exception) as e:
-        return jsonify({"error": f"LLM呼び出し中にエラーが発生しました: {str(e)}"}), 500
-
-
-@app.route("/document/<doc_id>/save_selection", methods=["POST"])
-def save_selection(doc_id):
-    """
-    STEP 2: Save the user-selected and edited title and plot.
-    """
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-    
-    data = load_user_data(session["user_id"])
-    document = find_document(data, doc_id)
-    if document is None:
-        return jsonify({"error": "Document not found"}), 404
-
-    request_data = request.get_json() # 動的に生成された基本項目がここにJSONとして渡される
-
-    # 'title' と 'plot' は必須とする（JavaScript側でもチェックしているが、バックエンドでも念のため）
-    selected_title = request_data.get("title")
-    selected_plot = request_data.get("plot")
-
-    if not selected_title or not selected_plot:
-        return jsonify({"error": "Title and plot are required."}), 400
-
-    # 全ての基本項目を document["selected_basic_elements"] に保存
-    document["selected_basic_elements"] = request_data
-    
-    # 互換性のため、selected_title と selected_plot も直接保存
-    document["selected_title"] = selected_title
-    document["selected_plot"] = selected_plot
-
-    save_user_data(session["user_id"], data)
-    
-    return jsonify({"success": True, "message": "Selection saved."})
-
-
-@app.route("/document/<doc_id>/generate_composition", methods=["POST"])
-def generate_composition(doc_id):
-    """
-    STEP 3: Generate the rest of the composition elements based on the selected title and plot.
-    This is a modified version of the original generate_composition_ideas.
-    It now iterates through categories and generates suggestions for each.
-    """
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-    data = load_user_data(session["user_id"])
-    document = find_document(data, doc_id)
-    if document is None:
-        return jsonify({"error": "Document not found"}), 404
-
-    # This endpoint is called for each category, so we get the label from the request
-    request_data = request.get_json()
-    category_label = request_data.get("category_label")
-    if not category_label:
-        return jsonify({"error": "Category label is required"}), 400
-
-    # --- DEBUG PRINTS ---
-    print(f"--- Debugging generate_composition ---")
-    print(f"Target Category Label: '{category_label}'")
-    print(f"Document composition_elements: {json.dumps(document.get('composition_elements', {}), ensure_ascii=False, indent=2)}")
-    # --- END DEBUG PRINTS ---
-        
-    # Suffix for file generation should be unique per category
-    current_generation_number = _get_next_generation_number(session["user_id"])
-    suffix = f"_{current_generation_number}_{category_label.replace(' ', '_')}"
-
-    # Get LLM config
-    llm_servers = data.get("llm_servers", {})
-    generation_config = llm_servers.get("generation", {})
-    llm_provider = generation_config.get("provider")
-    llm_api_key = generation_config.get("api_key")
-    llm_model_name = generation_config.get("model_name")
-    llm_base_url = generation_config.get("base_url")
-    suggestion_count = session.get("suggestion_count", 3)
-
-    is_config_incomplete = not llm_provider or not llm_model_name or \
-                           (llm_provider in ["gemini", "chatgpt"] and not llm_api_key) or \
-                           (llm_provider == "other" and not llm_base_url)
-
-    # Note: No mock call here, assuming config is complete by this stage.
-    if is_config_incomplete:
-        return jsonify({"error": "LLM configuration is incomplete."}), 400
-
-    # The logic here is very similar to the original `generate_composition_ideas`,
-    # but the prompt builder needs to be aware of the selected_title and selected_plot.
-    # We will modify `build_composition_ideas_prompt` later if needed, but for now,
-    # let's assume the existing prompt builder is sufficient if `intent` is well-defined.
+        return jsonify({"suggestions": [{"category": "基本設定", "elements": {"題名": [f"模擬タイトル案{i+1}" for i in range(suggestion_count)]}}, {"category": "基本設定", "elements": {"あらすじ": [f"模擬プロット案{i+1}: これはモックデータです。" for i in range(suggestion_count)]}}], "message": "LLM設定が不完全なため、モックデータを使用しました。"}), 200
     
     try:
-        # We now call the original prompt builder, but for a single category
-        prompt = build_composition_ideas_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"], target_category_label=category_label, suffix=suffix, suggestion_count=suggestion_count)
-        
+        prompt = build_title_plot_proposals_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"], target_category_label=category_label, suffix=suffix, suggestion_count=suggestion_count)
         raw_text, suggestions_dict = call_llm(llm_api_key, llm_model_name, prompt, llm_provider, base_url=llm_base_url)
 
         # Save responses
@@ -553,7 +429,7 @@ def generate_composition(doc_id):
         return jsonify(suggestions_dict)
 
     except (ValueError, RuntimeError, Exception) as e:
-        return jsonify({"error": f"LLM_ERROR: {str(e)}"}), 500
+        return jsonify({"error": f"LLM呼び出し中にエラーが発生しました: {str(e)}"}), 500
 
 @app.route("/document/<doc_id>/add_composition_element", methods=["POST"])
 def add_composition_element(doc_id):
@@ -879,6 +755,74 @@ def element_fit(doc_id):
     save_user_data(session["user_id"], data)
     flash("適合度の計算が完了しました。", "success")
     return redirect(f"/document/{doc_id}#element-fit")
+
+
+@app.route("/save_server_settings_from_ui", methods=["POST"]) # POSTに変更
+def save_server_settings_from_ui():
+    if "user_id" not in session:
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+
+    try:
+        # セッションから直接設定情報を取得
+        llm_servers = session.get("llm_servers", {})
+        quantum_server = session.get("quantum_server", {})
+        
+        settings_to_save = {
+            "llm_servers": llm_servers,
+            "quantum_server": quantum_server
+        }
+
+        settings_json = json.dumps(settings_to_save, ensure_ascii=False, indent=2)
+        
+        file_data = io.BytesIO(settings_json.encode('utf-8'))
+        
+        response = send_file(
+            file_data,
+            mimetype='application/json',
+            as_attachment=True,
+            download_name='server_settings.json'
+        )
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+    except Exception as e:
+        logging.error(f"Error in save_server_settings_from_ui: {e}")
+        return jsonify({"success": False, "message": f"設定のダウンロード中にエラーが発生しました: {str(e)}"}), 500
+
+
+@app.route("/load_server_settings", methods=["POST"])
+def load_server_settings():
+    if "user_id" not in session:
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+
+    if 'file' not in request.files:
+        return jsonify({"success": False, "message": "ファイルがありません"}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"success": False, "message": "ファイルが選択されていません"}), 400
+
+    try:
+        file_content = file.read().decode('utf-8')
+        settings = json.loads(file_content)
+
+        if "llm_servers" in settings:
+            session["llm_servers"] = settings["llm_servers"]
+        if "quantum_server" in settings:
+            session["quantum_server"] = settings["quantum_server"]
+        
+        # UIに反映させるため、現在の設定も返す
+        return jsonify({
+            "success": True, 
+            "message": "サーバー設定をロードしました。",
+            "llm_servers": session.get("llm_servers", {}),
+            "quantum_server": session.get("quantum_server", {})
+        })
+    except json.JSONDecodeError:
+        return jsonify({"success": False, "message": "無効なJSONファイルです"}), 400
+    except Exception as e:
+        return jsonify({"success": False, "message": f"設定のロード中にエラーが発生しました: {str(e)}"}), 500
 
 
 if __name__ == "__main__":

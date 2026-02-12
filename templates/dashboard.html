@@ -133,6 +133,9 @@
 </div>
 <div class="row">
     <div class="col-12 text-end">
+        <input type="file" id="settings-file-input" accept=".json" style="display: none;">
+        <button type="button" id="upload-settings-btn" class="btn btn-outline-secondary me-2">設定をアップロード</button>
+        <button type="button" id="download-settings-btn" class="btn btn-outline-secondary me-2">設定をダウンロード</button>
         <button type="submit" class="btn btn-primary">全サーバー設定を保存</button>
     </div>
 </div>
@@ -166,6 +169,98 @@ document.addEventListener('DOMContentLoaded', function() {
             // Initial call to set correct state
             toggleLlmFields(role);
         }
+    });
+
+    // --- 設定のダウンロード/ロード機能 ---
+    const downloadSettingsBtn = document.getElementById('download-settings-btn');
+    const uploadSettingsBtn = document.getElementById('upload-settings-btn');
+    const settingsFileInput = document.getElementById('settings-file-input');
+
+    // ダウンロード機能
+    downloadSettingsBtn.addEventListener('click', async () => {
+        const settings = {
+            llm_servers: {},
+            quantum_server: {
+                api_key: document.getElementById('quantum_server_api_key').value
+            }
+        };
+
+        roles.forEach(role => {
+            settings.llm_servers[role] = {
+                provider: document.getElementById(`llm_provider_${role}`).value,
+                api_key: document.getElementById(`llm_api_key_${role}`).value,
+                model_name: document.getElementById(`llm_model_name_${role}`).value,
+                base_url: document.getElementById(`llm_base_url_${role}`).value,
+                temperature: document.getElementById(`llm_temperature_${role}`).value,
+                max_tokens: document.getElementById(`llm_max_tokens_${role}`).value
+            };
+        });
+
+        try {
+            const response = await fetch('/save_server_settings_from_ui', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(settings)
+            });
+
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = 'server_settings.json'; 
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                alert('設定ファイルをダウンロードしました。\n\nダウンロード先のフォルダ選択画面が表示されない場合、お使いのブラウザのダウンロード設定で「ダウンロードのたびに保存場所を尋ねる」オプションを有効にしてください。');
+            } else {
+                const errorData = await response.json(); // エラー時はJSONを期待
+                alert(`設定のダウンロードに失敗しました: ${errorData.message}`);
+            }
+        } catch (error) {
+            console.error('Download error:', error);
+            alert('設定のダウンロード中にエラーが発生しました。');
+        }
+    });
+
+    // アップロードボタンクリックでファイル選択ダイアログを開く
+    uploadSettingsBtn.addEventListener('click', () => {
+        settingsFileInput.click();
+    });
+
+    // ファイルが選択されたら自動的にアップロード
+    settingsFileInput.addEventListener('change', async (event) => {
+        if (event.target.files.length === 0) {
+            alert('ロードする設定ファイルを選択してください。');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', event.target.files[0]);
+
+        try {
+            const response = await fetch('/load_server_settings', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                alert(result.message);
+                window.location.reload(); 
+            } else {
+                alert(`設定のロードに失敗しました: ${result.message}`);
+            }
+        } catch (error) {
+            console.error('Load error:', error);
+            alert('設定のロード中にエラーが発生しました。');
+        }
+        // ファイル選択ダイアログを再度開けるように値をリセット
+        settingsFileInput.value = '';
     });
 });
 </script>
