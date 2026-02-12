@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional
 import logging
 import os
 
+from user_files import get_user_data_path # NEW: Import get_user_data_path
 from services.llm_client import call_llm
 
 class SemanticLabeler:
@@ -96,6 +97,8 @@ class SemanticLabeler:
         element_name: str,
         text: str,
         llm_config: Dict[str, Any],
+        user_id: str,
+        suffix: str = "",
         max_retries: int = 3
     ) -> Optional[Dict[str, Any]]:
         """
@@ -109,6 +112,8 @@ class SemanticLabeler:
         user_template_filled = self.prompt_template.format(element_name=element_name, text=text)
         full_prompt = f"{system_prompt}\n\n{user_template_filled}"
         
+
+
         logger.info("--- LLMに送信中 ---")
         logger.info(f"[USER] {full_prompt[0:]}...")
 
@@ -139,7 +144,7 @@ class SemanticLabeler:
         logger.error(f"❌ {max_retries}回のリトライに失敗しました。このテキストの処理をスキップします。")
         return None
 
-def label_suggestions(input_data: Dict[str, Any], llm_config: Dict[str, Any], log_file_path: Optional[str] = None):
+def label_suggestions(input_data: Dict[str, Any], llm_config: Dict[str, Any], user_id: str, log_file_path: Optional[str] = None):
     """
     入力JSON全体を処理し、各候補に意味ラベルを付与するジェネレータ。
     """
@@ -178,9 +183,11 @@ def label_suggestions(input_data: Dict[str, Any], llm_config: Dict[str, Any], lo
         for element_name, texts in elements.items():
             if not isinstance(texts, list):
                 continue
-            for text in texts:
+            for i, text in enumerate(texts): # Use i for suffix
                 logger.info(f"\n--- 処理開始: [{category}]-[{element_name}] ---")
-                labels = labeler.get_semantic_labels_from_llm(logger, element_name, text, llm_config)
+                # プロンプトファイル名をユニークにするためのsuffixを生成
+                file_suffix = f"_{category.replace(' ', '_')}_{element_name.replace(' ', '_')}_{i}"
+                labels = labeler.get_semantic_labels_from_llm(logger, element_name, text, llm_config, user_id, file_suffix) # user_id と file_suffix を渡す
                 
                 if labels:
                     labeled_result = {

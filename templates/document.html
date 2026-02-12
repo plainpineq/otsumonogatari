@@ -220,22 +220,23 @@
             </div>
 
             <hr>
-            {% if document.semantic_labels %}
-                <h3 class="h5 mt-3">評価結果</h3>
-                <div class="table-responsive">
-                    <table class="table table-bordered table-sm">
-                        <thead class="table-light">
-                            <tr>
-                                <th>カテゴリ</th>
-                                <th>要素名</th>
-                                <th style="width: 40%;">テキスト</th>
-                                <th>変化の種類</th>
-                                <th>因果の提示</th>
-                                <th>対立の種類</th>
-                                <th style="width: 20%;">読者効果</th>
-                            </tr>
-                        </thead>
-                        <tbody id="evaluation-results-body">
+            {# Always render the table structure, even if semantic_labels is empty #}
+            <h3 class="h5 mt-3">評価結果</h3>
+            <div class="table-responsive">
+                <table class="table table-bordered table-sm">
+                    <thead class="table-light">
+                        <tr>
+                            <th>カテゴリ</th>
+                            <th>要素名</th>
+                            <th style="width: 40%;">テキスト</th>
+                            <th>変化の種類</th>
+                            <th>因果の提示</th>
+                            <th>対立の種類</th>
+                            <th style="width: 20%;">読者効果</th>
+                        </tr>
+                    </thead>
+                    <tbody id="evaluation-results-body">
+                    {% if document.semantic_labels %} {# Only loop if there are labels #}
                         {% for item in document.semantic_labels %}
                             <tr>
                                 <td>{{ item.category }}</td>
@@ -247,10 +248,10 @@
                                 <td><code>{{ item.labels.reader_effect | join(', ') }}</code></td>
                             </tr>
                         {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            {% endif %}
+                    {% endif %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
     <div class="tab-pane fade" id="vectorization" role="tabpanel" aria-labelledby="vectorization-tab">
@@ -372,6 +373,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const generateCompositionBtn = document.getElementById('generate-composition-btn');
     const compositionResultsDiv = document.getElementById('composition-results');
+
+    // --- UI Elements (Evaluation Tab) ---
+    const runEvaluationBtn = document.getElementById('run-evaluation-btn');
+    const evaluationStatusDiv = document.getElementById('evaluation-status');
+    const evaluationProgressBarContainer = document.getElementById('evaluation-progress-container');
+    const evaluationProgressBar = document.getElementById('evaluation-progress-bar');
+    const evaluationResultsBody = document.getElementById('evaluation-results-body');
 
     // --- Functions ---
     function showAlert(message, type = 'danger') {
@@ -647,6 +655,103 @@ document.addEventListener('DOMContentLoaded', function() {
 
         generateCompositionBtn.textContent = '全体生成を再実行';
         generateCompositionBtn.disabled = false;
+    });
+
+    runEvaluationBtn.addEventListener('click', async () => {
+        runEvaluationBtn.disabled = true;
+        evaluationStatusDiv.innerHTML = '<div class="alert alert-info">評価前処理を実行中...</div>';
+        evaluationProgressBarContainer.style.display = 'block';
+        evaluationProgressBar.style.width = '0%';
+        evaluationProgressBar.setAttribute('aria-valuenow', '0');
+        evaluationProgressBar.textContent = '0%';
+        evaluationResultsBody.innerHTML = ''; // Clear previous results
+
+        try {
+            // STEP 1: Call the evaluate_document endpoint for initial checks
+            const response = await fetch(`/document/${docId}/evaluate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}) // Empty body as no specific data is sent
+            });
+            const result = await response.json();
+
+            if (result.status === 'error') {
+                showAlert(result.message, 'danger');
+                evaluationStatusDiv.innerHTML = '';
+                evaluationProgressBarContainer.style.display = 'none';
+                return;
+            } else {
+                showAlert(result.message, 'info');
+                evaluationStatusDiv.innerHTML = '<div class="alert alert-info">評価処理を開始中。結果をストリーミング中...</div>';
+            }
+
+            // STEP 2: Initiate Server-Sent Events (SSE) for streaming results
+            const eventSource = new EventSource(`/document/${docId}/evaluate/stream`);
+            let receivedLabelsCount = 0;
+
+            eventSource.onopen = () => {
+                console.log('SSE connection opened.');
+                evaluationStatusDiv.innerHTML = '<div class="alert alert-info">SSE接続確立。評価データを待機中...</div>';
+            };
+
+            eventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.error) {
+                    showAlert(data.error, 'danger');
+                    eventSource.close();
+                    return;
+                }
+                if (data.progress_total) {
+                    // This is a progress update
+                    const progress = Math.round((data.progress_current / data.progress_total) * 100);
+                    evaluationProgressBar.style.width = `${progress}%`;
+                    evaluationProgressBar.setAttribute('aria-valuenow', progress);
+                    evaluationProgressBar.textContent = `${progress}%`;
+                    evaluationStatusDiv.innerHTML = `<div class="alert alert-info">評価中: ${data.category_label} - ${data.current_element} (${data.progress_current}/${data.progress_total})</div>`;
+                } else if (data.semantic_label) {
+                    // This is a new semantic label result
+                    receivedLabelsCount++;
+                    const item = data.semantic_label;
+                    const row = `
+                        <tr>
+                            <td>${item.category}</td>
+                            <td>${item.element}</td>
+                            <td><small>${item.text}</small></td>
+                            <td>${item.labels.change_type}</td>
+                            <td>${item.labels.causal_exposure}</td>
+                            <td>${item.labels.conflict_type}</td>
+                            <td><code>${item.labels.reader_effect.join(', ')}</code></td>
+                        </tr>
+                    `;
+                    evaluationResultsBody.insertAdjacentHTML('beforeend', row);
+                }
+            };
+
+            eventSource.onerror = (error) => {
+                console.error('SSE error:', error);
+                evaluationStatusDiv.innerHTML = '<div class="alert alert-danger">評価中にエラーが発生しました。</div>';
+                showAlert('評価中にエラーが発生しました。詳細はコンソールを確認してください。', 'danger');
+                eventSource.close();
+            };
+
+            eventSource.addEventListener('end_stream', () => {
+                evaluationStatusDiv.innerHTML = '<div class="alert alert-success">評価が完了しました。</div>';
+                showAlert('評価が正常に完了しました。', 'success');
+                evaluationProgressBar.style.width = '100%';
+                evaluationProgressBar.setAttribute('aria-valuenow', '100');
+                evaluationProgressBar.textContent = '100%';
+                eventSource.close();
+                // Optionally, update the documentData with the new semantic labels if needed for other tabs
+                // This would require fetching the updated document or passing it via the stream
+            });
+
+        } catch (error) {
+            showAlert(`評価の開始に失敗しました: ${error.message}`, 'danger');
+            evaluationStatusDiv.innerHTML = '';
+            evaluationProgressBarContainer.style.display = 'none';
+        } finally {
+            runEvaluationBtn.disabled = false; // Re-enable button after stream ends or error
+        }
     });
 
     function renderSingleCategorySuggestions(sectionId, categoryObj) {
