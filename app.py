@@ -406,6 +406,14 @@ def generate_proposals(doc_id):
     
     try:
         prompt = build_title_plot_proposals_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"], suffix=suffix, suggestion_count=suggestion_count)
+        
+        # Save the prompt to a file
+        user_data_dir = get_user_data_path(session["user_id"])
+        prompt_file_path = os.path.join(user_data_dir, f"generated_prompt{suffix}.md")
+        with open(prompt_file_path, "w", encoding="utf-8") as f:
+            f.write(prompt)
+        print(f"Saved prompt to: {prompt_file_path}")
+
         raw_text, suggestions_dict = call_llm(llm_api_key, llm_model_name, prompt, llm_provider, base_url=llm_base_url)
 
         # Save responses
