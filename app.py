@@ -439,6 +439,36 @@ def generate_proposals(doc_id):
     except (ValueError, RuntimeError, Exception) as e:
         return jsonify({"error": f"LLM呼び出し中にエラーが発生しました: {str(e)}"}), 500
 
+@app.route("/document/<doc_id>/save_selection", methods=["POST"])
+def save_selection(doc_id):
+    """
+    STEP 2: Save the selected basic elements from the generation tab.
+    """
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    data = load_user_data(session["user_id"])
+    document = find_document(data, doc_id)
+    if document is None:
+        return jsonify({"error": "Document not found"}), 404
+
+    try:
+        selected_elements = request.get_json()
+        if not isinstance(selected_elements, dict):
+            return jsonify({"error": "Invalid JSON data"}), 400
+
+        # Store the selected basic elements in the document
+        document["selected_basic_elements"] = selected_elements
+        
+        # Optionally, update the document's title if 'title' is in selected_elements
+        if "title" in selected_elements:
+            document["title"] = selected_elements["title"]
+
+        save_user_data(session["user_id"], data)
+        return jsonify({"success": True, "message": "Selection saved successfully."})
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to save selection: {str(e)}"}), 500
+
 @app.route("/document/<doc_id>/add_composition_element", methods=["POST"])
 def add_composition_element(doc_id):
     if "user_id" not in session:
