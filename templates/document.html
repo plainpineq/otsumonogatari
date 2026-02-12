@@ -531,6 +531,20 @@ document.addEventListener('DOMContentLoaded', function() {
             renderProposals(data.suggestions);
             proposalsResultsDiv.style.display = 'block';
             showStep(2);
+
+            // Update client-side documentData with new proposals
+            if (data.suggestions) {
+                const basicSettingsCat = data.suggestions.find(s => s.category === "基本設定");
+                if (basicSettingsCat) {
+                    // Find existing basic settings and replace or add
+                    const existingIndex = documentData.llm_suggestions.findIndex(s => s.category === "基本設定");
+                    if (existingIndex > -1) {
+                        documentData.llm_suggestions[existingIndex] = basicSettingsCat;
+                    } else {
+                        documentData.llm_suggestions.push(basicSettingsCat);
+                    }
+                }
+            }
         } catch (error) {
             showAlert(`提案の生成に失敗しました: ${error.message}`);
             showStep(1);
@@ -644,6 +658,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
 
                 renderSingleCategorySuggestions(categorySectionId, data.suggestions[0]);
+
+                // Update client-side documentData with new composition suggestions
+                const newCategorySuggestion = data.suggestions[0];
+                if (newCategorySuggestion) {
+                    const existingIndex = documentData.llm_suggestions.findIndex(s => s.category === newCategorySuggestion.category);
+                    if (existingIndex > -1) {
+                        documentData.llm_suggestions[existingIndex] = newCategorySuggestion;
+                    } else {
+                        documentData.llm_suggestions.push(newCategorySuggestion);
+                    }
+                }
             } catch (error) {
                 const categorySection = document.getElementById(categorySectionId);
                 categorySection.innerHTML = `
@@ -831,7 +856,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Find basic settings suggestions if they exist
                 const basicSettingsSuggestions = documentData.llm_suggestions.find(s => s.category === "基本設定");
                 if (basicSettingsSuggestions) {
-                    renderProposals({ suggestions: [basicSettingsSuggestions] }); // renderProposals expects an array of suggestions
+                    renderProposals([basicSettingsSuggestions]); // renderProposals expects an array of suggestions
                     proposalsResultsDiv.style.display = 'block';
                 }
 
