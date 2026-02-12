@@ -235,6 +235,71 @@ def build_title_plot_proposals_prompt(document: dict, composition_meta: dict, us
 
     return prompt
 
+def build_category_composition_prompt(document: dict, composition_meta: dict, user_id: str, category_label: str, suffix: str = "", suggestion_count: int = 1) -> str:
+    """
+    Builds a prompt for the LLM to generate content for a specific composition category.
+    """
+    template_file_path = os.path.join("prompt_templates", "category_composition_template.md")
+
+    with open(template_file_path, "r", encoding="utf-8") as f:
+        template_content = f.read()
+
+    document_title = document.get("title", "不明なドキュメント")
+    doc_type_label = document.get("doc_type", "不明")
+
+    # Author's Intent
+    intent_fields = document.get("intent", {}).get("fields", {})
+    formatted_intent = ""
+    for key, field in intent_fields.items():
+        if field.get("label") and field.get("value"):
+            formatted_intent += f"- {field['label']}: {field['value']}\n"
+    if not formatted_intent:
+        formatted_intent = "（作者の意図は特に指定されていません）"
+
+    # Selected Basic Elements
+    selected_basic_elements = document.get("selected_basic_elements", {})
+    selected_title = selected_basic_elements.get("title", "未設定")
+    selected_plot = selected_basic_elements.get("plot", "未設定")
+
+    # Current Composition Elements for context
+    elements_text = ""
+    all_document_categories = document.get("composition_elements", {}).get("categories", [])
+    
+    for category_obj in all_document_categories:
+        if category_obj.get("label") == category_label:
+            elements_text += f"- 分類名: {category_obj['label']}\n"
+            if category_obj.get("elements"):
+                for element in category_obj["elements"]:
+                    if element.get("label"):
+                        elements_text += f"  - 要素名: {element['label']}\n"
+            break
+    if not elements_text:
+        elements_text = f"（{category_label}に属する構成要素は定義されていません）"
+
+    # Fill template placeholders
+    prompt = template_content.format(
+        document_title=document_title,
+        doc_type=doc_type_label,
+        intent_text=formatted_intent,
+        selected_title=selected_title,
+        selected_plot=selected_plot,
+        elements_text=elements_text,
+        category_label=category_label # Pass the specific category label to the prompt
+    )
+
+    # Output the generated prompt to a file for debugging/verification
+    user_data_dir = get_user_data_path(user_id)
+    os.makedirs(user_data_dir, exist_ok=True)
+    output_file_path = os.path.join(user_data_dir, f"generated_prompt_{category_label.replace(' ', '_')}_{suffix}.md")
+    try:
+        with open(output_file_path, "w", encoding="utf-8") as f:
+            f.write(prompt)
+        print(f"Generated category composition prompt written to: {output_file_path}")
+    except Exception as e:
+        print(f"Error writing category composition prompt to file: {e}")
+
+    return prompt
+
 def build_ideal_profile_prompt(document: dict, user_id: str, suggestion_count: int = 3) -> str:
     """
     Builds a prompt for the LLM to generate an ideal profile based on

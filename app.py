@@ -26,7 +26,7 @@ def _get_next_generation_number(user_id: str) -> int:
 
 from ui_labels import UI_LABELS
 from intent_templates import COMMON_INTENTS, DOC_TYPE_INTENTS
-from lm_input import build_composition_ideas_prompt, mock_llm_call, build_title_plot_proposals_prompt
+from lm_input import build_composition_ideas_prompt, mock_llm_call, build_title_plot_proposals_prompt, build_category_composition_prompt
 
 # Helper function for cleaning up old generated files
 def _cleanup_old_generated_files(user_id: str):
@@ -468,6 +468,93 @@ def save_selection(doc_id):
 
     except Exception as e:
         return jsonify({"error": f"Failed to save selection: {str(e)}"}), 500
+
+@app.route("/document/<doc_id>/generate_composition", methods=["POST"])
+def generate_composition(doc_id):
+    """
+    STEP 3: Generate full composition elements for a specific category using LLM.
+    """
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    data = load_user_data(session["user_id"])
+    document = find_document(data, doc_id)
+    if document is None:
+        return jsonify({"error": "Document not found"}), 404
+
+    try:
+        request_data = request.get_json()
+        category_label = request_data.get("category_label")
+        if not category_label:
+            return jsonify({"error": "Category label is required"}), 400
+
+        # Get LLM config
+        llm_servers = session.get("llm_servers", {})
+        generation_config = llm_servers.get("generation", {})
+        llm_provider = generation_config.get("provider")
+        llm_api_key = generation_config.get("api_key")
+        llm_model_name = generation_config.get("model_name")
+        llm_base_url = generation_config.get("base_url")
+
+        print(f"[LLM] Full Composition - PROVIDER: {llm_provider}: Model: {llm_model_name}")
+
+        is_config_incomplete = not llm_provider or not llm_model_name or \
+                               (llm_provider in ["gemini", "chatgpt"] and not llm_api_key) or \
+                               (llm_provider == "other" and not llm_base_url)
+
+        if is_config_incomplete:
+            # Fallback to mock data if LLM config is incomplete
+            mock_suggestions = {"category": category_label, "elements": {}}
+            # Find the category in document's composition_elements to get element labels
+            for category_obj in document.get("composition_elements", {}).get("categories", []):
+                if category_obj.get("label") == category_label:
+                    if category_obj.get("elements"):
+                        for element in category_obj["elements"]:
+                            if element.get("label"):
+                                mock_suggestions["elements"][element["label"]] = [f"模擬提案: {element['label']}の内容"]
+                    break
+            return jsonify({"suggestions": [mock_suggestions], "message": "LLM設定が不完全なため、モックデータを使用しました。"}), 200
+
+        # Build prompt
+        # Need to generate a unique suffix for saving the prompt file
+        current_generation_number = _get_next_generation_number(session["user_id"])
+        suffix = f"_{current_generation_number}_{category_label.replace(' ', '_')}"
+
+        prompt = build_category_composition_prompt(
+            document, DEFAULT_COMPOSITION_META, session["user_id"],
+            category_label=category_label, suffix=suffix
+        )
+        
+        raw_text, suggestions_dict = call_llm(llm_api_key, llm_model_name, prompt, llm_provider, base_url=llm_base_url)
+
+        # Save LLM raw response and parsed JSON response for debugging
+        user_data_dir = get_user_data_path(session["user_id"])
+        with open(os.path.join(user_data_dir, f"generated_llm_full_composition{suffix}.txt"), "w", encoding="utf-8") as f:
+            f.write(raw_text)
+        with open(os.path.join(user_data_dir, f"generated_llm_full_composition{suffix}.json"), "w", encoding="utf-8") as f:
+            json.dump(suggestions_dict, f, ensure_ascii=False, indent=2)
+
+        # Update document with new suggestions
+        if "llm_suggestions" not in document or not isinstance(document["llm_suggestions"], list):
+            document["llm_suggestions"] = []
+        
+        # Ensure the suggestions_dict contains the expected structure
+        if isinstance(suggestions_dict, dict) and "category" in suggestions_dict and "elements" in suggestions_dict:
+            # Check if this category already exists in llm_suggestions and update it
+            found = False
+            for i, existing_suggestion in enumerate(document["llm_suggestions"]):
+                if existing_suggestion.get("category") == suggestions_dict["category"]:
+                    document["llm_suggestions"][i] = suggestions_dict # Replace
+                    found = True
+                    break
+            if not found:
+                document["llm_suggestions"].append(suggestions_dict) # Add new
+
+        save_user_data(session["user_id"], data)
+
+        return jsonify({"suggestions": [suggestions_dict]}) # Wrap in a list as the frontend expects
+
+    except (ValueError, RuntimeError, Exception) as e:
+        return jsonify({"error": f"全体構成の生成中にエラーが発生しました: {str(e)}"}), 500
 
 @app.route("/document/<doc_id>/add_composition_element", methods=["POST"])
 def add_composition_element(doc_id):
