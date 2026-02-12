@@ -518,10 +518,12 @@ def generate_composition(doc_id):
         # Need to generate a unique suffix for saving the prompt file
         current_generation_number = _get_next_generation_number(session["user_id"])
         suffix = f"_{current_generation_number}_{category_label.replace(' ', '_')}"
+        suggestion_count = session.get("suggestion_count", 3) # Retrieve suggestion_count from session
 
         prompt = build_category_composition_prompt(
             document, DEFAULT_COMPOSITION_META, session["user_id"],
-            category_label=category_label, suffix=suffix
+            category_label=category_label, suffix=suffix,
+            suggestion_count=suggestion_count # Pass the suggestion_count
         )
         
         raw_text, suggestions_dict = call_llm(llm_api_key, llm_model_name, prompt, llm_provider, base_url=llm_base_url)

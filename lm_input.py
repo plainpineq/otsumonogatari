@@ -235,7 +235,34 @@ def build_title_plot_proposals_prompt(document: dict, composition_meta: dict, us
 
     return prompt
 
-def build_category_composition_prompt(document: dict, composition_meta: dict, user_id: str, category_label: str, suffix: str = "", suggestion_count: int = 1) -> str:
+def _build_dynamic_category_json_example(document: dict, category_label: str, suggestion_count: int) -> str:
+    """
+    Generates a dynamic JSON example string for a specific category composition prompt.
+    This example serves as a strong few-shot example for the LLM.
+    """
+    elements_dict = {}
+    all_document_categories = document.get("composition_elements", {}).get("categories", [])
+
+    for category_obj in all_document_categories:
+        if category_obj.get("label") == category_label:
+            elements_in_category = category_obj.get("elements")
+            if elements_in_category:
+                for element_obj in elements_in_category:
+                    element_label = element_obj.get("label")
+                    if element_label:
+                        # Generate suggestion_count number of example suggestions
+                        elements_dict[element_label] = [f"項目1の提案内容{i+1}" for i in range(suggestion_count)]
+            break # Found the category, exit loop
+
+    final_json_structure = {
+      "category": category_label,
+      "elements": elements_dict
+    }
+
+    # Generate JSON string with proper indentation and Japanese character handling
+    return json.dumps(final_json_structure, indent=2, ensure_ascii=False)
+
+def build_category_composition_prompt(document: dict, composition_meta: dict, user_id: str, category_label: str, suffix: str = "", suggestion_count: int = 3) -> str:
     """
     Builds a prompt for the LLM to generate content for a specific composition category.
     """
@@ -276,6 +303,9 @@ def build_category_composition_prompt(document: dict, composition_meta: dict, us
     if not elements_text:
         elements_text = f"（{category_label}に属する構成要素は定義されていません）"
 
+    # Generate dynamic JSON example based on suggestion_count
+    dynamic_json_example = _build_dynamic_category_json_example(document, category_label, suggestion_count)
+
     # Fill template placeholders
     prompt = template_content.format(
         document_title=document_title,
@@ -284,7 +314,9 @@ def build_category_composition_prompt(document: dict, composition_meta: dict, us
         selected_title=selected_title,
         selected_plot=selected_plot,
         elements_text=elements_text,
-        category_label=category_label # Pass the specific category label to the prompt
+        category_label=category_label, # Pass the specific category label to the prompt
+        suggestion_count=suggestion_count, # Add suggestion_count
+        dynamic_json_example=dynamic_json_example # Add dynamic JSON example
     )
 
     # Output the generated prompt to a file for debugging/verification
