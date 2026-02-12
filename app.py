@@ -387,7 +387,7 @@ def generate_proposals(doc_id):
     suffix = f"_{current_generation_number}_proposals"
 
     # Get LLM config
-    llm_servers = data.get("llm_servers", {})
+    llm_servers = session.get("llm_servers", {})
     generation_config = llm_servers.get("generation", {})
     llm_provider = generation_config.get("provider")
     llm_api_key = generation_config.get("api_key")
