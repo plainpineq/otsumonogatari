@@ -284,19 +284,34 @@ def build_category_composition_prompt(document: dict, composition_meta: dict, us
         formatted_intent = "（作者の意図は特に指定されていません）"
 
     # Selected Basic Elements
-    basic_settings_text = ""
-    selected_basic_elements = document.get("selected_basic_elements", {})
-    if selected_basic_elements:
-        for label, value in selected_basic_elements.items():
-            # Using UI_LABELS to get display names for basic settings if available, otherwise use the key directly
-            display_label = UI_LABELS.get(label, label)
-            basic_settings_text += f"- {display_label}: {value}\n"
-    if not basic_settings_text:
-        basic_settings_text = "（確定済みの基本設定は特にありません）"
 
     # Current Composition Elements for context
     elements_text = ""
     all_document_categories = document.get("composition_elements", {}).get("categories", [])
+    
+    # Selected Basic Elements
+    basic_settings_text = ""
+    selected_basic_elements = document.get("selected_basic_elements", {})
+    
+    # Get the label map for basic settings from composition_elements
+    basic_settings_label_map = {}
+    base_category_label_id = "base" # Assuming "base" is the ID for "基本設定"
+    
+    for category_obj in all_document_categories:
+        if category_obj.get("id") == base_category_label_id or category_obj.get("label") == "基本設定":
+            if category_obj.get("elements"):
+                for element in category_obj["elements"]:
+                    if element.get("id") and element.get("label"):
+                        basic_settings_label_map[element["id"]] = element["label"]
+            break # Found the base category, no need to continue
+
+    if selected_basic_elements:
+        for label_id, value in selected_basic_elements.items():
+            # Use the mapped label, or fallback to the original id if not found
+            display_label = basic_settings_label_map.get(label_id, label_id)
+            basic_settings_text += f"- {display_label}: {value}\n"
+    if not basic_settings_text:
+        basic_settings_text = "（確定済みの基本設定は特にありません）"
     
     for category_obj in all_document_categories:
         if category_obj.get("label") == category_label:
