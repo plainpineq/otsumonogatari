@@ -699,65 +699,67 @@ def evaluate_stream(doc_id):
     if "user_id" not in session:
         return Response("Unauthorized", status=401)
     
-    # Get LLM configuration for the 'evaluation' role from session *before* calling the generator
     llm_config = session.get("llm_servers", {}).get("evaluation", {})
 
-    def generate_labels(user_id_arg, llm_config_arg):
-        try: # NEW try block for the entire generator
-            data = load_user_data(user_id_arg)
-            document = find_document(data, doc_id)
+    def generate_labels_stream(user_id_arg, llm_config_arg):
+        data = load_user_data(user_id_arg)
+        document = find_document(data, doc_id)
 
-            if not document or "llm_suggestions" not in document or not document["llm_suggestions"]:
-                yield f"data: {json.dumps({'error': '評価対象のデータが見つかりません。'})}\n\n"
-                return
+        if not document or "llm_suggestions" not in document or not document["llm_suggestions"]:
+            yield f"data: {json.dumps({'error': '評価対象のデータが見つかりません。'})}\n\n"
+            return
 
-            user_data_dir = get_user_data_path(user_id_arg)
-            log_file_path = os.path.join(user_data_dir, "labeler.log")
-            evaluation_input = {"llm_suggestions": document["llm_suggestions"]}
+        user_data_dir = get_user_data_path(user_id_arg)
+        log_file_path = os.path.join(user_data_dir, "labeler.log")
+        evaluation_input = {"llm_suggestions": document["llm_suggestions"]}
+        
+        all_results = []
+        # ロガーのハンドラをクリーンアップするための準備
+        logger_to_cleanup = logging.getLogger("semantic_labeler")
+
+        total_items_count = 0 # This will be set by the 'total_items' event from semantic_labeler
+
+        try:
+            for event_data in semantic_labeler.label_suggestions(evaluation_input, llm_config=llm_config_arg, user_id=user_id_arg, log_file_path=log_file_path):
+                event_type = event_data.get("event")
+
+                if event_type == "total_items":
+                    total_items_count = event_data.get("count", 0)
+                    # Send initial progress total to client
+                    yield f"data: {json.dumps({'progress_total': total_items_count})}\n\n"
+                elif event_type == "progress":
+                    # semantic_labeler already sends progress in the desired format
+                    yield f"data: {json.dumps({
+                        'progress_current': event_data['progress_current'],
+                        'progress_total': event_data['progress_total'],
+                        'category_label': event_data['category_label'],
+                        'current_element': event_data['current_element']
+                    })}\n\n"
+                elif event_type == "semantic_label":
+                    labeled_result = event_data.get("data")
+                    if labeled_result:
+                        all_results.append(labeled_result)
+                        yield f"data: {json.dumps({'semantic_label': labeled_result}, ensure_ascii=False)}\n\n"
+                else:
+                    # Log unexpected event types
+                    logging.warning(f"Received unexpected event type: {event_type} with data: {event_data}")
             
-            all_results = []
-            # ロガーのハンドラをクリーンアップするための準備
-            logger_to_cleanup = logging.getLogger("semantic_labeler")
-
-            # Calculate total items
-            total_suggestions_count = sum(
-                len(texts) 
-                for sg in evaluation_input.get("llm_suggestions", []) 
-                for texts in sg.get("elements", {}).values() 
-                if isinstance(texts, list)
-            )
-            # Send total items as initial event
-            yield f"data: {json.dumps({'event': 'total_items', 'count': total_suggestions_count})}\n\n"
-
-            current_processed_count = 0
-            try:
-                for labeled_result in semantic_labeler.label_suggestions(evaluation_input, llm_config=llm_config_arg, user_id=user_id_arg, log_file_path=log_file_path):
-                    all_results.append(labeled_result)
-                    current_processed_count += 1
-                    yield f"data: {json.dumps(labeled_result, ensure_ascii=False)}\n\n"
-                    # Send progress update
-                    yield f"data: {json.dumps({'event': 'progress', 'current': current_processed_count})}\n\n"
-                
-                document["semantic_labels"] = all_results
-                save_user_data(user_id_arg, data)
-                yield f"data: {json.dumps({'event': 'close', 'message': '全ての評価が完了しました。'})}\n\n"
-
-            except Exception as e:
-                yield f"data: {json.dumps({'error': f'ストリーミング中にエラーが発生しました: {str(e)}'})}\n\n"
-            finally:
-                # ストリーム終了時に必ずハンドラを閉じてクリーンアップ
-                for handler in logger_to_cleanup.handlers[:]:
-                    handler.close()
-                    logger_to_cleanup.removeHandler(handler)
-
-        except Exception as e: # Catch any top-level errors in the generator
-            logging.error(f"Error initializing or running generate_labels: {e}")
-            yield f"data: {json.dumps({'error': f'ストリーミング初期化または実行中にエラーが発生しました: {str(e)}'})}\n\n"
+            # After loop, save all results
+            document["semantic_labels"] = all_results
+            save_user_data(user_id_arg, data)
+            
+        except Exception as e:
+            logging.error(f"Error during streaming semantic labels: {e}")
+            yield f"data: {json.dumps({'error': f'ストリーミング中にエラーが発生しました: {str(e)}'})}\n\n"
         finally:
+            # Ensure the logger handlers are removed
+            for handler in logger_to_cleanup.handlers[:]:
+                if isinstance(handler, logging.FileHandler):
+                    handler.close()
+                logger_to_cleanup.removeHandler(handler)
             yield "event: end_stream\ndata: {}\n\n" # Always close the stream
 
-    # ジェネレータに必要な情報を引数として渡す
-    return Response(generate_labels(session["user_id"], llm_config), mimetype='text/event-stream')
+    return Response(generate_labels_stream(session["user_id"], llm_config), mimetype='text/event-stream')
 
 
 @app.route("/document/<doc_id>/download_evaluation")

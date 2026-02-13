@@ -1,7 +1,8 @@
-from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for, flash
+from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for, flash, Response
 import json
 import os
 from datetime import datetime
+import time # For simulating work and testing progress updates
 
 
 from user_files import load_user_data, save_user_data, get_user_data_path
@@ -154,50 +155,51 @@ def save_ideal_profile_route(doc_id):
     return jsonify({"success": True, "ideal_profile": updated_ideal_profile})
 
 
-@evaluation_bp.route("/document/<doc_id>/calculate_fit", methods=["POST"])
-def calculate_fit_route(doc_id):
+@evaluation_bp.route("/document/<doc_id>/calculate_fit_stream", methods=["GET"])
+def calculate_fit_stream_route(doc_id):
     if "user_id" not in session:
+        # For SSE, return JSON error rather than redirect
         return jsonify({"error": "Unauthorized"}), 401
 
-    data = load_user_data(session["user_id"])
-    document = find_document(data, doc_id)
-    if document is None:
-        return jsonify({"error": "Document not found"}), 404
+    def generate():
+        data = load_user_data(session["user_id"])
+        document = find_document(data, doc_id)
 
-    # 1. Check for ideal_profile
-    ideal_profile_data = document.get("ideal_profile")
-    if not ideal_profile_data or not ideal_profile_data.get("base_profile"):
-        flash("先にIdeal Profileを生成・設定してください。", "warning")
-        return jsonify({"error": "Ideal Profile is not set."}), 400
-    
-    # 2. Check for semantic_labels (from the '評価' tab)
-    semantic_labels = document.get("semantic_labels")
-    if not semantic_labels:
-        flash("「評価」タブで先に意味ラベルを付与してください。", "warning")
-        return jsonify({"error": "Semantic labels are not available."}), 400
-
-    try:
-        # FeatureExtractor will be used within IdealProfileEvaluator implicitly
-        evaluator = IdealProfileEvaluator()
+        if document is None:
+            yield f"data: {json.dumps({'error': 'Document not found', 'message': 'ドキュメントが見つかりませんでした'})}\n\n"
+            return
         
-        # Convert semantic_labels to numerical features
-        # This will give us candidates_numerical_features
-        extractor = FeatureExtractor()
-        candidates_numerical_features = extractor.create_numerical_features(semantic_labels)
+        ideal_profile_data = document.get("ideal_profile")
+        if not ideal_profile_data or not ideal_profile_data.get("base_profile"):
+            yield f"data: {json.dumps({'error': 'Ideal Profile is not set', 'message': '先にIdeal Profileを生成・設定してください'})}\n\n"
+            return
         
-        # Calculate fit scores
-        fit_results = evaluator.evaluate_and_score_candidates(
-            candidates_numerical_features,
-            ideal_profile_data
-        )
+        semantic_labels = document.get("semantic_labels")
+        if not semantic_labels:
+            yield f"data: {json.dumps({'error': 'Semantic labels are not available', 'message': '「評価」タブで先に意味ラベルを付与してください'})}\n\n"
+            return
 
-        document["numerical_features"] = candidates_numerical_features # Save for consistency, though it's semantic_labels numerical form
-        document["fit_results"] = fit_results # Overwrite/save the new fit results
-        save_user_data(session["user_id"], data)
-        
-        flash("Fitスコアの計算が完了しました。", "success")
-        return jsonify({"success": True, "fit_results": fit_results})
+        try:
+            evaluator = IdealProfileEvaluator()
+            extractor = FeatureExtractor()
+            candidates_numerical_features = extractor.create_numerical_features(semantic_labels)
 
-    except Exception as e:
-        flash(f"Fitスコアの計算中にエラーが発生しました: {str(e)}", "error")
-        return jsonify({"error": str(e)}), 500
+            # Iterate through the generator from IdealProfileEvaluator
+            for event_data in evaluator.evaluate_and_score_candidates_stream(
+                candidates_numerical_features,
+                ideal_profile_data
+            ):
+                if "fit_results" in event_data and event_data["complete"]:
+                    # Save results once complete
+                    document["numerical_features"] = candidates_numerical_features # Save for consistency
+                    document["fit_results"] = event_data["fit_results"] # Save the final fit results
+                    save_user_data(session["user_id"], data)
+                    # No flash message here, client will handle completion notification
+                
+                yield f"data: {json.dumps(event_data)}\n\n"
+                time.sleep(0.05) # Small delay to see progress updates for testing
+
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e), 'message': f'適合度計算中にエラーが発生しました: {str(e)}'})}\n\n"
+
+    return Response(generate(), mimetype='text/event-stream')

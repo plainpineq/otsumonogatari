@@ -147,6 +147,7 @@ class SemanticLabeler:
 def label_suggestions(input_data: Dict[str, Any], llm_config: Dict[str, Any], user_id: str, log_file_path: Optional[str] = None):
     """
     入力JSON全体を処理し、各候補に意味ラベルを付与するジェネレータ。
+    進捗情報もyieldする。
     """
     logger = logging.getLogger(__name__)
     if logger.hasHandlers():
@@ -176,39 +177,67 @@ def label_suggestions(input_data: Dict[str, Any], llm_config: Dict[str, Any], us
 
     print(f"[LLM] PROVIDER: {llm_config["provider"]}: Model: {llm_config["model_name"]}")
 
+    all_items_to_process = []
     for suggestion_group in suggestions:
         category = suggestion_group.get("category", "不明なカテゴリ")
         elements = suggestion_group.get("elements", {})
-        
         for element_name, texts in elements.items():
-            if not isinstance(texts, list):
-                continue
-            for i, text in enumerate(texts): # Use i for suffix
-                logger.info(f"\n--- 処理開始: [{category}]-[{element_name}] ---")
-                # プロンプトファイル名をユニークにするためのsuffixを生成
-                file_suffix = f"_{category.replace(' ', '_')}_{element_name.replace(' ', '_')}_{i}"
-                labels = labeler.get_semantic_labels_from_llm(logger, element_name, text, llm_config, user_id, file_suffix) # user_id と file_suffix を渡す
-                
-                if labels:
-                    labeled_result = {
+            if isinstance(texts, list):
+                for text in texts:
+                    all_items_to_process.append({
                         "category": category,
-                        "element": element_name,
-                        "text": text,
-                        "labels": labels
-                    }
-                    yield labeled_result
-                else: # LLMからのラベル取得に失敗した場合でもダミーデータをyieldしてapp.pyでカウントを進める
-                    yield {
+                        "element_name": element_name,
+                        "text": text
+                    })
+
+    total_items = len(all_items_to_process)
+    yield {"event": "total_items", "count": total_items} # NEW: Initial total items event
+
+    current_processed_count = 0
+    
+    try:
+        for item_data in all_items_to_process:
+            category = item_data["category"]
+            element_name = item_data["element_name"]
+            text = item_data["text"]
+
+            current_processed_count += 1
+            yield {
+                "event": "progress",
+                "progress_current": current_processed_count,
+                "progress_total": total_items,
+                "category_label": category,
+                "current_element": element_name
+            } # NEW: Progress event
+
+            logger.info(f"\n--- 処理開始: [{category}]-[{element_name}] ---")
+            # プロンプトファイル名をユニークにするためのsuffixを生成 (iはループ変数でなく、all_items_to_processのインデックスに合わせる)
+            file_suffix = f"_{category.replace(' ', '_')}_{element_name.replace(' ', '_')}_{current_processed_count}"
+            labels = labeler.get_semantic_labels_from_llm(logger, element_name, text, llm_config, user_id, file_suffix) # user_id と file_suffix を渡す
+            
+            if labels:
+                labeled_result = {
+                    "category": category,
+                    "element": element_name,
+                    "text": text,
+                    "labels": labels
+                }
+                yield {"event": "semantic_label", "data": labeled_result} # NEW: Semantic label event
+            else: # LLMからのラベル取得に失敗した場合でもダミーデータをyieldしてapp.pyでカウントを進める
+                yield {
+                    "event": "semantic_label",
+                    "data": {
                         "category": category,
                         "element": element_name,
                         "text": text,
                         "labels": {},
                         "status": "failed" # 失敗したことを示す
                     }
+                }
     
-    logger.info("全ての意味ラベル付け処理が完了しました。")
-    
-    for handler in logger.handlers[:]:
-        if isinstance(handler, logging.FileHandler):
-            handler.close()
-            logger.removeHandler(handler)
+    finally:
+        logger.info("全ての意味ラベル付け処理が完了しました。")
+        for handler in logger.handlers[:]:
+            if isinstance(handler, logging.FileHandler):
+                handler.close()
+                logger.removeHandler(handler)
