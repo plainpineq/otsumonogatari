@@ -21,12 +21,35 @@ class FeatureExtractor:
         self.vector_index_maps = {}
 
         config_labels = config.get("labels", {})
-        for key, value_map in config_labels.items():
-            if key == "reader_effect": # Hardcoded as vector based on novel_label.md
-                self.vector_label_orders[key] = list(value_map.keys())
+        for key, spec in config_labels.items():
+            label_type = spec.get("type")
+            values_data = spec.get("values", {})
+
+            if label_type is None:
+                # 後方互換性: typeが未指定の場合、valuesの型で自動判別
+                if isinstance(values_data, list):
+                    label_type = "vector"
+                elif isinstance(values_data, dict):
+                    label_type = "scalar"
+                else:
+                    raise ValueError(f"FeatureExtractor: ラベル '{key}' の型が不明です。'type'フィールドを指定するか、'values'フィールドをリストまたは辞書にしてください。")
+            
+            if label_type == "vector":
+                # valuesが直接リストになっているか、またはdictのkeysをリストと見なすか
+                if isinstance(values_data, list):
+                    self.vector_label_orders[key] = values_data
+                elif isinstance(values_data, dict): # 後方互換性: reader_effectがdictで定義されている場合
+                    self.vector_label_orders[key] = list(values_data.keys())
+                else:
+                    raise ValueError(f"FeatureExtractor: ベクター型ラベル '{key}' の'values'フィールドはリストまたは辞書である必要があります。")
                 self.vector_index_maps[key] = {value: i for i, value in enumerate(self.vector_label_orders[key])}
-            else: # All other labels are treated as scalar
-                self.scalar_label_maps[key] = value_map
+            elif label_type == "scalar":
+                if isinstance(values_data, dict):
+                    self.scalar_label_maps[key] = values_data
+                else:
+                    raise ValueError(f"FeatureExtractor: スカラー型ラベル '{key}' の'values'フィールドは辞書である必要があります。")
+            else:
+                raise ValueError(f"FeatureExtractor: ラベル '{key}' の無効な型 '{label_type}' が指定されました。'scalar'または'vector'を指定してください。")
 
     def featurize_suggestion(self, suggestion: Dict[str, Any]) -> Dict[str, Any]:
         """

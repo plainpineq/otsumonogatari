@@ -40,14 +40,38 @@ class SemanticLabeler:
         self.label_types = {} # Add to store if a label is 'scalar' or 'vector'
 
         config_labels = self.config.get("labels", {})
-        for key, values in config_labels.items():
+        for key, spec in config_labels.items():
             self.required_keys.add(key)
-            if key == "reader_effect": # Hardcoded for now based on prompt_templates/novel_label.md example
-                self.label_types[key] = "vector"
-                self.valid_labels[key] = list(values.keys()) # Valid choices for vector elements
+            
+            label_type = spec.get("type")
+            values_data = spec.get("values", {}) # typeが未指定の場合の後方互換性判定用
+
+            if label_type is None:
+                # typeが未指定の場合、valuesの型で自動判別
+                if isinstance(values_data, list): # valuesがlistならvector
+                    label_type = "vector"
+                elif isinstance(values_data, dict): # valuesがdictならscalar
+                    label_type = "scalar"
+                else:
+                    raise ValueError(f"ラベル '{key}' の型が不明です。'type'フィールドを指定するか、'values'フィールドをリストまたは辞書にしてください。")
+            
+            self.label_types[key] = label_type
+
+            if label_type == "vector":
+                # valuesが直接リストになっているか、またはdictのkeysをリストと見なすか
+                if isinstance(values_data, list):
+                    self.valid_labels[key] = values_data
+                elif isinstance(values_data, dict): # 後方互換性: reader_effectがdictで定義されている場合
+                    self.valid_labels[key] = list(values_data.keys())
+                else:
+                    raise ValueError(f"ベクター型ラベル '{key}' の'values'フィールドはリストまたは辞書である必要があります。")
+            elif label_type == "scalar":
+                if isinstance(values_data, dict):
+                    self.valid_labels[key] = list(values_data.keys())
+                else:
+                    raise ValueError(f"スカラー型ラベル '{key}' の'values'フィールドは辞書である必要があります。")
             else:
-                self.label_types[key] = "scalar"
-                self.valid_labels[key] = list(values.keys()) # Valid choices for scalar value
+                raise ValueError(f"ラベル '{key}' の無効な型 '{label_type}' が指定されました。'scalar'または'vector'を指定してください。")
 
     def _validate_labels(self, logger: logging.Logger, labels: Dict[str, Any]) -> bool:
         """

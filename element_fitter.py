@@ -1,52 +1,42 @@
 import json
 from typing import List, Dict, Any
 
-def _load_label_config(config_path: str = "prompt_templates/novel_label_config.json") -> List[str]:
-    """ラベル設定を読み込み、reader_effectの順序リストを返す。"""
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            label_config = json.load(f)
-        return list(label_config.get("labels", {}).get("reader_effect", {}).keys())
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        print(f"警告: ラベル設定ファイル '{config_path}' の読み込みに失敗しました。 ({e})")
-        return []
+
 
 def _compute_single_fit(candidate_features: Dict[str, Any], 
                         ideal_features: Dict[str, Any],
-                        reader_effect_map: List[str]) -> float:
+                        feature_extractor: Any) -> float: # FeatureExtractor インスタンスを受け取る
     """
     単一の候補と単一の理想テンプレートとの間のfitスコアを計算する。
     スコアが小さいほど、理想に近いことを示す。
     """
     fit_score = 0.0
     
-    # 1. スカラー特徴量の差分を計算 (change_type, causal_exposure, conflict_type)
-    scalar_keys = ["change", "causal", "conflict"]
-    for key in scalar_keys:
-        # 修正: ネストされたfeaturesディクショナリから正しいキーを抽出
-        candidate_value = candidate_features.get("scalar_features", {}).get(f"{key}_type", 0)
-        ideal_value = ideal_features.get("scalar_features", {}).get(f"{key}_type", 0)
+    # 1. スカラー特徴量の差分を計算
+    for key in feature_extractor.scalar_label_maps.keys():
+        candidate_value = candidate_features.get("scalar_features", {}).get(key, 0)
+        ideal_value = ideal_features.get("scalar_features", {}).get(key, 0)
         fit_score += abs(candidate_value - ideal_value)
 
-    # 2. エフェクト特徴量のペナルティを計算
-    # 理想が持つべきエフェクトのセット
-    # 修正: ネストされたfeaturesディクショナリから正しいキーを抽出
-    ideal_effects_vector = ideal_features.get("vector_features", {}).get("reader_effect", [])
-    ideal_effects_present = set()
-    for i, score in enumerate(ideal_effects_vector):
-        if i < len(reader_effect_map) and score > 0:
-            ideal_effects_present.add(reader_effect_map[i])
-            
-    # 候補が持つエフェクトのセット
-    candidate_effects_vector = candidate_features.get("vector_features", {}).get("reader_effect", [])
-    candidate_effects_present = set()
-    for i, score in enumerate(candidate_effects_vector):
-        if i < len(reader_effect_map) and score > 0:
-            candidate_effects_present.add(reader_effect_map[i])
+    # 2. ベクトル特徴量のペナルティを計算
+    for key in feature_extractor.vector_label_orders.keys():
+        ideal_vector = ideal_features.get("vector_features", {}).get(key, [])
+        candidate_vector = candidate_features.get("vector_features", {}).get(key, [])
+        
+        # どの項目が理想に含まれているか、候補に含まれているかをセットで管理
+        ideal_present_values = set()
+        for i, score in enumerate(ideal_vector):
+            if i < len(feature_extractor.vector_label_orders[key]) and score > 0:
+                ideal_present_values.add(feature_extractor.vector_label_orders[key][i])
+        
+        candidate_present_values = set()
+        for i, score in enumerate(candidate_vector):
+            if i < len(feature_extractor.vector_label_orders[key]) and score > 0:
+                candidate_present_values.add(feature_extractor.vector_label_orders[key][i])
 
-    # 理想が持つべきエフェクトが候補に存在しない場合にペナルティ (1.0) を加算
-    missing_effects = ideal_effects_present - candidate_effects_present
-    fit_score += len(missing_effects)
+        # 理想が持つべきエフェクトが候補に存在しない場合にペナルティ (1.0) を加算
+        missing_values = ideal_present_values - candidate_present_values
+        fit_score += len(missing_values)
 
     return fit_score
 
@@ -66,10 +56,12 @@ def apply_fit_to_candidates(candidates: List[Dict[str, Any]],
     if not candidates or not ideal_elements:
         return candidates
 
-    reader_effect_map = _load_label_config()
-    if not reader_effect_map:
-        print("警告: reader_effect_mapが空のため、fit計算をスキップします。")
-        # 各候補に空のfit情報を設定して返す
+    # FeatureExtractor を初期化してラベル情報を取得
+    feature_extractor = FeatureExtractor()
+    
+    # feature_extractorが初期化できない場合はスキップ
+    if not feature_extractor.scalar_label_maps and not feature_extractor.vector_label_orders:
+        print("警告: FeatureExtractorがラベル情報をロードできませんでした。fit計算をスキップします。")
         for candidate in candidates:
             candidate["fit"] = {"best_fit_element": "N/A", "score": float('inf')}
         return candidates
@@ -91,7 +83,7 @@ def apply_fit_to_candidates(candidates: List[Dict[str, Any]],
             if not ideal_features:
                 continue
 
-            score = _compute_single_fit(candidate_features, ideal_features, reader_effect_map)
+            score = _compute_single_fit(candidate_features, ideal_features, feature_extractor)
             
             if score < best_fit_score:
                 best_fit_score = score

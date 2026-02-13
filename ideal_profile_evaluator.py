@@ -16,13 +16,8 @@ class IdealProfileEvaluator:
         """
         self.feature_extractor = FeatureExtractor(config_path)
         
-        # Load reader_effect keys for vector mapping
-        try:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-            self.reader_effect_keys = list(config.get("labels", {}).get("reader_effect", {}).keys())
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            raise ValueError(f"設定ファイル '{config_path}' の読み込みに失敗しました: {e}")
+        # Initialize internal storage for vector label keys, using FeatureExtractor's understanding
+        self.vector_label_keys = self.feature_extractor.vector_label_orders.keys()
 
     def _featurize_ideal_element(self, element_label: str, ideal_scores: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -107,28 +102,31 @@ class IdealProfileEvaluator:
                 fit_score += ((candidate_value - ideal_value) ** 2) / tolerance
             # else: label不足時は無視（ユーザー要件）
 
-        # Vector Features (reader_effect)
-        # Apply the same logic as element_fitter.py for consistency
-        ideal_effects_vector = final_ideal_features.get("vector_features", {}).get("reader_effect", [])
-        ideal_effects_present = set()
-        for i, score in enumerate(ideal_effects_vector):
-            if i < len(self.reader_effect_keys) and score > 0:
-                ideal_effects_present.add(self.reader_effect_keys[i])
-                
-        candidate_effects_vector = candidate_features.get("vector_features", {}).get("reader_effect", [])
-        candidate_effects_present = set()
-        for i, score in enumerate(candidate_effects_vector):
-            if i < len(self.reader_effect_keys) and score > 0:
-                candidate_effects_present.add(self.reader_effect_keys[i])
+        # Vector Features
+        for vector_label_type in self.feature_extractor.vector_label_orders.keys():
+            ideal_vector = final_ideal_features.get("vector_features", {}).get(vector_label_type, [])
+            candidate_vector = candidate_features.get("vector_features", {}).get(vector_label_type, [])
 
-        # Tolerance for reader_effect should be element-specific and label-specific if defined in tolerance_data
-        # For each ideal effect that is missing in candidate, add penalty/tolerance consideration
-        for missing_effect in (ideal_effects_present - candidate_effects_present):
-            # Check if there's a specific tolerance for this missing_effect
-            # If tolerance_data has 'reader_effect' and within it, specific effects, use that.
-            # For now, a simple '1.0' penalty if missing, could be scaled by a tolerance value for reader_effect as a whole.
-            effect_tolerance = tolerance_data.get("reader_effect", 1.0) # Assume a single tolerance for all effects for now
-            fit_score += (1.0 ** 2) / effect_tolerance # Add penalty if missing, squared.
+            # Get the list of possible values for this vector_label_type
+            possible_values = self.feature_extractor.vector_label_orders.get(vector_label_type, [])
+            
+            ideal_present_values = set()
+            for i, score in enumerate(ideal_vector):
+                if i < len(possible_values) and score > 0:
+                    ideal_present_values.add(possible_values[i])
+                    
+            candidate_present_values = set()
+            for i, score in enumerate(candidate_vector):
+                if i < len(possible_values) and score > 0:
+                    candidate_present_values.add(possible_values[i])
+
+            # For each ideal value that is missing in candidate, add penalty
+            for missing_value in (ideal_present_values - candidate_present_values):
+                # Tolerance for each vector label type can be defined in tolerance_data
+                # If a specific tolerance for this missing_value is needed, it would require
+                # a more complex tolerance structure. For now, use a single tolerance for the label_type.
+                tolerance_for_vector_type = tolerance_data.get(vector_label_type, 1.0)
+                fit_score += (1.0 ** 2) / tolerance_for_vector_type # Add penalty if missing, squared.
 
         return fit_score
 
