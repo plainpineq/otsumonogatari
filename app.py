@@ -672,7 +672,7 @@ def evaluate_document(doc_id):
     document = find_document(data, doc_id)
 
     # LLM設定が不完全な場合はエラーを表示して中断
-    evaluation_config = data.get("llm_servers", {}).get("evaluation", {})
+    evaluation_config = session.get("llm_servers", {}).get("evaluation", {})
     llm_provider = evaluation_config.get("provider")
     is_config_incomplete = not llm_provider or not evaluation_config.get("model_name") or \
                            (llm_provider in ["gemini", "chatgpt"] and not evaluation_config.get("api_key")) or \
@@ -687,7 +687,7 @@ def evaluate_document(doc_id):
     # ページをリロードし、クライアント側でストリーミングを開始させる
     return jsonify({"status": "success", "message": "評価処理を開始します。結果はリアルタイムで表示されます..."}), 200
 
-
+# Moved evaluate_stream to top-level
 @app.route('/document/<doc_id>/evaluate/stream')
 def evaluate_stream(doc_id):
     """
@@ -698,14 +698,14 @@ def evaluate_stream(doc_id):
 
     if "user_id" not in session:
         return Response("Unauthorized", status=401)
+    
+    # Get LLM configuration for the 'evaluation' role from session *before* calling the generator
+    llm_config = session.get("llm_servers", {}).get("evaluation", {})
 
-    def generate_labels(user_id_arg):
+    def generate_labels(user_id_arg, llm_config_arg):
         try: # NEW try block for the entire generator
             data = load_user_data(user_id_arg)
             document = find_document(data, doc_id)
-
-            # Get LLM configuration for the 'evaluation' role from persistent user data
-            llm_config = data.get("llm_servers", {}).get("evaluation", {})
 
             if not document or "llm_suggestions" not in document or not document["llm_suggestions"]:
                 yield f"data: {json.dumps({'error': '評価対象のデータが見つかりません。'})}\n\n"
@@ -731,7 +731,7 @@ def evaluate_stream(doc_id):
 
             current_processed_count = 0
             try:
-                for labeled_result in semantic_labeler.label_suggestions(evaluation_input, llm_config=llm_config, user_id=user_id_arg, log_file_path=log_file_path):
+                for labeled_result in semantic_labeler.label_suggestions(evaluation_input, llm_config=llm_config_arg, user_id=user_id_arg, log_file_path=log_file_path):
                     all_results.append(labeled_result)
                     current_processed_count += 1
                     yield f"data: {json.dumps(labeled_result, ensure_ascii=False)}\n\n"
@@ -757,8 +757,7 @@ def evaluate_stream(doc_id):
             yield "event: end_stream\ndata: {}\n\n" # Always close the stream
 
     # ジェネレータに必要な情報を引数として渡す
-    return Response(generate_labels(session["user_id"]), mimetype='text/event-stream')
-
+    return Response(generate_labels(session["user_id"], llm_config), mimetype='text/event-stream')
 
 
 @app.route("/document/<doc_id>/download_evaluation")
