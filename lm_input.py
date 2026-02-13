@@ -266,7 +266,7 @@ def build_category_composition_prompt(document: dict, composition_meta: dict, us
     """
     Builds a prompt for the LLM to generate content for a specific composition category.
     """
-    template_file_path = os.path.join("prompt_templates", "category_composition_template.md")
+    template_file_path = os.path.join("prompt_templates", "novel_category_composition_template.md")
 
     with open(template_file_path, "r", encoding="utf-8") as f:
         template_content = f.read()
@@ -284,9 +284,15 @@ def build_category_composition_prompt(document: dict, composition_meta: dict, us
         formatted_intent = "（作者の意図は特に指定されていません）"
 
     # Selected Basic Elements
+    basic_settings_text = ""
     selected_basic_elements = document.get("selected_basic_elements", {})
-    selected_title = selected_basic_elements.get("title", "未設定")
-    selected_plot = selected_basic_elements.get("plot", "未設定")
+    if selected_basic_elements:
+        for label, value in selected_basic_elements.items():
+            # Using UI_LABELS to get display names for basic settings if available, otherwise use the key directly
+            display_label = UI_LABELS.get(label, label)
+            basic_settings_text += f"- {display_label}: {value}\n"
+    if not basic_settings_text:
+        basic_settings_text = "（確定済みの基本設定は特にありません）"
 
     # Current Composition Elements for context
     elements_text = ""
@@ -311,8 +317,7 @@ def build_category_composition_prompt(document: dict, composition_meta: dict, us
         document_title=document_title,
         doc_type=doc_type_label,
         intent_text=formatted_intent,
-        selected_title=selected_title,
-        selected_plot=selected_plot,
+        basic_settings_text=basic_settings_text,
         elements_text=elements_text,
         category_label=category_label, # Pass the specific category label to the prompt
         suggestion_count=suggestion_count, # Add suggestion_count
