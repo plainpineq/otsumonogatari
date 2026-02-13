@@ -382,6 +382,7 @@ def generate_proposals(doc_id):
     # Cleanup old files and reset counter for a new full generation cycle
     _cleanup_old_generated_files(session["user_id"])
     _reset_generation_counter(session["user_id"])
+    session["generation_cleanup_done"] = True
     
     current_generation_number = _get_next_generation_number(session["user_id"])
     suffix = f"_{current_generation_number}_proposals"
@@ -481,6 +482,12 @@ def generate_composition(doc_id):
     if document is None:
         return jsonify({"error": "Document not found"}), 404
 
+    # Perform cleanup and counter reset only once per generation session
+    if not session.get("generation_cleanup_done", False):
+        _cleanup_old_generated_files(session["user_id"])
+        _reset_generation_counter(session["user_id"])
+        session["generation_cleanup_done"] = True
+    
     try:
         request_data = request.get_json()
         category_label = request_data.get("category_label")
