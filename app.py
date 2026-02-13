@@ -1,3 +1,5 @@
+from typing import Dict, Any # NEW: Import Dict and Any for type hinting
+
 from flask import Flask, render_template, request, redirect, session, send_file, make_response, flash, jsonify
 from datetime import timedelta, datetime
 import os
@@ -681,13 +683,15 @@ def evaluate_document(doc_id):
     if is_config_incomplete:
         return jsonify({"status": "error", "message": "評価を実行するには、まずダッシュボードで「構成要素評価 用 LLM」設定を完了してください。"}), 400
 
-    if not document or "llm_suggestions" not in document or not document["llm_suggestions"]:
-        return jsonify({"status": "error", "message": "評価対象のAI提案がありません。「提案」タブで先にアイデアを生成してください。"}), 400
+
 
     # ページをリロードし、クライアント側でストリーミングを開始させる
     return jsonify({"status": "success", "message": "評価処理を開始します。結果はリアルタイムで表示されます..."}), 200
 
 # Moved evaluate_stream to top-level
+
+
+
 @app.route('/document/<doc_id>/evaluate/stream')
 def evaluate_stream(doc_id):
     """
@@ -705,19 +709,57 @@ def evaluate_stream(doc_id):
         data = load_user_data(user_id_arg)
         document = find_document(data, doc_id)
 
-        if not document or "llm_suggestions" not in document or not document["llm_suggestions"]:
-            yield f"data: {json.dumps({'error': '評価対象のデータが見つかりません。'})}\n\n"
+        # 評価対象のデータが存在するか確認
+        if not document:
+            yield f"data: {json.dumps({'error': 'ドキュメントが見つかりません。'})}\n\n"
+            return
+        
+        final_evaluation_suggestions = []
+
+        # 1. document["llm_suggestions"] から「基本設定」以外のカテゴリを追加
+        #    もしllm_suggestionsが存在し、かつそれがリストであれば処理
+        if document.get("llm_suggestions") and isinstance(document["llm_suggestions"], list):
+            for suggestion_group in document["llm_suggestions"]:
+                if suggestion_group.get("category") != "基本設定":
+                    final_evaluation_suggestions.append(suggestion_group)
+
+        # 2. document["selected_basic_elements"] を semantic_labeler が処理できる形式に変換して追加
+        selected_basic_elements = document.get("selected_basic_elements", {})
+        if selected_basic_elements:
+            basic_settings_category_label = "基本設定"
+            basic_elements_data = {"category": basic_settings_category_label, "elements": {}}
+
+            id_to_label_map = {}
+            base_category_in_composition = next(
+                (cat for cat in document.get("composition_elements", {}).get("categories", []) 
+                 if cat.get("id") == "base"),
+                None
+            )
+            if base_category_in_composition:
+                for element in base_category_in_composition.get("elements", []):
+                    id_to_label_map[element.get("id")] = element.get("label")
+
+            for key_id, value in selected_basic_elements.items():
+                japanese_label = id_to_label_map.get(key_id, key_id)
+                basic_elements_data["elements"][japanese_label] = [value]
+            
+            if basic_elements_data["elements"]:
+                final_evaluation_suggestions.insert(0, basic_elements_data) # 先頭に追加して優先させる
+
+        evaluation_input = {"llm_suggestions": final_evaluation_suggestions}
+
+
+        if not evaluation_input["llm_suggestions"]:
+            yield f"data: {json.dumps({'error': '評価対象の構成要素候補または確定済み基本設定が見つかりません。'})}\n\n"
             return
 
         user_data_dir = get_user_data_path(user_id_arg)
         log_file_path = os.path.join(user_data_dir, "labeler.log")
-        evaluation_input = {"llm_suggestions": document["llm_suggestions"]}
         
         all_results = []
-        # ロガーのハンドラをクリーンアップするための準備
         logger_to_cleanup = logging.getLogger("semantic_labeler")
 
-        total_items_count = 0 # This will be set by the 'total_items' event from semantic_labeler
+        total_items_count = 0 
 
         try:
             for event_data in semantic_labeler.label_suggestions(evaluation_input, llm_config=llm_config_arg, user_id=user_id_arg, log_file_path=log_file_path):
@@ -725,10 +767,8 @@ def evaluate_stream(doc_id):
 
                 if event_type == "total_items":
                     total_items_count = event_data.get("count", 0)
-                    # Send initial progress total to client
                     yield f"data: {json.dumps({'progress_total': total_items_count})}\n\n"
                 elif event_type == "progress":
-                    # semantic_labeler already sends progress in the desired format
                     yield f"data: {json.dumps({
                         'progress_current': event_data['progress_current'],
                         'progress_total': event_data['progress_total'],
@@ -741,10 +781,9 @@ def evaluate_stream(doc_id):
                         all_results.append(labeled_result)
                         yield f"data: {json.dumps({'semantic_label': labeled_result}, ensure_ascii=False)}\n\n"
                 else:
-                    # Log unexpected event types
                     logging.warning(f"Received unexpected event type: {event_type} with data: {event_data}")
             
-            # After loop, save all results
+            # Save all results to document["semantic_labels"]
             document["semantic_labels"] = all_results
             save_user_data(user_id_arg, data)
             
@@ -752,12 +791,11 @@ def evaluate_stream(doc_id):
             logging.error(f"Error during streaming semantic labels: {e}")
             yield f"data: {json.dumps({'error': f'ストリーミング中にエラーが発生しました: {str(e)}'})}\n\n"
         finally:
-            # Ensure the logger handlers are removed
             for handler in logger_to_cleanup.handlers[:]:
                 if isinstance(handler, logging.FileHandler):
                     handler.close()
                 logger_to_cleanup.removeHandler(handler)
-            yield "event: end_stream\ndata: {}\n\n" # Always close the stream
+            yield "event: end_stream\ndata: {}\n\n"
 
     return Response(generate_labels_stream(session["user_id"], llm_config), mimetype='text/event-stream')
 
