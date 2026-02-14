@@ -505,7 +505,7 @@ def build_ideal_profile_prompt(document: dict, user_id: str, suggestion_count: i
     prompt = template_content.replace("{{ formatted_intent_json }}", formatted_intent_json)
     prompt = prompt.replace("{{ formatted_selected_basic_elements_json }}", formatted_selected_basic_elements_json)
     prompt = prompt.replace("{{ elements_and_labels_text }}", elements_and_labels_text)
-    prompt = prompt.replace("{{ dynamic_json_example }}", dynamic_json_example)
+    prompt = prompt.replace("{{ dynamic_json_example_without_tolerance }}", dynamic_json_example)
     print("Template placeholders filled.")
 
     # Output the generated prompt to a file for debugging/verification

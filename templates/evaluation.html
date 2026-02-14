@@ -37,10 +37,10 @@
             <textarea id="base-profile-json" class="form-control mt-2" rows="10"></textarea>
 
             <h5 class="mt-3">Author Modifier</h5>
-            <textarea id="author-modifier-json" class="form-control mt-2" rows="5"></textarea>
+            <div id="author-modifier-table-container" class="mt-2"></div>
 
             <h5 class="mt-3">Tolerance</h5>
-            <textarea id="tolerance-json" class="form-control mt-2" rows="5"></textarea>
+            <div id="tolerance-table-container" class="mt-2"></div>
 
             <div class="d-flex justify-content-end mt-2">
                 <button id="save-ideal-profile-btn" class="btn btn-success">Ideal Profileを保存</button>
@@ -92,8 +92,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const idealProfileLoading = document.getElementById('ideal-profile-loading');
     const idealProfileDisplay = document.getElementById('ideal-profile-display');
     const baseProfileJsonTextarea = document.getElementById('base-profile-json');
-    const authorModifierJsonTextarea = document.getElementById('author-modifier-json');
-    const toleranceJsonTextarea = document.getElementById('tolerance-json');
+    const authorModifierTableContainer = document.getElementById('author-modifier-table-container');
+    const toleranceTableContainer = document.getElementById('tolerance-table-container');
     const saveIdealProfileBtn = document.getElementById('save-ideal-profile-btn');
 
     const calculateFitBtn = document.getElementById('calculate-fit-btn');
@@ -105,6 +105,135 @@ document.addEventListener('DOMContentLoaded', function() {
     const fitCalculationProgressBar = document.getElementById('fit-calculation-progress-bar');
     const fitCalculationStatusMessage = document.getElementById('fit-calculation-status-message');
 
+
+    // Function to render Author Modifier table
+    function renderAuthorModifierTable(modifierData, baseProfileData) {
+        console.log("renderAuthorModifierTable called.");
+        console.log("modifierData:", modifierData);
+        console.log("baseProfileData:", baseProfileData);
+
+        authorModifierTableContainer.innerHTML = ''; // Clear previous content
+
+        const commonLabels = ['change_type', 'causal_exposure', 'conflict_type', 'reader_effect'];
+        let html = `
+            <table class="table table-bordered table-sm author-modifier-table">
+                <thead>
+                    <tr>
+                        <th>対象エレメント</th>
+                        ${commonLabels.map(label => `<th>${label}</th>`).join('')}
+                        <th></th> <!-- For delete button -->
+                    </tr>
+                </thead>
+                <tbody>`;
+
+        const elementsInBaseProfile = Object.keys(baseProfileData);
+        console.log("Elements in baseProfileData:", elementsInBaseProfile);
+
+        // Add rows for existing modifiers or elements from base_profile
+        // When modifierData is empty, this should still populate from elementsInBaseProfile
+        const allElements = new Set([...elementsInBaseProfile, ...Object.keys(modifierData)]);
+        console.log("All elements to render:", allElements);
+
+        allElements.forEach(element => {
+            html += `<tr>
+                        <td>${element}</td>`;
+            commonLabels.forEach(label => {
+                const value = modifierData[element] && modifierData[element][label] !== undefined
+                              ? modifierData[element][label]
+                              : 0; // Default to 0 if not set
+                html += `<td><input type="number" step="0.1" class="form-control form-control-sm" data-element="${element}" data-label="${label}" value="${value}"></td>`;
+            });
+            html += `<td><button type="button" class="btn btn-danger btn-sm remove-modifier-row">削除</button></td></tr>`;
+        });
+
+        html += `</tbody></table>
+            <button type="button" class="btn btn-secondary btn-sm mt-2 add-modifier-row">修飾項目を追加</button>`;
+        authorModifierTableContainer.innerHTML = html;
+        console.log("Author Modifier table HTML set. Container content:", authorModifierTableContainer.innerHTML);
+
+
+        // Add event listeners for remove buttons
+        authorModifierTableContainer.querySelectorAll('.remove-modifier-row').forEach(button => {
+            button.addEventListener('click', (event) => {
+                event.target.closest('tr').remove();
+            });
+        });
+
+        // Add event listener for "Add Modifier" button
+        authorModifierTableContainer.querySelector('.add-modifier-row').addEventListener('click', () => {
+            const tableBody = authorModifierTableContainer.querySelector('.author-modifier-table tbody');
+            const newRow = document.createElement('tr');
+            newRow.innerHTML = `
+                <td><input type="text" class="form-control form-control-sm new-element-name" placeholder="エレメント名"></td>
+                ${commonLabels.map(label => `<td><input type="number" step="0.1" class="form-control form-control-sm" data-label="${label}" value="0"></td>`).join('')}
+                <td><button type="button" class="btn btn-danger btn-sm remove-modifier-row">削除</button></td>
+            `;
+            tableBody.appendChild(newRow);
+            newRow.querySelector('.remove-modifier-row').addEventListener('click', (event) => {
+                event.target.closest('tr').remove();
+            });
+        });
+    }
+
+    // Function to render Tolerance table
+    function renderToleranceTable(toleranceData, baseProfileData) {
+        toleranceTableContainer.innerHTML = ''; // Clear previous content
+
+        const commonLabels = ['change_type', 'causal_exposure', 'conflict_type', 'reader_effect'];
+        let html = `
+            <table class="table table-bordered table-sm tolerance-table">
+                <thead>
+                    <tr>
+                        <th>対象エレメント</th>
+                        ${commonLabels.map(label => `<th>${label}</th>`).join('')}
+                        <th></th> <!-- For delete button -->
+                    </tr>
+                </thead>
+                <tbody>`;
+
+        const elementsInBaseProfile = Object.keys(baseProfileData);
+
+        // Add rows for existing tolerances or elements from base_profile
+        const allElements = new Set([...elementsInBaseProfile, ...Object.keys(toleranceData)]);
+
+        allElements.forEach(element => {
+            html += `<tr>
+                        <td>${element}</td>`;
+            commonLabels.forEach(label => {
+                const value = toleranceData[element] && toleranceData[element][label] !== undefined
+                              ? toleranceData[element][label]
+                              : 1.0; // Default to 1.0 if not set
+                html += `<td><input type="number" step="0.1" class="form-control form-control-sm" data-element="${element}" data-label="${label}" value="${value}"></td>`;
+            });
+            html += `<td><button type="button" class="btn btn-danger btn-sm remove-tolerance-row">削除</button></td></tr>`;
+        });
+
+        html += `</tbody></table>
+            <button type="button" class="btn btn-secondary btn-sm mt-2 add-tolerance-row">許容項目を追加</button>`;
+        toleranceTableContainer.innerHTML = html;
+
+        // Add event listeners for remove buttons
+        toleranceTableContainer.querySelectorAll('.remove-tolerance-row').forEach(button => {
+            button.addEventListener('click', (event) => {
+                event.target.closest('tr').remove();
+            });
+        });
+
+        // Add event listener for "Add Tolerance" button
+        toleranceTableContainer.querySelector('.add-tolerance-row').addEventListener('click', () => {
+            const tableBody = toleranceTableContainer.querySelector('.tolerance-table tbody');
+            const newRow = document.createElement('tr');
+            newRow.innerHTML = `
+                <td><input type="text" class="form-control form-control-sm new-element-name" placeholder="エレメント名"></td>
+                ${commonLabels.map(label => `<td><input type="number" step="0.1" class="form-control form-control-sm" data-label="${label}" value="1.0"></td>`).join('')}
+                <td><button type="button" class="btn btn-danger btn-sm remove-tolerance-row">削除</button></td>
+            `;
+            tableBody.appendChild(newRow);
+            newRow.querySelector('.remove-tolerance-row').addEventListener('click', (event) => {
+                event.target.closest('tr').remove();
+            });
+        });
+    }
 
     function showAlert(message, type = 'danger') {
         const alertDiv = document.createElement('div');
@@ -120,8 +249,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize ideal profile display if data exists
     if (Object.keys(idealProfileData).length > 0) {
         baseProfileJsonTextarea.value = JSON.stringify(idealProfileData.base_profile || {}, null, 2);
-        authorModifierJsonTextarea.value = JSON.stringify(idealProfileData.author_modifier || {}, null, 2);
-        toleranceJsonTextarea.value = JSON.stringify(idealProfileData.tolerance || {}, null, 2);
+        renderAuthorModifierTable(idealProfileData.author_modifier || {}, idealProfileData.base_profile || {});
+        renderToleranceTable(idealProfileData.tolerance || {}, idealProfileData.base_profile || {});
         idealProfileDisplay.style.display = 'block';
     }
 
@@ -146,8 +275,8 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             baseProfileJsonTextarea.value = JSON.stringify(data.ideal_profile.base_profile || {}, null, 2);
-            authorModifierJsonTextarea.value = JSON.stringify(data.ideal_profile.author_modifier || {}, null, 2);
-            toleranceJsonTextarea.value = JSON.stringify(data.ideal_profile.tolerance || {}, null, 2);
+            renderAuthorModifierTable(data.ideal_profile.author_modifier || {}, data.ideal_profile.base_profile || {});
+            renderToleranceTable(data.ideal_profile.tolerance || {}, data.ideal_profile.base_profile || {});
             idealProfileDisplay.style.display = 'block';
             showAlert('Ideal Profileが生成されました。', 'success');
 
@@ -162,11 +291,51 @@ document.addEventListener('DOMContentLoaded', function() {
     saveIdealProfileBtn.addEventListener('click', async () => {
         saveIdealProfileBtn.disabled = true;
         try {
+            // Reconstruct author_modifier from table
+            const reconstructedAuthorModifier = {};
+            authorModifierTableContainer.querySelectorAll('.author-modifier-table tbody tr').forEach(row => {
+                const elementInput = row.querySelector('td:first-child input[type="text"]'); // For new rows
+                const elementText = row.querySelector('td:first-child').textContent.trim(); // For existing rows
+                const element = elementInput ? elementInput.value.trim() : elementText;
+                
+                if (!element) return; // Skip if element name is empty
+
+                row.querySelectorAll('input[type="number"]').forEach(input => {
+                    const label = input.dataset.label;
+                    const value = parseFloat(input.value);
+                    
+                    if (label && !isNaN(value)) {
+                        reconstructedAuthorModifier[element] = reconstructedAuthorModifier[element] || {};
+                        reconstructedAuthorModifier[element][label] = value;
+                    }
+                });
+            });
+
+            // Reconstruct tolerance from table
+            const reconstructedTolerance = {};
+            toleranceTableContainer.querySelectorAll('.tolerance-table tbody tr').forEach(row => {
+                const elementInput = row.querySelector('td:first-child input[type="text"]'); // For new rows
+                const elementText = row.querySelector('td:first-child').textContent.trim(); // For existing rows
+                const element = elementInput ? elementInput.value.trim() : elementText;
+                
+                if (!element) return; // Skip if element name is empty
+
+                row.querySelectorAll('input[type="number"]').forEach(input => {
+                    const label = input.dataset.label;
+                    const value = parseFloat(input.value);
+
+                    if (label && !isNaN(value)) {
+                        reconstructedTolerance[element] = reconstructedTolerance[element] || {};
+                        reconstructedTolerance[element][label] = value;
+                    }
+                });
+            });
+
             const updatedProfile = {
                 meta: idealProfileData.meta || { created_at: new Date().toISOString(), version: 1 }, // Preserve meta or create new
                 base_profile: JSON.parse(baseProfileJsonTextarea.value),
-                author_modifier: JSON.parse(authorModifierJsonTextarea.value),
-                tolerance: JSON.parse(toleranceJsonTextarea.value)
+                author_modifier: reconstructedAuthorModifier,
+                tolerance: reconstructedTolerance
             };
             const response = await fetch(`/document/${docId}/save_ideal_profile`, {
                 method: 'POST',

@@ -97,6 +97,8 @@ def generate_ideal_profile_route(doc_id):
         (ideal_profile_llm_config.get("provider") in ["gemini", "chatgpt"] and not ideal_profile_llm_config.get("api_key")) or
         (ideal_profile_llm_config.get("provider") == "other" and not ideal_profile_llm_config.get("base_url"))
     )
+    print(f"Ideal Profile LLM Config: {ideal_profile_llm_config}")
+    print(f"Is LLM Config Incomplete for Ideal Profile: {is_config_incomplete}")
 
     # For now, let's just mock if config is incomplete
     if is_config_incomplete:
