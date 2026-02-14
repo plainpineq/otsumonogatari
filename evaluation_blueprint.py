@@ -35,7 +35,7 @@ def evaluation_tab(doc_id):
 
 
     # Get persistent server configurations for evaluation role
-    llm_servers = data.get("llm_servers", {})
+    llm_servers = session.get("llm_servers", {})
     # For ideal_profile generation, we will use a new role, let's call it 'ideal_profile_generation'
     ideal_profile_llm_config = llm_servers.get("ideal_profile_generation", {})
 
@@ -61,7 +61,7 @@ def generate_ideal_profile_route(doc_id):
         return jsonify({"error": "Document not found"}), 404
     
     # Get LLM config for ideal_profile generation
-    llm_servers = data.get("llm_servers", {})
+    llm_servers = session.get("llm_servers", {})
     ideal_profile_llm_config = llm_servers.get("ideal_profile_generation", {})
     
     # Check if LLM config is complete, if not, provide mock data or error
@@ -113,16 +113,11 @@ def generate_ideal_profile_route(doc_id):
         ideal_profile_data, raw_llm_text, llm_response_json = generate_ideal_profile(
             document, ideal_profile_llm_config, session["user_id"]
         )
+        print("Received ideal_profile_data from generate_ideal_profile function.")
         document["ideal_profile"] = ideal_profile_data
+        print("Saving user data with new ideal_profile...")
         save_user_data(session["user_id"], data)
-
-        # Save raw and structured responses
-        user_data_dir = get_user_data_path(session["user_id"])
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        with open(os.path.join(user_data_dir, f"generated_ideal_profile_{timestamp}.txt"), "w", encoding="utf-8") as f:
-            f.write(raw_llm_text)
-        with open(os.path.join(user_data_dir, f"generated_ideal_profile_{timestamp}.json"), "w", encoding="utf-8") as f:
-            json.dump(llm_response_json, f, ensure_ascii=False, indent=2)
+        print("User data saved successfully.")
 
         flash("Ideal Profileを生成しました。", "success")
         return jsonify({"success": True, "ideal_profile": ideal_profile_data})
@@ -161,8 +156,10 @@ def calculate_fit_stream_route(doc_id):
         # For SSE, return JSON error rather than redirect
         return jsonify({"error": "Unauthorized"}), 401
 
-    def generate():
-        data = load_user_data(session["user_id"])
+    current_user_id = session["user_id"] # Capture user_id here
+
+    def generate(user_id_arg): # Modify generate to accept user_id_arg
+        data = load_user_data(user_id_arg) # Use the passed user_id
         document = find_document(data, doc_id)
 
         if document is None:
@@ -193,7 +190,7 @@ def calculate_fit_stream_route(doc_id):
                     # Save results once complete
                     document["numerical_features"] = candidates_numerical_features # Save for consistency
                     document["fit_results"] = event_data["fit_results"] # Save the final fit results
-                    save_user_data(session["user_id"], data)
+                    save_user_data(user_id_arg, data)
                     # No flash message here, client will handle completion notification
                 
                 yield f"data: {json.dumps(event_data)}\n\n"
@@ -202,4 +199,4 @@ def calculate_fit_stream_route(doc_id):
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e), 'message': f'適合度計算中にエラーが発生しました: {str(e)}'})}\n\n"
 
-    return Response(generate(), mimetype='text/event-stream')
+    return Response(generate(current_user_id), mimetype='text/event-stream')

@@ -32,7 +32,7 @@ class IdealProfileEvaluator:
                 scalar_features[label_type] = value
             elif label_type == "reader_effect":
                 # reader_effect はリスト形式で来るので、FeatureExtractor と同様にOne-Hotベクトル化
-                feature_vector = [0] * len(self.reader_effect_keys)
+                feature_vector = [0] * len(self.feature_extractor.vector_label_orders["reader_effect"])
                 if isinstance(value, list):
                     for effect_label in value:
                         if effect_label in self.feature_extractor.vector_index_maps["reader_effect"]:

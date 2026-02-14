@@ -30,10 +30,10 @@
         <button class="nav-link" id="vectorization-tab" data-bs-toggle="tab" data-bs-target="#vectorization" type="button" role="tab" aria-controls="vectorization" aria-selected="false">数値化</button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="element-fit-tab" data-bs-toggle="tab" data-bs-target="#element-fit" type="button" role="tab" aria-controls="element-fit" aria-selected="false">適合度</button>
+        <button class="nav-link" id="ideal-profile-tab" data-bs-toggle="tab" data-bs-target="#ideal-profile" type="button" role="tab" aria-controls="ideal-profile" aria-selected="false">評価基準</button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="ideal-profile-tab" data-bs-toggle="tab" data-bs-target="#ideal-profile" type="button" role="tab" aria-controls="ideal-profile" aria-selected="false">構成要素評価</button>
+        <button class="nav-link" id="element-fit-tab" data-bs-toggle="tab" data-bs-target="#element-fit" type="button" role="tab" aria-controls="element-fit" aria-selected="false">適合度</button>
     </li>
 </ul>
 
@@ -341,12 +341,12 @@
         </div>
     </div>
     <div class="tab-pane fade" id="ideal-profile" role="tabpanel" aria-labelledby="ideal-profile-tab">
-        <!-- Content for the new '構成要素評価' tab -->
+        <!-- Content for the new '評価基準' tab -->
         <div class="card p-4 shadow-sm mt-3">
-            <h2 class="h4 mb-3">構成要素評価</h2>
+            <h2 class="h4 mb-3">評価基準</h2>
             <p>このタブは、`evaluation.html` の内容を読み込みます。</p>
             <a href="{{ url_for('evaluation_bp.evaluation_tab', doc_id=document.id) }}" class="btn btn-primary">
-                構成要素評価ツールを開く
+                評価基準ツールを開く
             </a>
         </div>
     </div>

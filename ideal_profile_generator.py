@@ -1,9 +1,13 @@
 import json
 from datetime import datetime
+import os
 from typing import Dict, Any, List
 
+from flask import session
+
 from services.llm_client import call_llm
-from lm_input import build_ideal_profile_prompt # This will be a new function we create
+from lm_input import build_ideal_profile_prompt
+from user_files import get_user_data_path # This will be a new function we create
 
 def generate_ideal_profile(
     document: Dict[str, Any],
@@ -42,6 +46,14 @@ def generate_ideal_profile(
     raw_text, llm_response_json = call_llm(
         llm_api_key, llm_model_name, prompt, llm_provider, base_url=llm_base_url
     )
+
+    # Save raw and structured responses
+    user_data_dir = get_user_data_path(session["user_id"])
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    with open(os.path.join(user_data_dir, f"generated_ideal_profile_{timestamp}.txt"), "w", encoding="utf-8") as f:
+        f.write(raw_text)
+    with open(os.path.join(user_data_dir, f"generated_ideal_profile_{timestamp}.json"), "w", encoding="utf-8") as f:
+        json.dump(llm_response_json, f, ensure_ascii=False, indent=2)
 
     # 3. Format the LLM response into the ideal_profile structure
     # Ensure llm_response_json has the expected 'base_profile'

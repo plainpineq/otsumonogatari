@@ -5,7 +5,7 @@ import json
 from typing import Optional
 import re
 
-def _call_gemini_llm(api_key: str, model_name: str, prompt: str) -> (str, dict):
+def _call_gemini_llm(api_key: str, model_name: str, prompt: str) -> tuple[str, dict]:
     """
     Calls the Google Gemini LLM with the given API key, model name, and prompt.
     Expects the LLM to return a JSON string with a 'suggestions' key.
@@ -41,7 +41,7 @@ def _call_gemini_llm(api_key: str, model_name: str, prompt: str) -> (str, dict):
         print(f"Error calling Gemini LLM: {e}")
         raise RuntimeError(f"Failed to get response from Gemini LLM: {e}")
 
-def _call_openai_llm(api_key: str, model_name: str, prompt: str, base_url: Optional[str] = None) -> (str, dict):
+def _call_openai_llm(api_key: str, model_name: str, prompt: str, base_url: Optional[str] = None) -> tuple[str, dict]:
     """
     Calls the OpenAI LLM with the given API key, model name, and prompt.
     Expects the LLM to return a JSON string with a 'suggestions' key.
@@ -84,10 +84,12 @@ def _call_openai_llm(api_key: str, model_name: str, prompt: str, base_url: Optio
         print(f"Error calling OpenAI LLM: {e}")
         raise RuntimeError(f"Failed to get response from OpenAI LLM: {e}")
 
-def call_llm(api_key: str, model_name: str, prompt: str, llm_provider: str, base_url: Optional[str] = None) -> (str, dict):
+def call_llm(api_key: str, model_name: str, prompt: str, llm_provider: str, base_url: Optional[str] = None) -> tuple[str, dict]:
     """
     Dispatches to the appropriate LLM client based on the llm_provider.
     """
+    print(f"[LLM] PROVIDER: {llm_provider}: Model: {model_name}")
+
     if llm_provider == "gemini":
         return _call_gemini_llm(api_key, model_name, prompt)
     elif llm_provider == "chatgpt":

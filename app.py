@@ -237,7 +237,7 @@ def save_servers_config():
     
     # --- LLMサーバー設定の解析 ---
     llm_servers = {}
-    roles = ["generation", "evaluation", "drafting"]
+    roles = ["generation", "evaluation", "drafting", "ideal_profile_generation"]
     for role in roles:
         role_config = {
             "provider": request.form.get(f"llm_servers[{role}][provider]", "gemini"),
@@ -398,8 +398,6 @@ def generate_proposals(doc_id):
     llm_base_url = generation_config.get("base_url")
     suggestion_count = session.get("suggestion_count", 3)
 
-    print(f"[LLM] PROVIDER: {llm_provider}: Model: {llm_model_name}")
-
     is_config_incomplete = not llm_provider or not llm_model_name or \
                            (llm_provider in ["gemini", "chatgpt"] and not llm_api_key) or \
                            (llm_provider == "other" and not llm_base_url)
@@ -503,8 +501,6 @@ def generate_composition(doc_id):
         llm_api_key = generation_config.get("api_key")
         llm_model_name = generation_config.get("model_name")
         llm_base_url = generation_config.get("base_url")
-
-        print(f"[LLM] Full Composition - PROVIDER: {llm_provider}: Model: {llm_model_name}")
 
         is_config_incomplete = not llm_provider or not llm_model_name or \
                                (llm_provider in ["gemini", "chatgpt"] and not llm_api_key) or \
