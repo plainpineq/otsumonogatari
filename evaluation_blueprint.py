@@ -3,6 +3,7 @@ import json
 import os
 from datetime import datetime
 import time # For simulating work and testing progress updates
+import glob # Import glob for file pattern matching
 
 
 from user_files import load_user_data, save_user_data, get_user_data_path
@@ -13,6 +14,28 @@ from services.llm_client import call_llm # For explicit mock calls if needed
 from feature_extractor import FeatureExtractor # For numerical features of candidates
 
 evaluation_bp = Blueprint('evaluation_bp', __name__, template_folder='templates')
+
+def _cleanup_old_ideal_profile_files(user_id: str):
+    """
+    Cleans up old generated ideal profile files for a given user.
+    """
+    user_data_dir = get_user_data_path(user_id)
+    if not os.path.exists(user_data_dir):
+        return
+
+    # Patterns for files to delete
+    patterns = [
+        os.path.join(user_data_dir, "generated_ideal_profile_*.txt"),
+        os.path.join(user_data_dir, "generated_ideal_profile_*.json")
+    ]
+
+    for pattern in patterns:
+        for file_path in glob.glob(pattern):
+            try:
+                os.remove(file_path)
+                print(f"Cleaned up old ideal profile file: {file_path}")
+            except OSError as e:
+                print(f"Error deleting ideal profile file {file_path}: {e}")
 
 
 @evaluation_bp.route("/document/<doc_id>/evaluation_tab")
@@ -54,6 +77,9 @@ def evaluation_tab(doc_id):
 def generate_ideal_profile_route(doc_id):
     if "user_id" not in session:
         return jsonify({"error": "Unauthorized"}), 401
+    
+    # Clean up old ideal profile files
+    _cleanup_old_ideal_profile_files(session["user_id"])
 
     data = load_user_data(session["user_id"])
     document = find_document(data, doc_id)
