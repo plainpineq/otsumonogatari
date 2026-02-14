@@ -29,10 +29,19 @@
         <div id="ideal-profile-display" class="mt-4" style="display: none;">
             <h4 class="h5">生成されたIdeal Profile</h4>
             <div class="form-text text-muted">
-                必要に応じて `base_profile` や `author_modifier` を編集し、「Ideal Profileを保存」ボタンで変更を確定してください。<br>
-                `author_modifier` は `base_profile` の数値を調整するために使用します。例えば、`{"主人公": {"change_type": 1}}` のように記述すると、`base_profile` の `主人公` の `change_type` が `1` 増加します。
+                `base_profile` はLLMが生成した理想のプロファイルです。`author_modifier` は `base_profile` の数値を調整するために使用します。`tolerance` は許容範囲を設定します。<br>
+                それぞれのJSONを編集し、「Ideal Profileを保存」ボタンで変更を確定してください。
             </div>
-            <textarea id="ideal-profile-json" class="form-control mt-2" rows="20"></textarea>
+
+            <h5 class="mt-3">Base Profile (LLM生成)</h5>
+            <textarea id="base-profile-json" class="form-control mt-2" rows="10"></textarea>
+
+            <h5 class="mt-3">Author Modifier</h5>
+            <textarea id="author-modifier-json" class="form-control mt-2" rows="5"></textarea>
+
+            <h5 class="mt-3">Tolerance</h5>
+            <textarea id="tolerance-json" class="form-control mt-2" rows="5"></textarea>
+
             <div class="d-flex justify-content-end mt-2">
                 <button id="save-ideal-profile-btn" class="btn btn-success">Ideal Profileを保存</button>
             </div>
@@ -82,7 +91,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const generateIdealProfileBtn = document.getElementById('generate-ideal-profile-btn');
     const idealProfileLoading = document.getElementById('ideal-profile-loading');
     const idealProfileDisplay = document.getElementById('ideal-profile-display');
-    const idealProfileJsonTextarea = document.getElementById('ideal-profile-json');
+    const baseProfileJsonTextarea = document.getElementById('base-profile-json');
+    const authorModifierJsonTextarea = document.getElementById('author-modifier-json');
+    const toleranceJsonTextarea = document.getElementById('tolerance-json');
     const saveIdealProfileBtn = document.getElementById('save-ideal-profile-btn');
 
     const calculateFitBtn = document.getElementById('calculate-fit-btn');
@@ -108,7 +119,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Initialize ideal profile display if data exists
     if (Object.keys(idealProfileData).length > 0) {
-        idealProfileJsonTextarea.value = JSON.stringify(idealProfileData, null, 2);
+        baseProfileJsonTextarea.value = JSON.stringify(idealProfileData.base_profile || {}, null, 2);
+        authorModifierJsonTextarea.value = JSON.stringify(idealProfileData.author_modifier || {}, null, 2);
+        toleranceJsonTextarea.value = JSON.stringify(idealProfileData.tolerance || {}, null, 2);
         idealProfileDisplay.style.display = 'block';
     }
 
@@ -132,7 +145,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 throw new Error(data.error || 'Failed to generate Ideal Profile.');
             }
             
-            idealProfileJsonTextarea.value = JSON.stringify(data.ideal_profile, null, 2);
+            baseProfileJsonTextarea.value = JSON.stringify(data.ideal_profile.base_profile || {}, null, 2);
+            authorModifierJsonTextarea.value = JSON.stringify(data.ideal_profile.author_modifier || {}, null, 2);
+            toleranceJsonTextarea.value = JSON.stringify(data.ideal_profile.tolerance || {}, null, 2);
             idealProfileDisplay.style.display = 'block';
             showAlert('Ideal Profileが生成されました。', 'success');
 
@@ -147,7 +162,12 @@ document.addEventListener('DOMContentLoaded', function() {
     saveIdealProfileBtn.addEventListener('click', async () => {
         saveIdealProfileBtn.disabled = true;
         try {
-            const updatedProfile = JSON.parse(idealProfileJsonTextarea.value);
+            const updatedProfile = {
+                meta: idealProfileData.meta || { created_at: new Date().toISOString(), version: 1 }, // Preserve meta or create new
+                base_profile: JSON.parse(baseProfileJsonTextarea.value),
+                author_modifier: JSON.parse(authorModifierJsonTextarea.value),
+                tolerance: JSON.parse(toleranceJsonTextarea.value)
+            };
             const response = await fetch(`/document/${docId}/save_ideal_profile`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

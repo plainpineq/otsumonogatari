@@ -495,7 +495,7 @@ def build_ideal_profile_prompt(document: dict, user_id: str, suggestion_count: i
     dynamic_json_example_structure = {
         "base_profile": example_base_profile,
         "author_modifier": {},
-        "tolerance": example_tolerance # Include an example tolerance
+        # "tolerance": example_tolerance # Tolerance is now user-editable, not LLM-generated in example
     }
     dynamic_json_example = json.dumps(dynamic_json_example_structure, indent=2, ensure_ascii=False)
     print("Dynamic JSON example constructed.")
