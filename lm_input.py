@@ -322,7 +322,6 @@ def build_category_composition_prompt(document: dict, composition_meta: dict, us
     formatted_additional_instruction = ""
     if additional_instruction:
         formatted_additional_instruction = f"- {additional_instruction}\n"
-    print(f"Debug: formatted_additional_instruction = '{formatted_additional_instruction}'")
 
     for category_obj in all_document_categories:
         if category_obj.get("id") == base_category_label_id or category_obj.get("label") == "基本設定":
