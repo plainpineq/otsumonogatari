@@ -168,6 +168,16 @@
                                 <button type="submit" name="remove_doc_type_category" value="{{ category.id }}" class="btn btn-danger btn-sm ms-2">分類削除</button>
                             {% endif %}
                         </h4>
+                        <div class="mb-3">
+                            <label for="additional_instruction_{{ category.id }}" class="form-label">この分類への追加指示</label>
+                            <textarea
+                                id="additional_instruction_{{ category.id }}"
+                                name="category_{{ category.id }}_additional_instruction"
+                                class="form-control"
+                                rows="3"
+                                placeholder="この分類に関するLLMへの追加の指示があれば入力してください（例：必ずSF要素を含めること）"
+                            >{{ category.additional_instruction if category.additional_instruction is not none else '' }}</textarea>
+                        </div>
                         {% set category_id = category.id %}
                         {% set elements = category.elements %}
 

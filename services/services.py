@@ -275,6 +275,11 @@ def update_composition_elements(document: dict, form_data) -> None:
         if category_label_from_form in form_data and current_category_data.get("editable", False):
             current_category_data["label"] = form_data.get(category_label_from_form, "")
 
+        # 追加指示の更新
+        additional_instruction_form_name = f"category_{category_id}_additional_instruction"
+        if additional_instruction_form_name in form_data:
+            current_category_data["additional_instruction"] = form_data.get(additional_instruction_form_name, "")
+
         elements = current_category_data.setdefault("elements", [])
 
         # --- 要素の追加 ---

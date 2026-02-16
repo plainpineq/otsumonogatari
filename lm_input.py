@@ -193,6 +193,21 @@ def build_title_plot_proposals_prompt(document: dict, composition_meta: dict, us
     intent_dict = {field.get("label"): field.get("value") for key, field in intent_fields.items() if field.get("label") and field.get("value")}
     formatted_intent_json = json.dumps(intent_dict, indent=2, ensure_ascii=False)
 
+    # Current Composition Elements for context
+    all_document_categories = document.get("composition_elements", {}).get("categories", [])
+
+    # Additional Instruction for the "基本設定" category
+    additional_instruction = ""
+    base_category_label = "基本設定"
+    for category_obj in all_document_categories:
+        if category_obj.get("label") == base_category_label:
+            additional_instruction = category_obj.get("additional_instruction", "").strip()
+            break
+    
+    formatted_additional_instruction = ""
+    if additional_instruction:
+        formatted_additional_instruction = f"- {additional_instruction}\n"
+    
     # --- Extract "base" category elements from document["composition_elements"] for the prompt ---
     elements_text = ""
     dynamic_json_example_for_base = {}
@@ -228,10 +243,13 @@ def build_title_plot_proposals_prompt(document: dict, composition_meta: dict, us
 
 
     # Fill template placeholders
-    prompt = template_content.replace("{{ intent }}", formatted_intent_json)
-    prompt = prompt.replace("{{ suggestion_count }}", str(suggestion_count))
-    prompt = prompt.replace("{elements_text}", elements_text)
-    prompt = prompt.replace("{dynamic_json_example}", json.dumps(dynamic_json_example_for_base, indent=2, ensure_ascii=False))
+    prompt = template_content.format(
+        intent=formatted_intent_json,
+        suggestion_count=str(suggestion_count),
+        elements_text=elements_text,
+        dynamic_json_example=json.dumps(dynamic_json_example_for_base, indent=2, ensure_ascii=False),
+        additional_instruction_text=formatted_additional_instruction
+    )
 
     return prompt
 
@@ -274,6 +292,9 @@ def build_category_composition_prompt(document: dict, composition_meta: dict, us
     document_title = document.get("title", "不明なドキュメント")
     doc_type_label = document.get("doc_type", "不明")
 
+    # Current Composition Elements for context (moved to top for scope)
+    all_document_categories = document.get("composition_elements", {}).get("categories", [])
+
     # Author's Intent
     intent_fields = document.get("intent", {}).get("fields", {})
     formatted_intent = ""
@@ -284,12 +305,6 @@ def build_category_composition_prompt(document: dict, composition_meta: dict, us
         formatted_intent = "（作者の意図は特に指定されていません）"
 
     # Selected Basic Elements
-
-    # Current Composition Elements for context
-    elements_text = ""
-    all_document_categories = document.get("composition_elements", {}).get("categories", [])
-    
-    # Selected Basic Elements
     basic_settings_text = ""
     selected_basic_elements = document.get("selected_basic_elements", {})
     
@@ -297,6 +312,18 @@ def build_category_composition_prompt(document: dict, composition_meta: dict, us
     basic_settings_label_map = {}
     base_category_label_id = "base" # Assuming "base" is the ID for "基本設定"
     
+    # Additional Instruction for the current category
+    additional_instruction = ""
+    for category_obj in all_document_categories:
+        if category_obj.get("label") == category_label:
+            additional_instruction = category_obj.get("additional_instruction", "").strip()
+            break
+    
+    formatted_additional_instruction = ""
+    if additional_instruction:
+        formatted_additional_instruction = f"- {additional_instruction}\n"
+    print(f"Debug: formatted_additional_instruction = '{formatted_additional_instruction}'")
+
     for category_obj in all_document_categories:
         if category_obj.get("id") == base_category_label_id or category_obj.get("label") == "基本設定":
             if category_obj.get("elements"):
@@ -313,6 +340,7 @@ def build_category_composition_prompt(document: dict, composition_meta: dict, us
     if not basic_settings_text:
         basic_settings_text = "（確定済みの基本設定は特にありません）"
     
+    elements_text = "" # Initialize elements_text here
     for category_obj in all_document_categories:
         if category_obj.get("label") == category_label:
             elements_text += f"- 分類名: {category_obj['label']}\n"
@@ -323,7 +351,6 @@ def build_category_composition_prompt(document: dict, composition_meta: dict, us
             break
     if not elements_text:
         elements_text = f"（{category_label}に属する構成要素は定義されていません）"
-
     # Generate dynamic JSON example based on suggestion_count
     dynamic_json_example = _build_dynamic_category_json_example(document, category_label, suggestion_count)
 
@@ -336,7 +363,8 @@ def build_category_composition_prompt(document: dict, composition_meta: dict, us
         elements_text=elements_text,
         category_label=category_label, # Pass the specific category label to the prompt
         suggestion_count=suggestion_count, # Add suggestion_count
-        dynamic_json_example=dynamic_json_example # Add dynamic JSON example
+        dynamic_json_example=dynamic_json_example, # Add dynamic JSON example
+        additional_instruction_text=formatted_additional_instruction # Add additional instruction
     )
 
     # Output the generated prompt to a file for debugging/verification

@@ -432,8 +432,8 @@ def generate_proposals(doc_id):
         print(f"Saved prompt to: {prompt_file_path}")
 
         raw_text, suggestions_dict = call_llm(
-            llm_api_key=llm_api_key,
-            llm_model_name=llm_model_name,
+            api_key=llm_api_key,
+            model_name=llm_model_name,
             prompt=prompt,
             llm_provider=llm_provider,
             base_url=llm_base_url,
@@ -569,8 +569,8 @@ def generate_composition(doc_id):
         )
         
         raw_text, suggestions_dict = call_llm(
-            llm_api_key=llm_api_key,
-            llm_model_name=llm_model_name,
+            api_key=llm_api_key,
+            model_name=llm_model_name,
             prompt=prompt,
             llm_provider=llm_provider,
             base_url=llm_base_url,
