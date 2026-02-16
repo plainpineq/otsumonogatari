@@ -1,9 +1,10 @@
-import google.genai as genai
+import google.generativeai as genai
 import openai
 from openai import APIConnectionError
 import json
 from typing import Optional
 import re
+import requests # NEW: Import for Hugging Face API calls
 
 def _call_gemini_llm(api_key: str, model_name: str, prompt: str) -> tuple[str, dict]:
     """
@@ -14,6 +15,97 @@ def _call_gemini_llm(api_key: str, model_name: str, prompt: str) -> tuple[str, d
         raise ValueError("Gemini API Key is not configured.")
     if not model_name:
         raise ValueError("Gemini Model Name is not configured.")
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(model_name)
+
+    try:
+        response = model.generate_content(prompt)
+        raw_response_text = response.text # Keep the original raw text
+        
+        # Find the JSON block using a regular expression
+        json_match = re.search(r"```(json)?\s*({.*})\s*```", raw_response_text, re.DOTALL)
+        
+        if json_match:
+            # Extract the JSON string from the regex match
+            json_str = json_match.group(2)
+        else:
+            # If no markdown fence is found, assume the whole response is the JSON string
+            json_str = raw_response_text.strip()
+
+        # Parse the extracted JSON string
+        parsed_response = json.loads(json_str)
+        
+        # Return the ORIGINAL raw text and the parsed dictionary
+        return raw_response_text, parsed_response
+    except Exception as e:
+        print(f"Error calling Gemini LLM: {e}")
+        raise RuntimeError(f"Failed to get response from Gemini LLM: {e}")
+
+def _call_huggingface_llm(api_key: Optional[str], base_endpoint: str, model_id: str, prompt: str) -> tuple[str, dict]:
+    """
+    Calls a Hugging Face Inference API endpoint with the given API key (optional), base endpoint, model ID, and prompt.
+    Expects the LLM to return a JSON string.
+    """
+    if not base_endpoint:
+        raise ValueError("Hugging Face Base Endpoint is not configured.")
+    if not model_id:
+        raise ValueError("Hugging Face Model ID is not configured.")
+
+    # Construct the full model endpoint URL
+    model_endpoint = f"{base_endpoint.rstrip('/')}/{model_id.lstrip('/')}"
+    print(f"[LLM] Hugging Face Model Endpoint: {model_endpoint}")
+
+    headers = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    
+    # Hugging Face Inference API expects a list of inputs,
+    # and we're expecting JSON output from the model.
+    # The `return_full_text=False` is important for instruction-tuned models
+    # to not return the input prompt along with the generated text.
+    payload = {
+        "inputs": prompt,
+        "parameters": {
+            "return_full_text": False,
+            "max_new_tokens": 2048, # Default max tokens, can be made configurable
+            "temperature": 0.7,    # Default temperature, can be made configurable
+            # "top_p": 0.9           # Can be added if needed
+        }
+    }
+
+    try:
+        response = requests.post(model_endpoint, headers=headers, json=payload)
+        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+        
+        raw_response_data = response.json()
+        
+        if not raw_response_data or not isinstance(raw_response_data, list) or "generated_text" not in raw_response_data[0]:
+            raise ValueError(f"Unexpected response format from Hugging Face API: {raw_response_data}")
+
+        raw_text = raw_response_data[0]["generated_text"]
+        
+        # Try to find and parse a JSON block within the generated text
+        json_match = re.search(r"```(json)?\s*({.*})\s*```", raw_text, re.DOTALL)
+        
+        if json_match:
+            json_str = json_match.group(2)
+        else:
+            # If no markdown fence is found, assume the whole response is the JSON string
+            json_str = raw_text.strip()
+
+        parsed_response = json.loads(json_str)
+        
+        return raw_text, parsed_response
+    except requests.exceptions.RequestException as e:
+        print(f"Error calling Hugging Face LLM: {e}")
+        raise RuntimeError(f"Failed to connect to Hugging Face LLM at {model_endpoint}: {e}")
+    except json.JSONDecodeError as e:
+        print(f"Error decoding JSON from Hugging Face LLM response: {e}. Raw text: {raw_text}")
+        raise RuntimeError(f"Hugging Face LLM responded with invalid JSON: {e}")
+    except Exception as e:
+        print(f"Error calling Hugging Face LLM: {e}")
+        raise RuntimeError(f"Failed to get response from Hugging Face LLM: {e}")
 
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel(model_name)
@@ -84,13 +176,24 @@ def _call_openai_llm(api_key: str, model_name: str, prompt: str, base_url: Optio
         print(f"Error calling OpenAI LLM: {e}")
         raise RuntimeError(f"Failed to get response from OpenAI LLM: {e}")
 
-def call_llm(api_key: str, model_name: str, prompt: str, llm_provider: str, base_url: Optional[str] = None) -> tuple[str, dict]:
+def call_llm(
+    api_key: Optional[str],
+    model_name: Optional[str],
+    prompt: str,
+    llm_provider: str,
+    base_url: Optional[str] = None,
+    huggingface_api_key: Optional[str] = None,
+    huggingface_model_base_endpoint: Optional[str] = None,
+    huggingface_model_id: Optional[str] = None
+) -> tuple[str, dict]:
     """
     Dispatches to the appropriate LLM client based on the llm_provider.
     """
-    print(f"[LLM] PROVIDER: {llm_provider}: Model: {model_name}")
+    print(f"[LLM] PROVIDER: {llm_provider}: Model: {model_name if model_name else huggingface_model_id}")
 
     if llm_provider == "gemini":
+        if not model_name:
+            raise ValueError("Gemini Model Name is not configured.")
         return _call_gemini_llm(api_key, model_name, prompt)
     elif llm_provider == "chatgpt":
         # ChatGPT specific logic for model_name and base_url can be added here if needed
@@ -101,5 +204,11 @@ def call_llm(api_key: str, model_name: str, prompt: str, llm_provider: str, base
         if not base_url:
             raise ValueError("Base URL is required for 'other' LLM provider.")
         return _call_openai_llm(api_key, model_name, prompt, base_url)
+    elif llm_provider == "huggingface":
+        if not huggingface_model_base_endpoint:
+            raise ValueError("Hugging Face Base Endpoint is not configured.")
+        if not huggingface_model_id:
+            raise ValueError("Hugging Face Model ID is not configured.")
+        return _call_huggingface_llm(huggingface_api_key, huggingface_model_base_endpoint, huggingface_model_id, prompt)
     else:
         raise ValueError(f"Unsupported LLM provider: {llm_provider}.")

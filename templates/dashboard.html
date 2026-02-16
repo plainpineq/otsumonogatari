@@ -54,9 +54,23 @@
     <label for="llm_provider_{{ role }}" class="form-label">LLM プロバイダー</label>
     <select class="form-select llm-provider-select" id="llm_provider_{{ role }}" name="llm_servers[{{ role }}][provider]" data-role="{{ role }}">
         <option value="gemini" {% if config.provider == 'gemini' %}selected{% endif %}>Gemini</option>
+        <option value="huggingface" {% if config.provider == 'huggingface' %}selected{% endif %}>Hugging Face</option>
         <option value="chatgpt" {% if config.provider == 'chatgpt' %}selected{% endif %}>ChatGPT</option>
         <option value="other" {% if config.provider == 'other' %}selected{% endif %}>その他 (OpenAI互換)</option>
     </select>
+</div>
+
+<div class="mb-3 llm-provider-fields" data-provider="huggingface">
+    <label for="llm_huggingface_api_key_{{ role }}" class="form-label">Hugging Face API Key</label>
+    <input type="password" class="form-control" id="llm_huggingface_api_key_{{ role }}" name="llm_servers[{{ role }}][huggingface_api_key]" value="{{ config.huggingface_api_key }}" placeholder="Your Hugging Face API key (optional)" autocomplete="off">
+</div>
+<div class="mb-3 llm-provider-fields" data-provider="huggingface">
+    <label for="llm_huggingface_model_base_endpoint_{{ role }}" class="form-label">Hugging Face Base Endpoint</label>
+    <input type="text" class="form-control" id="llm_huggingface_model_base_endpoint_{{ role }}" name="llm_servers[{{ role }}][huggingface_model_base_endpoint]" value="{{ config.huggingface_model_base_endpoint }}" placeholder="e.g., https://api-inference.huggingface.co/models/">
+</div>
+<div class="mb-3 llm-provider-fields" data-provider="huggingface">
+    <label for="llm_huggingface_model_id_{{ role }}" class="form-label">Hugging Face Model ID</label>
+    <input type="text" class="form-control" id="llm_huggingface_model_id_{{ role }}" name="llm_servers[{{ role }}][huggingface_model_id]" value="{{ config.huggingface_model_id }}" placeholder="e.g., mistralai/Mistral-7B-Instruct-v0.2">
 </div>
 
 <div class="mb-3">
@@ -153,17 +167,37 @@ document.addEventListener('DOMContentLoaded', function() {
         const providerSelect = document.getElementById(`llm_provider_${role}`);
         const modelNameGroup = document.getElementById(`llm_model_name_group_${role}`);
         const baseUrlGroup = document.getElementById(`llm_base_url_group_${role}`);
+        const llmApiKeyField = document.getElementById(`llm_api_key_${role}`);
+
+        const huggingfaceApiKeyField = document.getElementById(`llm_huggingface_api_key_${role}`);
+        const huggingfaceModelBaseEndpointField = document.getElementById(`llm_huggingface_model_base_endpoint_${role}`);
+        const huggingfaceModelIdField = document.getElementById(`llm_huggingface_model_id_${role}`);
         
         if (!providerSelect) return;
 
         const selectedProvider = providerSelect.value;
 
+        // Hide all fields by default
+        modelNameGroup.style.display = 'none';
+        baseUrlGroup.style.display = 'none';
+        llmApiKeyField.parentElement.style.display = 'none'; // Hide parent div of general API key
+        if (huggingfaceApiKeyField) huggingfaceApiKeyField.parentElement.style.display = 'none';
+        if (huggingfaceModelBaseEndpointField) huggingfaceModelBaseEndpointField.parentElement.style.display = 'none';
+        if (huggingfaceModelIdField) huggingfaceModelIdField.parentElement.style.display = 'none';
+
+        // Show fields based on selected provider
         if (selectedProvider === 'other') {
             modelNameGroup.style.display = 'block';
             baseUrlGroup.style.display = 'block';
-        } else {
-            modelNameGroup.style.display = 'none';
+            llmApiKeyField.parentElement.style.display = 'block'; // General API key might be used for 'other'
+        } else if (selectedProvider === 'gemini' || selectedProvider === 'chatgpt') {
+            modelNameGroup.style.display = 'block';
             baseUrlGroup.style.display = 'none';
+            llmApiKeyField.parentElement.style.display = 'block'; // General API key used for Gemini/ChatGPT
+        } else if (selectedProvider === 'huggingface') {
+            if (huggingfaceApiKeyField) huggingfaceApiKeyField.parentElement.style.display = 'block';
+            if (huggingfaceModelBaseEndpointField) huggingfaceModelBaseEndpointField.parentElement.style.display = 'block';
+            if (huggingfaceModelIdField) huggingfaceModelIdField.parentElement.style.display = 'block';
         }
     }
 

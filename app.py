@@ -246,12 +246,16 @@ def save_servers_config():
             "base_url": request.form.get(f"llm_servers[{role}][base_url]", ""),
             "temperature": request.form.get(f"llm_servers[{role}][temperature]", "0.7"),
             "max_tokens": request.form.get(f"llm_servers[{role}][max_tokens]", "2048"),
+            "huggingface_api_key": request.form.get(f"llm_servers[{role}][huggingface_api_key]", ""),
+            "huggingface_model_base_endpoint": request.form.get(f"llm_servers[{role}][huggingface_model_base_endpoint]", ""),
+            "huggingface_model_id": request.form.get(f"llm_servers[{role}][huggingface_model_id]", ""),
         }
         # providerに応じたデフォルトモデル名の設定
         if role_config["provider"] == "gemini" and not role_config["model_name"]:
             role_config["model_name"] = "gemini-pro"
         elif role_config["provider"] == "chatgpt" and not role_config["model_name"]:
             role_config["model_name"] = "gpt-4o-mini"
+        # No default for Hugging Face model endpoint/id, they must be provided by the user.
             
         llm_servers[role] = role_config
 
@@ -396,11 +400,23 @@ def generate_proposals(doc_id):
     llm_api_key = generation_config.get("api_key")
     llm_model_name = generation_config.get("model_name")
     llm_base_url = generation_config.get("base_url")
+    llm_huggingface_api_key = generation_config.get("huggingface_api_key")
+    llm_huggingface_model_base_endpoint = generation_config.get("huggingface_model_base_endpoint")
+    llm_huggingface_model_id = generation_config.get("huggingface_model_id")
     suggestion_count = session.get("suggestion_count", 3)
 
-    is_config_incomplete = not llm_provider or not llm_model_name or \
-                           (llm_provider in ["gemini", "chatgpt"] and not llm_api_key) or \
-                           (llm_provider == "other" and not llm_base_url)
+    is_config_incomplete = False
+    if not llm_provider:
+        is_config_incomplete = True
+    elif llm_provider in ["gemini", "chatgpt"]:
+        if not llm_model_name or not llm_api_key:
+            is_config_incomplete = True
+    elif llm_provider == "other":
+        if not llm_base_url or not llm_model_name:
+            is_config_incomplete = True
+    elif llm_provider == "huggingface":
+        if not llm_huggingface_model_base_endpoint or not llm_huggingface_model_id: # API Key can be optional for public models
+            is_config_incomplete = True
 
     if is_config_incomplete:
         return jsonify({"suggestions": [{"category": "基本設定", "elements": {"題名": [f"模擬タイトル案{i+1}" for i in range(suggestion_count)]}}, {"category": "基本設定", "elements": {"あらすじ": [f"模擬プロット案{i+1}: これはモックデータです。" for i in range(suggestion_count)]}}], "message": "LLM設定が不完全なため、モックデータを使用しました。"}), 200
@@ -415,7 +431,16 @@ def generate_proposals(doc_id):
             f.write(prompt)
         print(f"Saved prompt to: {prompt_file_path}")
 
-        raw_text, suggestions_dict = call_llm(llm_api_key, llm_model_name, prompt, llm_provider, base_url=llm_base_url)
+        raw_text, suggestions_dict = call_llm(
+            llm_api_key=llm_api_key,
+            llm_model_name=llm_model_name,
+            prompt=prompt,
+            llm_provider=llm_provider,
+            base_url=llm_base_url,
+            huggingface_api_key=llm_huggingface_api_key,
+            huggingface_model_base_endpoint=llm_huggingface_model_base_endpoint,
+            huggingface_model_id=llm_huggingface_model_id
+        )
 
         # Save responses
         user_data_dir = get_user_data_path(session["user_id"])
@@ -501,10 +526,22 @@ def generate_composition(doc_id):
         llm_api_key = generation_config.get("api_key")
         llm_model_name = generation_config.get("model_name")
         llm_base_url = generation_config.get("base_url")
+        llm_huggingface_api_key = generation_config.get("huggingface_api_key")
+        llm_huggingface_model_base_endpoint = generation_config.get("huggingface_model_base_endpoint")
+        llm_huggingface_model_id = generation_config.get("huggingface_model_id")
 
-        is_config_incomplete = not llm_provider or not llm_model_name or \
-                               (llm_provider in ["gemini", "chatgpt"] and not llm_api_key) or \
-                               (llm_provider == "other" and not llm_base_url)
+        is_config_incomplete = False
+        if not llm_provider:
+            is_config_incomplete = True
+        elif llm_provider in ["gemini", "chatgpt"]:
+            if not llm_model_name or not llm_api_key:
+                is_config_incomplete = True
+        elif llm_provider == "other":
+            if not llm_base_url or not llm_model_name:
+                is_config_incomplete = True
+        elif llm_provider == "huggingface":
+            if not llm_huggingface_model_base_endpoint or not llm_huggingface_model_id: # API Key can be optional for public models
+                is_config_incomplete = True
 
         if is_config_incomplete:
             # Fallback to mock data if LLM config is incomplete
@@ -531,7 +568,16 @@ def generate_composition(doc_id):
             suggestion_count=suggestion_count # Pass the suggestion_count
         )
         
-        raw_text, suggestions_dict = call_llm(llm_api_key, llm_model_name, prompt, llm_provider, base_url=llm_base_url)
+        raw_text, suggestions_dict = call_llm(
+            llm_api_key=llm_api_key,
+            llm_model_name=llm_model_name,
+            prompt=prompt,
+            llm_provider=llm_provider,
+            base_url=llm_base_url,
+            huggingface_api_key=llm_huggingface_api_key,
+            huggingface_model_base_endpoint=llm_huggingface_model_base_endpoint,
+            huggingface_model_id=llm_huggingface_model_id
+        )
 
         # Save LLM raw response and parsed JSON response for debugging
         user_data_dir = get_user_data_path(session["user_id"])
