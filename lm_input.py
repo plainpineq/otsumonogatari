@@ -397,104 +397,99 @@ def build_ideal_profile_prompt(document: dict, user_id: str, suggestion_count: i
     formatted_intent_json = json.dumps(intent_dict, indent=2, ensure_ascii=False)
     print("Author's Intent collected.")
 
-    # 2. Collect Selected Basic Settings
-    selected_basic_elements = document.get("selected_basic_elements", {})
-    formatted_selected_basic_elements_json = json.dumps(selected_basic_elements, indent=2, ensure_ascii=False)
+    # 2. Collect Selected Basic Settings (Excluded from Ideal Profile Generation)
+    formatted_selected_basic_elements_json = "（基本設定は評価基準設計の対象外です）"
     print("Selected Basic Settings collected.")
 
     # 3. Collect Elements and Semantic Labels
     elements_and_labels_lines = []
     
     # Load semantic label configuration and parse types for dynamic handling
-    label_config_path = os.path.join("prompt_templates", "novel_label_config.json")
-    parsed_semantic_label_config = {} # key: {type: "scalar"/"vector", values: {...}}
+    label_config_path = os.path.join("prompt_templates", "semantic_label_schema.json") # UPDATED CONFIG PATH
+    parsed_semantic_label_config = {} # key: {label_key: {type: "scalar"/"vector", values: {...}}}
     print(f"Loading semantic label config from: {label_config_path}")
     try:
         with open(label_config_path, "r", encoding="utf-8") as f:
-            raw_config = json.load(f).get("labels", {})
-            for key, spec_or_values in raw_config.items():
-                label_type = None
-                values_data = None
+            raw_config = json.load(f) # NO .get("labels", {}) as it's top-level classifications
+            for classification_name, classification_labels_config in raw_config.items(): # Iterate classifications
+                parsed_semantic_label_config[classification_name] = {}
+                for label_key, spec in classification_labels_config.items():
+                    label_type = spec.get("type")
+                    values_data = spec.get("values")
+                    description = spec.get("description", "") # NEW: Description for prompt
 
-                if isinstance(spec_or_values, dict) and "type" in spec_or_values and "values" in spec_or_values:
-                    # 新しい形式: {"type": "...", "values": {...}}
-                    label_type = spec_or_values.get("type")
-                    values_data = spec_or_values.get("values")
-                else:
-                    # 古い形式: 直接valuesの内容
-                    values_data = spec_or_values
-                
-                # typeが明示されていない場合、values_dataの型で自動判別 (後方互換性ロジック)
-                if label_type is None:
-                    if isinstance(values_data, list):
-                        label_type = "vector"
-                    elif isinstance(values_data, dict):
-                        label_type = "scalar"
-                    else:
-                        print(f"Warning: ラベル '{key}' の型が不明です。'type'フィールドを指定するか、'values'フィールドをリストまたは辞書にしてください。")
-                        continue # このラベルはスキップ
-
-                parsed_semantic_label_config[key] = {
-                    "type": label_type,
-                    "values": values_data
-                }
+                    parsed_semantic_label_config[classification_name][label_key] = {
+                        "type": label_type,
+                        "values": values_data,
+                        "description": description # Store description
+                    }
         print("Semantic label config loaded and parsed successfully.")
     except FileNotFoundError:
         print(f"Warning: {label_config_path} not found. Semantic labels won't be included in prompt.")
     except Exception as e:
         print(f"Error parsing semantic label config: {e}. Semantic labels won't be included in prompt.")
 
-    # Iterate through composition elements to get all element labels
+    # Iterate through composition elements to get all element labels and their semantic label definitions
     all_document_categories = document.get("composition_elements", {}).get("categories", [])
     print(f"Found {len(all_document_categories)} document categories.")
     
     for category_obj in all_document_categories:
         category_label = category_obj.get("label")
-        if not category_label:
+        if not category_label or category_label == "基本設定": # Exclude "基本設定"
             continue
         
         elements_and_labels_lines.append(f"- 分類名: {category_label}")
         
+        # Get semantic label config for this classification
+        classification_labels_config = parsed_semantic_label_config.get(category_label, {})
+
         elements_in_category = category_obj.get("elements")
         if elements_in_category:
             for element_obj in elements_in_category:
                 element_label = element_obj.get("label")
                 if element_label:
                     elements_and_labels_lines.append(f"  - 要素名: {element_label}")
-                    for label_type_key, label_spec in parsed_semantic_label_config.items():
+                    for label_type_key, label_spec in classification_labels_config.items():
                         label_type = label_spec["type"]
                         label_values = label_spec["values"]
+                        description = label_spec["description"] # Use description from config
 
                         if label_type == "vector":
                             formatted_values = ", ".join([f"'{k}'" for k in (label_values.keys() if isinstance(label_values, dict) else label_values)])
-                            elements_and_labels_lines.append(f"    - {label_type_key} ({UI_LABELS.get(label_type_key, label_type_key)}): [リスト形式で、以下のいずれかまたは複数: {formatted_values}]")
+                            elements_and_labels_lines.append(f"    - {label_type_key} ({description}): [リスト形式で、以下のいずれかまたは複数: {formatted_values}]")
                         elif label_type == "scalar":
-                            formatted_values = ", ".join([f"{k}:{v}" for k, v in label_values.items()])
-                            elements_and_labels_lines.append(f"    - {label_type_key} ({UI_LABELS.get(label_type_key, label_type_key)}): [{formatted_values}]")
+                            # For scalar labels, values_data is a dict of {numeric_str: description_str}
+                            # We want to show the range 1-5 and their descriptions
+                            formatted_values = ", ".join([f"{k}（{v}）" for k, v in label_values.items()])
+                            elements_and_labels_lines.append(f"    - {label_type_key} ({description}): [1-5の整数値。例: {formatted_values}]")
     
     if not elements_and_labels_lines:
         elements_and_labels_lines.append("（物語の構成要素は定義されていません）")
     elements_and_labels_text = "\n".join(elements_and_labels_lines)
     print("Elements and Semantic Labels collected and formatted.")
 
-    # 4. Construct dynamic_json_example
+    # 4. Construct dynamic_json_example (nested by classification)
     example_base_profile = {}
-    example_tolerance = {}
     print("Starting dynamic_json_example construction.")
     for category_obj in all_document_categories:
+        category_label = category_obj.get("label")
+        if not category_label or category_label == "基本設定": # Exclude "基本設定"
+            continue
+
+        classification_labels_config = parsed_semantic_label_config.get(category_label, {})
+        example_elements_for_classification = {}
+
         elements_in_category = category_obj.get("elements")
         if elements_in_category:
             for element_obj in elements_in_category:
                 element_label = element_obj.get("label")
                 if element_label:
                     element_scores = {}
-                    element_tolerance = {}
-                    for label_type_key, label_spec in parsed_semantic_label_config.items():
+                    for label_type_key, label_spec in classification_labels_config.items():
                         label_type = label_spec["type"]
                         label_values = label_spec["values"]
 
                         if label_type == "vector":
-                            # Example for vector is a list of strings
                             example_effect_list = []
                             if label_values:
                                 all_values = list(label_values.keys() if isinstance(label_values, dict) else label_values)
@@ -503,26 +498,18 @@ def build_ideal_profile_prompt(document: dict, user_id: str, suggestion_count: i
                                 elif len(all_values) == 1:
                                     example_effect_list = [all_values[0]]
                             element_scores[label_type_key] = example_effect_list
-                            element_tolerance[label_type_key] = 1.0 # Tolerance for list of effects can be simple scalar
                         elif label_type == "scalar":
-                            # For scalar labels
-                            example_score_value = 2 # Default example score within 0-3 range
-                            if label_values and isinstance(label_values, dict):
-                                # Try to find an existing value within 0-3 range if possible
-                                for k, v in label_values.items():
-                                    if 0 <= v <= 3:
-                                        example_score_value = v
-                                        break
-                            element_scores[label_type_key] = example_score_value
-                            element_tolerance[label_type_key] = 1.0 # Example tolerance for scalar
+                            # For scalar labels, provide an example integer value
+                            element_scores[label_type_key] = 3 # Example score
 
-                    example_base_profile[element_label] = element_scores
-                    example_tolerance[element_label] = element_tolerance # Add tolerance example per element
-
+                    example_elements_for_classification[element_label] = element_scores
+            
+        if example_elements_for_classification:
+            example_base_profile[category_label] = example_elements_for_classification
+    
     dynamic_json_example_structure = {
         "base_profile": example_base_profile,
         "author_modifier": {},
-        # "tolerance": example_tolerance # Tolerance is now user-editable, not LLM-generated in example
     }
     dynamic_json_example = json.dumps(dynamic_json_example_structure, indent=2, ensure_ascii=False)
     print("Dynamic JSON example constructed.")

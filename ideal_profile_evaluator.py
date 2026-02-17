@@ -10,7 +10,7 @@ class IdealProfileEvaluator:
     ideal_profile に基づいて提案を評価・数値化するクラス。
     """
 
-    def __init__(self, config_path: str = 'prompt_templates/novel_label_config.json'):
+    def __init__(self, config_path: str = 'prompt_templates/semantic_label_schema.json'):
         """
         コンストラクタ。ラベル設定ファイルを読み込み、FeatureExtractor を初期化する。
         """
@@ -19,49 +19,41 @@ class IdealProfileEvaluator:
         # Initialize internal storage for vector label keys, using FeatureExtractor's understanding
         self.vector_label_keys = self.feature_extractor.vector_label_orders.keys()
 
-    def _featurize_ideal_element(self, element_label: str, ideal_scores: Dict[str, Any]) -> Dict[str, Any]:
+    def _featurize_ideal_element(self, classification_name: str, element_label: str, ideal_scores: Dict[str, Any]) -> Dict[str, Any]:
         """
         単一の理想エレメントのスコアを feature_extractor と互換性のある形式に変換する。
+        ideal_scores はLLM出力形式のラベルと数値のペアを想定。
         """
-        scalar_features = {}
-        vector_features = {}
-
-        for label_type, value in ideal_scores.items():
-            if label_type in self.feature_extractor.scalar_label_maps:
-                # スカラー値は直接使用
-                scalar_features[label_type] = value
-            elif label_type == "reader_effect":
-                # reader_effect はリスト形式で来るので、FeatureExtractor と同様にOne-Hotベクトル化
-                feature_vector = [0] * len(self.feature_extractor.vector_label_orders["reader_effect"])
-                if isinstance(value, list):
-                    for effect_label in value:
-                        if effect_label in self.feature_extractor.vector_index_maps["reader_effect"]:
-                            idx = self.feature_extractor.vector_index_maps["reader_effect"][effect_label]
-                            feature_vector[idx] = 1
-                vector_features[label_type] = feature_vector
-            # その他のラベルタイプは無視するか、エラーを発生させる
-        
-        return {
-            "category": "ideal", # カテゴリは理想であることを示す
+        # FeatureExtractor.featurize_suggestion が期待する形式に合わせる
+        # 'labels'キーの下にすべてのラベルを配置し、FeaturExtractorで処理させる
+        suggestion = {
+            "category": classification_name, # The classification for this ideal element
             "element": element_label,
             "text": f"理想の'{element_label}'",
-            "features": {
-                "scalar_features": scalar_features,
-                "vector_features": vector_features
-            }
+            "labels": ideal_scores # ideal_scores are essentially the 'labels' for the ideal
         }
+        
+        # FeatureExtractorの分類別特徴量化ロジックを再利用
+        return self.feature_extractor.featurize_suggestion(classification_name, suggestion)
 
     def convert_ideal_profile_to_features(self, ideal_profile_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         ideal_profile データ全体を、評価計算用の特徴量形式に変換する。
+        新しい ideal_profile 構造:
+        "base_profile": {
+          "シーン案": { "導入": { "劇的強度": 4, ... } },
+          "キャラクター案": { "主人公": { "主体性": 5, ... } }
+        }
         """
         if "base_profile" not in ideal_profile_data:
             return []
 
         ideal_elements_with_features = []
-        for element_label, ideal_scores in ideal_profile_data["base_profile"].items():
-            features = self._featurize_ideal_element(element_label, ideal_scores)
-            ideal_elements_with_features.append(features)
+        for classification_name, elements_in_classification in ideal_profile_data["base_profile"].items():
+            for element_label, ideal_scores in elements_in_classification.items():
+                # ここで classification_name を _featurize_ideal_element に渡す
+                features = self._featurize_ideal_element(classification_name, element_label, ideal_scores)
+                ideal_elements_with_features.append(features)
         
         return ideal_elements_with_features
 
@@ -77,6 +69,7 @@ class IdealProfileEvaluator:
 
     def _compute_single_fit_score(
         self, 
+        candidate_category: str, # NEW: Pass candidate_category to retrieve correct feature specs
         candidate_features: Dict[str, Any], 
         final_ideal_features: Dict[str, Any], 
         tolerance_data: Dict[str, Any]
@@ -86,47 +79,41 @@ class IdealProfileEvaluator:
         fit = Σ ((feature - ideal)^2) / tolerance
         """
         fit_score = 0.0
+
+        # Retrieve feature specs for the given candidate_category
+        if candidate_category not in self.feature_extractor.classification_features_specs:
+            return float('inf') # Should not happen if data is consistent
+
+        specs = self.feature_extractor.classification_features_specs[candidate_category]
+        scalar_label_keys = specs["scalar_label_maps"].keys()
+        vector_label_keys = specs["vector_label_orders"].keys()
         
-        # Scalar Features (change_type, causal_exposure, conflict_type)
-        for label_type in self.feature_extractor.scalar_label_maps.keys():
+        # Scalar Features
+        for label_type in scalar_label_keys:
             candidate_value = candidate_features.get("scalar_features", {}).get(label_type, 0)
             ideal_value = final_ideal_features.get("scalar_features", {}).get(label_type, 0)
             
-            # Get tolerance for this label_type and element
-            tolerance = tolerance_data.get(label_type, 1.0) # Default tolerance to 1.0
+            tolerance = tolerance_data.get(label_type, 1.0)
 
-            # Only add to fit_score if both candidate and ideal have a non-zero value,
-            # or if they are both zero and we want to penalize non-existence in idea.
-            # For simplicity, calculate difference if ideal_value is present.
-            if ideal_value is not None: # Assuming ideal values are always present from base_profile
+            if ideal_value is not None:
                 fit_score += ((candidate_value - ideal_value) ** 2) / tolerance
-            # else: label不足時は無視（ユーザー要件）
-
+            
         # Vector Features
-        for vector_label_type in self.feature_extractor.vector_label_orders.keys():
+        for vector_label_type in vector_label_keys:
             ideal_vector = final_ideal_features.get("vector_features", {}).get(vector_label_type, [])
             candidate_vector = candidate_features.get("vector_features", {}).get(vector_label_type, [])
 
-            # Get the list of possible values for this vector_label_type
-            possible_values = self.feature_extractor.vector_label_orders.get(vector_label_type, [])
+            # Ensure vectors are of the same length, pad with zeros if necessary
+            # The length is defined by the feature extractor's order for that category
+            vector_len = len(specs["vector_label_orders"].get(vector_label_type, []))
             
-            ideal_present_values = set()
-            for i, score in enumerate(ideal_vector):
-                if i < len(possible_values) and score > 0:
-                    ideal_present_values.add(possible_values[i])
-                    
-            candidate_present_values = set()
-            for i, score in enumerate(candidate_vector):
-                if i < len(possible_values) and score > 0:
-                    candidate_present_values.add(possible_values[i])
+            ideal_vector_padded = ideal_vector + [0] * (vector_len - len(ideal_vector))
+            candidate_vector_padded = candidate_vector + [0] * (vector_len - len(candidate_vector))
 
-            # For each ideal value that is missing in candidate, add penalty
-            for missing_value in (ideal_present_values - candidate_present_values):
-                # Tolerance for each vector label type can be defined in tolerance_data
-                # If a specific tolerance for this missing_value is needed, it would require
-                # a more complex tolerance structure. For now, use a single tolerance for the label_type.
+            # Sum of squared differences for vector elements
+            for i in range(vector_len):
                 tolerance_for_vector_type = tolerance_data.get(vector_label_type, 1.0)
-                fit_score += (1.0 ** 2) / tolerance_for_vector_type # Add penalty if missing, squared.
+                fit_score += ((candidate_vector_padded[i] - ideal_vector_padded[i]) ** 2) / tolerance_for_vector_type
 
         return fit_score
 
@@ -141,40 +128,43 @@ class IdealProfileEvaluator:
         if not candidates_numerical_features:
             return []
         
-        # 1. Convert ideal_profile to feature format
         ideal_elements_with_features = self.convert_ideal_profile_to_features(ideal_profile_data)
         if not ideal_elements_with_features:
-            # ideal_profile が空の場合、fit計算できないため候補をそのまま返す
             return candidates_numerical_features
 
-        # 2. Calculate final_ideal (base_profile + author_modifier) - currently just base_profile
-        # Note: final_ideal is currently 'base_profile' from the ideal_profile_data.
-        #       author_modifier would modify scores within this final_ideal before featurization.
-        #       For simplicity now, we assume base_profile is already the final ideal for featurization.
-
-        # Extract tolerance data per element from ideal_profile_data
-        global_tolerance_data = ideal_profile_data.get("tolerance", {}) # This can be per-element or global
+        global_tolerance_data = ideal_profile_data.get("tolerance", {}) 
 
         processed_candidates = []
         for candidate in candidates_numerical_features:
             candidate_features = candidate.get("features")
-            if not candidate_features:
-                candidate["fit"] = {"best_fit_element": "No Features", "score": float('inf')}
+            candidate_category = candidate.get("category")
+
+            if not candidate_features or not candidate_category:
+                candidate["fit"] = {"best_fit_element": "No Features or Category", "score": float('inf')}
                 processed_candidates.append(candidate)
                 continue
 
             best_fit_score = float('inf')
             best_fit_element_name = "N/A"
 
-            # Find the best fitting ideal element for this candidate
-            for ideal_element_features in ideal_elements_with_features:
+            # Filter ideal elements by the candidate's category
+            relevant_ideal_elements = [
+                ideal for ideal in ideal_elements_with_features 
+                if ideal.get("category") == candidate_category
+            ]
+
+            if not relevant_ideal_elements:
+                candidate["fit"] = {"best_fit_element": "No Matching Ideal Category", "score": float('inf')}
+                processed_candidates.append(candidate)
+                continue
+
+            for ideal_element_features in relevant_ideal_elements:
                 ideal_name = ideal_element_features.get("element", "Unknown")
 
-                # Get element-specific tolerance data, if available.
-                # Assuming tolerance in ideal_profile is structured as {element_label: {label_type: value}}
                 element_tolerance_data = global_tolerance_data.get(ideal_name, {})
 
                 score = self._compute_single_fit_score(
+                    candidate_category, # NEW: Pass candidate_category
                     candidate_features, 
                     ideal_element_features.get("features", {}), 
                     element_tolerance_data
@@ -219,19 +209,37 @@ class IdealProfileEvaluator:
 
         for i, candidate in enumerate(candidates_numerical_features):
             candidate_features = candidate.get("features")
-            if not candidate_features:
-                candidate["fit"] = {"best_fit_element": "No Features", "score": float('inf')}
+            candidate_category = candidate.get("category")
+
+            if not candidate_features or not candidate_category:
+                candidate["fit"] = {"best_fit_element": "No Features or Category", "score": float('inf')}
                 processed_candidates.append(candidate)
+                progress = int((i + 1) / total_candidates * 100)
+                yield {"progress": progress, "message": f"{i + 1}/{total_candidates} 候補をスキップ中 ({candidate.get('element', '不明な要素')}: 特徴量またはカテゴリ不足)..."}
                 continue
 
             best_fit_score = float('inf')
             best_fit_element_name = "N/A"
 
-            for ideal_element_features in ideal_elements_with_features:
+            # Filter ideal elements by the candidate's category
+            relevant_ideal_elements = [
+                ideal for ideal in ideal_elements_with_features 
+                if ideal.get("category") == candidate_category
+            ]
+
+            if not relevant_ideal_elements:
+                candidate["fit"] = {"best_fit_element": "No Matching Ideal Category", "score": float('inf')}
+                processed_candidates.append(candidate)
+                progress = int((i + 1) / total_candidates * 100)
+                yield {"progress": progress, "message": f"{i + 1}/{total_candidates} 候補をスキップ中 ({candidate.get('element', '不明な要素')}: 一致する理想カテゴリなし)..."}
+                continue
+
+            for ideal_element_features in relevant_ideal_elements:
                 ideal_name = ideal_element_features.get("element", "Unknown")
                 element_tolerance_data = global_tolerance_data.get(ideal_name, {})
 
                 score = self._compute_single_fit_score(
+                    candidate_category, # NEW: Pass candidate_category
                     candidate_features, 
                     ideal_element_features.get("features", {}), 
                     element_tolerance_data
@@ -248,7 +256,7 @@ class IdealProfileEvaluator:
             processed_candidates.append(candidate)
             
             progress = int((i + 1) / total_candidates * 100)
-            if progress < 100: # Don't send 100% until all processing is done
+            if progress < 100:
                 yield {"progress": progress, "message": f"{i + 1}/{total_candidates} 候補を評価中..."}
         
         yield {"progress": 100, "message": "適合度計算が完了しました", "complete": True, "fit_results": processed_candidates}

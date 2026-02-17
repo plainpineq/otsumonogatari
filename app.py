@@ -333,11 +333,22 @@ def view_document(doc_id):
     document.setdefault("composition_meta", {})
     document.setdefault("intent", {"fields": {}}) # Add default for intent
     
+    # Load semantic label schema for dynamic UI generation
+    semantic_label_schema = {}
+    try:
+        with open("prompt_templates/semantic_label_schema.json", "r", encoding="utf-8") as f:
+            semantic_label_schema = json.load(f)
+    except FileNotFoundError:
+        print("Warning: semantic_label_schema.json not found.")
+    except json.JSONDecodeError:
+        print("Warning: semantic_label_schema.json is invalid JSON.")
+
     response = make_response(render_template(
         "document.html",
         document=document,
         labels=labels,
-        mapped_doc_type_id=mapped_doc_type_id
+        mapped_doc_type_id=mapped_doc_type_id,
+        semantic_label_schema=semantic_label_schema # NEW: Pass full schema to template
     ))
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
@@ -734,112 +745,391 @@ def evaluate_document(doc_id):
 
 
 
-@app.route('/document/<doc_id>/evaluate/stream')
+@app.route('/document/<doc_id>/evaluate/stream', methods=['GET', 'POST'])
+
+
+
 def evaluate_stream(doc_id):
+
+
+
     """
+
+
+
     Server-Sent Events (SSE) を使用して、意味ラベル評価の結果をストリーミングする。
+
+
+
+    classification_filter が指定された場合、その分類のみを評価対象とする。
+
+
+
     """
+
+
+
     from flask import Response
+
+
+
     import logging
 
+
+
+
+
+
+
     if "user_id" not in session:
+
+
+
         return Response("Unauthorized", status=401)
+
+
+
     
+
+
+
     llm_config = session.get("llm_servers", {}).get("evaluation", {})
 
-    def generate_labels_stream(user_id_arg, llm_config_arg):
+
+
+    classification_filter = request.args.get("classification_filter") # NEW: Get classification filter from query params
+
+
+
+
+
+
+
+    def generate_labels_stream(user_id_arg, llm_config_arg, classification_filter_arg):
+
+
+
         data = load_user_data(user_id_arg)
+
+
+
         document = find_document(data, doc_id)
 
-        # 評価対象のデータが存在するか確認
+
+
+
+
+
+
         if not document:
+
+
+
             yield f"data: {json.dumps({'error': 'ドキュメントが見つかりません。'})}\n\n"
+
+
+
             return
+
+
+
         
+
+
+
         final_evaluation_suggestions = []
 
-        # 1. document["llm_suggestions"] から「基本設定」以外のカテゴリを追加
-        #    もしllm_suggestionsが存在し、かつそれがリストであれば処理
+
+
+
+
+
+
         if document.get("llm_suggestions") and isinstance(document["llm_suggestions"], list):
+
+
+
             for suggestion_group in document["llm_suggestions"]:
+
+
+
                 if suggestion_group.get("category") != "基本設定":
+
+
+
+                    # NEW: Apply classification filter if present
+
+
+
+                    if classification_filter_arg and suggestion_group.get("category") != classification_filter_arg:
+
+
+
+                        continue
+
+
+
                     final_evaluation_suggestions.append(suggestion_group)
 
-        # 2. document["selected_basic_elements"] を semantic_labeler が処理できる形式に変換して追加
-        selected_basic_elements = document.get("selected_basic_elements", {})
-        if selected_basic_elements:
-            basic_settings_category_label = "基本設定"
-            basic_elements_data = {"category": basic_settings_category_label, "elements": {}}
 
-            id_to_label_map = {}
-            base_category_in_composition = next(
-                (cat for cat in document.get("composition_elements", {}).get("categories", []) 
-                 if cat.get("id") == "base"),
-                None
-            )
-            if base_category_in_composition:
-                for element in base_category_in_composition.get("elements", []):
-                    id_to_label_map[element.get("id")] = element.get("label")
 
-            for key_id, value in selected_basic_elements.items():
-                japanese_label = id_to_label_map.get(key_id, key_id)
-                basic_elements_data["elements"][japanese_label] = [value]
-            
-            if basic_elements_data["elements"]:
-                final_evaluation_suggestions.insert(0, basic_elements_data) # 先頭に追加して優先させる
+
+
+
 
         evaluation_input = {"llm_suggestions": final_evaluation_suggestions}
 
 
+
+
+
+
+
         if not evaluation_input["llm_suggestions"]:
-            yield f"data: {json.dumps({'error': '評価対象の構成要素候補または確定済み基本設定が見つかりません。'})}\n\n"
+
+
+
+            yield f"data: {json.dumps({'error': '評価対象の構成要素候補が見つかりません。'})}\n\n"
+
+
+
             return
 
+
+
+
+
+
+
         user_data_dir = get_user_data_path(user_id_arg)
+
+
+
         log_file_path = os.path.join(user_data_dir, "labeler.log")
+
+
+
         
+
+
+
         all_results = []
+
+
+
         logger_to_cleanup = logging.getLogger("semantic_labeler")
+
+
+
+
+
+
 
         total_items_count = 0 
 
+
+
+
+
+
+
         try:
+
+
+
             for event_data in semantic_labeler.label_suggestions(evaluation_input, llm_config=llm_config_arg, user_id=user_id_arg, log_file_path=log_file_path):
+
+
+
                 event_type = event_data.get("event")
 
+
+
+
+
+
+
                 if event_type == "total_items":
+
+
+
                     total_items_count = event_data.get("count", 0)
+
+
+
                     yield f"data: {json.dumps({'progress_total': total_items_count})}\n\n"
+
+
+
                 elif event_type == "progress":
+
+
+
                     yield f"data: {json.dumps({
+
+
+
                         'progress_current': event_data['progress_current'],
+
+
+
                         'progress_total': event_data['progress_total'],
+
+
+
                         'category_label': event_data['category_label'],
+
+
+
                         'current_element': event_data['current_element']
+
+
+
                     })}\n\n"
+
+
+
                 elif event_type == "semantic_label":
+
+
+
                     labeled_result = event_data.get("data")
+
+
+
                     if labeled_result:
+
+
+
                         all_results.append(labeled_result)
+
+
+
                         yield f"data: {json.dumps({'semantic_label': labeled_result}, ensure_ascii=False)}\n\n"
+
+
+
                 else:
+
+
+
                     logging.warning(f"Received unexpected event type: {event_type} with data: {event_data}")
+
+
+
             
+
+
+
             # Save all results to document["semantic_labels"]
-            document["semantic_labels"] = all_results
+
+
+
+            # If a filter was applied, only update the relevant parts or re-evaluate all
+
+
+
+            # For simplicity, if a filter is present, we'll re-evaluate all after the filtered one completes
+
+
+
+            # Or, for more precise update, only append/replace the filtered results.
+
+
+
+            # Here, we will append/replace, ensuring only the labels for the processed category are updated.
+
+
+
+            if classification_filter_arg:
+
+
+
+                # Remove old labels for this category
+
+
+
+                document["semantic_labels"] = [
+
+
+
+                    label for label in document.get("semantic_labels", []) 
+
+
+
+                    if label.get("category") != classification_filter_arg
+
+
+
+                ]
+
+
+
+                document["semantic_labels"].extend(all_results)
+
+
+
+            else:
+
+
+
+                document["semantic_labels"] = all_results # No filter, replace all
+
+
+
+
+
+
+
             save_user_data(user_id_arg, data)
+
+
+
             
+
+
+
         except Exception as e:
+
+
+
             logging.error(f"Error during streaming semantic labels: {e}")
+
+
+
             yield f"data: {json.dumps({'error': f'ストリーミング中にエラーが発生しました: {str(e)}'})}\n\n"
+
+
+
         finally:
+
+
+
             for handler in logger_to_cleanup.handlers[:]:
+
+
+
                 if isinstance(handler, logging.FileHandler):
+
+
+
                     handler.close()
+
+
+
                 logger_to_cleanup.removeHandler(handler)
+
+
+
             yield "event: end_stream\ndata: {}\n\n"
 
-    return Response(generate_labels_stream(session["user_id"], llm_config), mimetype='text/event-stream')
+
+
+
+
+
+
+    return Response(generate_labels_stream(session["user_id"], llm_config, classification_filter), mimetype='text/event-stream')
 
 
 @app.route("/document/<doc_id>/download_evaluation")
