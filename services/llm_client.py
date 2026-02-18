@@ -2,6 +2,7 @@ import google.generativeai as genai
 import openai
 from openai import APIConnectionError
 import json
+import logging
 from typing import Optional
 import re
 import requests # NEW: Import for Hugging Face API calls
@@ -39,7 +40,7 @@ def _call_gemini_llm(api_key: str, model_name: str, prompt: str) -> tuple[str, d
         # Return the ORIGINAL raw text and the parsed dictionary
         return raw_response_text, parsed_response
     except Exception as e:
-        print(f"Error calling Gemini LLM: {e}")
+        logging.error(f"Error calling Gemini LLM: {e}")
         raise RuntimeError(f"Failed to get response from Gemini LLM: {e}")
 
 def _call_huggingface_llm(api_key: Optional[str], base_endpoint: str, model_id: str, prompt: str) -> tuple[str, dict]:
@@ -54,7 +55,7 @@ def _call_huggingface_llm(api_key: Optional[str], base_endpoint: str, model_id: 
 
     # Construct the full model endpoint URL
     model_endpoint = f"{base_endpoint.rstrip('/')}/{model_id.lstrip('/')}"
-    print(f"[LLM] Hugging Face Model Endpoint: {model_endpoint}")
+    logging.info(f"[LLM] Hugging Face Model Endpoint: {model_endpoint}")
 
     headers = {}
     if api_key:
@@ -98,13 +99,13 @@ def _call_huggingface_llm(api_key: Optional[str], base_endpoint: str, model_id: 
         
         return raw_text, parsed_response
     except requests.exceptions.RequestException as e:
-        print(f"Error calling Hugging Face LLM: {e}")
+        logging.error(f"Error calling Hugging Face LLM: {e}")
         raise RuntimeError(f"Failed to connect to Hugging Face LLM at {model_endpoint}: {e}")
     except json.JSONDecodeError as e:
-        print(f"Error decoding JSON from Hugging Face LLM response: {e}. Raw text: {raw_text}")
+        logging.error(f"Error decoding JSON from Hugging Face LLM response: {e}. Raw text: {raw_text}")
         raise RuntimeError(f"Hugging Face LLM responded with invalid JSON: {e}")
     except Exception as e:
-        print(f"Error calling Hugging Face LLM: {e}")
+        logging.error(f"Error calling Hugging Face LLM: {e}")
         raise RuntimeError(f"Failed to get response from Hugging Face LLM: {e}")
 
     genai.configure(api_key=api_key)
@@ -130,7 +131,7 @@ def _call_huggingface_llm(api_key: Optional[str], base_endpoint: str, model_id: 
         # Return the ORIGINAL raw text and the parsed dictionary
         return raw_response_text, parsed_response
     except Exception as e:
-        print(f"Error calling Gemini LLM: {e}")
+        logging.error(f"Error calling Gemini LLM: {e}")
         raise RuntimeError(f"Failed to get response from Gemini LLM: {e}")
 
 def _call_openai_llm(api_key: str, model_name: str, prompt: str, base_url: Optional[str] = None) -> tuple[str, dict]:
@@ -170,10 +171,10 @@ def _call_openai_llm(api_key: str, model_name: str, prompt: str, base_url: Optio
         parsed_response = json.loads(json_str)
         return raw_response_text, parsed_response
     except openai.APIConnectionError as e:
-        print(f"Error connecting to OpenAI-compatible LLM at {base_url}: {e}")
+        logging.error(f"Error connecting to OpenAI-compatible LLM at {base_url}: {e}")
         raise RuntimeError(f"LLMサーバーへの接続に失敗しました。URL（{base_url}）が正しいか、サーバーが起動しているか確認してください。")
     except Exception as e:
-        print(f"Error calling OpenAI LLM: {e}")
+        logging.error(f"Error calling OpenAI LLM: {e}")
         raise RuntimeError(f"Failed to get response from OpenAI LLM: {e}")
 
 def call_llm(
@@ -189,7 +190,7 @@ def call_llm(
     """
     Dispatches to the appropriate LLM client based on the llm_provider.
     """
-    print(f"[LLM] PROVIDER: {llm_provider}: Model: {model_name if model_name else huggingface_model_id}")
+    logging.info(f"[LLM] PROVIDER: {llm_provider}: Model: {model_name if model_name else huggingface_model_id}")
 
     if llm_provider == "gemini":
         if not model_name:

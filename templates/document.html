@@ -243,32 +243,78 @@
                                 const initialSemanticLabels = {{ document.semantic_labels | tojson | default([], true) }};
                                 const semanticLabelSchema = JSON.parse(document.getElementById('semantic-label-schema').dataset.schema || '{}');
                                 const evaluationResultsBody = document.getElementById('evaluation-results-body');
+                                const evaluationResultsThead = document.getElementById('evaluation-results-thead');
 
-                                initialSemanticLabels.forEach(item => {
-                                    const classificationName = item.category;
-                                    const labelsForClassification = semanticLabelSchema[classificationName];
+                                // Function to generate headers
+                                function generateEvaluationTableHeaders(itemForSchemaLookup) {
+                                    const classificationNameForHeaders = itemForSchemaLookup.category;
+                                    const labelsForHeaders = semanticLabelSchema[classificationNameForHeaders];
 
-                                    if (labelsForClassification) {
-                                        let rowHtml = `
-                                            <tr>
-                                                <td>${item.category}</td>
-                                                <td>${item.element}</td>
-                                                <td><small>${item.text}</small></td>
-                                        `;
-                                        for (const labelKey in labelsForClassification) {
-                                            const labelValue = item.labels[labelKey];
-                                            const labelSpec = labelsForClassification[labelKey];
-
-                                            if (labelSpec.type === 'scalar') {
-                                                rowHtml += `<td>${labelValue || '-'}</td>`;
-                                            } else if (labelSpec.type === 'vector') {
-                                                rowHtml += `<td><code>${(labelValue && labelValue.join(', ')) || '-'}</code></td>`;
-                                            } else {
-                                                rowHtml += `<td>${labelValue || '-'}</td>`;
+                                    if (labelsForHeaders && !evaluationResultsThead.dataset.headersGenerated) {
+                                        const titleElement = document.getElementById('current-evaluation-results-title');
+                                        if (titleElement) {
+                                            titleElement.textContent = `${classificationNameForHeaders} 評価結果 (既存)`;
+                                        }
+                                        let headerRowHtml = `<tr><th>カテゴリー</th><th>要素</th><th>元のテキスト</th>`;
+                                        for (const enKey in labelsForHeaders) { // Iterate over the schema to get ordered headers
+                                            if (labelsForHeaders.hasOwnProperty(enKey)) {
+                                                const jaLabel = labelsForHeaders[enKey].ja_label;
+                                                headerRowHtml += `<th>${jaLabel}</th>`;
                                             }
                                         }
-                                        rowHtml += '</tr>';
-                                        evaluationResultsBody.insertAdjacentHTML('beforeend', rowHtml);
+                                        headerRowHtml += `</tr>`;
+                                        evaluationResultsThead.innerHTML = headerRowHtml;
+                                        evaluationResultsThead.dataset.headersGenerated = 'true'; // Mark as generated
+                                    }
+                                }
+
+                                // Render initial semantic labels rows
+                                initialSemanticLabels.forEach(item => {
+                                    // Generate headers once, using the first item's category
+                                    generateEvaluationTableHeaders(item);
+
+                                    const classificationName = item.category;
+                                    const labelsForClassificationSchema = semanticLabelSchema[classificationName];
+
+                                    if (labelsForClassificationSchema) {
+                                        console.log('DEBUG: Type of item.labels:', typeof item.labels, 'Value:', item.labels);
+                                        
+                                        // Ensure item.labels is always an array for iteration, handling old data format and null/undefined
+                                        let itemLabelsArray = [];
+                                        if (Array.isArray(item.labels)) {
+                                            itemLabelsArray = item.labels;
+                                        } else if (typeof item.labels === 'object' && item.labels !== null) {
+                                            // If it's an object (like old format), wrap it in an array
+                                            itemLabelsArray = [item.labels];
+                                        }
+                                        // If item.labels is null, undefined, or other non-object type, itemLabelsArray remains empty, preventing error
+
+                                        itemLabelsArray.forEach(proposalLabels => { // Loop through each proposal's evaluation
+                                            let rowHtml = `
+                                                <tr>
+                                                    <td>${item.category}</td>
+                                                    <td>${item.element}</td>
+                                                    <td><small>${item.text}</small></td>
+                                            `;
+                                            // Get ordered keys from schema to ensure consistent column order
+                                            for (const enKey in labelsForClassificationSchema) {
+                                                if (labelsForClassificationSchema.hasOwnProperty(enKey)) {
+                                                    const jaLabel = labelsForClassificationSchema[enKey].ja_label; // Get Japanese key
+                                                    const labelValue = proposalLabels[jaLabel]; // Use Japanese key to get value from item.labels
+                                                    const labelSpec = labelsForClassificationSchema[enKey]; // Use enKey to get spec details
+
+                                                    if (labelSpec.type === 'scalar') {
+                                                        rowHtml += `<td>${labelValue || '-'}</td>`;
+                                                    } else if (labelSpec.type === 'vector') {
+                                                        rowHtml += `<td><code>${(labelValue && labelValue.join(', ')) || '-'}</code></td>`;
+                                                    } else {
+                                                        rowHtml += `<td>${labelValue || '-'}</td>`;
+                                                    }
+                                                }
+                                            }
+                                            rowHtml += '</tr>';
+                                            evaluationResultsBody.insertAdjacentHTML('beforeend', rowHtml);
+                                        });
                                     }
                                 });
                             });
@@ -299,14 +345,26 @@
                                 <th>カテゴリ</th>
                                 <th>要素名</th>
                                 <th style="width: 40%;">テキスト</th>
-                                {# Dynamically generate scalar and vector feature headers #}
+                                {# Dynamically generate scalar and vector feature headers with Japanese labels #}
                                 {% set first_feature_set = document.numerical_features[0].features if document.numerical_features else none %}
                                 {% if first_feature_set %}
                                     {% for scalar_key in first_feature_set.scalar_features.keys() %}
-                                        <th>{{ scalar_key }}</th>
+                                        {% set ja_label = scalar_key %}
+                                        {% for cat, cat_schema in semantic_label_schema.items() %}
+                                            {% if scalar_key in cat_schema %}
+                                                {% set ja_label = cat_schema[scalar_key].ja_label %}
+                                            {% endif %}
+                                        {% endfor %}
+                                        <th>{{ ja_label }}</th>
                                     {% endfor %}
                                     {% for vector_key in first_feature_set.vector_features.keys() %}
-                                        <th>{{ vector_key }} (Vector)</th>
+                                        {% set ja_label = vector_key %}
+                                        {% for cat, cat_schema in semantic_label_schema.items() %}
+                                            {% if vector_key in cat_schema %}
+                                                {% set ja_label = cat_schema[vector_key].ja_label %}
+                                            {% endif %}
+                                        {% endfor %}
+                                        <th>{{ ja_label }} (Vector)</th>
                                     {% endfor %}
                                 {% endif %}
                             </tr>
@@ -755,40 +813,48 @@ document.addEventListener('DOMContentLoaded', function() {
         evaluationResultsBody.innerHTML = ''; // Clear previous results
         
         // Set dynamic table headers
+        const allLabelKeysForRows = []; // To keep track of column order
         if (classificationFilter && semanticLabelSchema[classificationFilter]) {
             currentEvaluationResultsTitle.textContent = `${classificationFilter} 評価結果`;
             const labelsForClassification = semanticLabelSchema[classificationFilter];
             let headerHtml = '<tr><th>カテゴリ</th><th>要素名</th><th style="width: 40%;">テキスト</th>';
             for (const labelKey in labelsForClassification) {
-                headerHtml += `<th>${labelKey}</th>`;
+                const jaLabel = labelsForClassification[labelKey].ja_label;
+                headerHtml += `<th>${jaLabel}</th>`;
+                allLabelKeysForRows.push(labelKey);
             }
             headerHtml += '</tr>';
             evaluationResultsThead.innerHTML = headerHtml;
         } else {
             currentEvaluationResultsTitle.textContent = `全評価結果`;
             // Default headers for "全て評価" or if no filter, showing all possible headers
-            let allLabelKeys = new Set();
+            let allLabelKeysMap = new Map();
             for (const cat in semanticLabelSchema) {
                 if (cat === "基本設定") continue;
                 for (const labelKey in semanticLabelSchema[cat]) {
-                    allLabelKeys.add(labelKey);
+                    if (!allLabelKeysMap.has(labelKey)) {
+                        allLabelKeysMap.set(labelKey, semanticLabelSchema[cat][labelKey].ja_label);
+                        allLabelKeysForRows.push(labelKey);
+                    }
                 }
             }
             let headerHtml = '<tr><th>カテゴリ</th><th>要素名</th><th style="width: 40%;">テキスト</th>';
-            allLabelKeys.forEach(labelKey => {
-                headerHtml += `<th>${labelKey}</th>`;
+            allLabelKeysForRows.forEach(labelKey => {
+                headerHtml += `<th>${allLabelKeysMap.get(labelKey)}</th>`;
             });
             headerHtml += '</tr>';
             evaluationResultsThead.innerHTML = headerHtml;
         }
+        evaluationResultsThead.dataset.orderedKeys = JSON.stringify(allLabelKeysForRows);
 
+        let triggerUrl = `/document/${docId}/evaluate`;
         let streamUrl = `/document/${docId}/evaluate/stream`;
         if (classificationFilter) {
             streamUrl += `?classification_filter=${encodeURIComponent(classificationFilter)}`;
         }
 
         try {
-            const response = await fetch(streamUrl, {
+            const response = await fetch(triggerUrl, {
                 method: 'POST', // Use POST for evaluation trigger
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({})
@@ -830,27 +896,41 @@ document.addEventListener('DOMContentLoaded', function() {
                     const item = data.semantic_label;
                     const classificationName = item.category;
                     const labelsForClassification = semanticLabelSchema[classificationName];
+                    const orderedKeys = JSON.parse(evaluationResultsThead.dataset.orderedKeys || '[]');
 
-                    let rowHtml = `
-                        <tr>
-                            <td>${item.category}</td>
-                            <td>${item.element}</td>
-                            <td><small>${item.text}</small></td>
-                    `;
-                    for (const labelKey in labelsForClassification) {
-                        const labelValue = item.labels[labelKey];
-                        const labelSpec = labelsForClassification[labelKey];
+                    if (labelsForClassification) {
+                        // Handle multiple proposals per element
+                        let itemLabelsArray = Array.isArray(item.labels) ? item.labels : [item.labels];
 
-                        if (labelSpec.type === 'scalar') {
-                            rowHtml += `<td>${labelValue || '-'}</td>`;
-                        } else if (labelSpec.type === 'vector') {
-                            rowHtml += `<td><code>${(labelValue && labelValue.join(', ')) || '-'}</code></td>`;
-                        } else {
-                            rowHtml += `<td>${labelValue || '-'}</td>`;
-                        }
+                        itemLabelsArray.forEach(proposalLabels => {
+                            let rowHtml = `
+                                <tr>
+                                    <td>${item.category}</td>
+                                    <td>${item.element}</td>
+                                    <td><small>${item.text}</small></td>
+                            `;
+                            
+                            orderedKeys.forEach(enKey => {
+                                const labelSpec = labelsForClassification[enKey];
+                                if (labelSpec) {
+                                    const jaLabel = labelSpec.ja_label;
+                                    const labelValue = proposalLabels[jaLabel];
+
+                                    if (labelSpec.type === 'scalar') {
+                                        rowHtml += `<td>${labelValue || '-'}</td>`;
+                                    } else if (labelSpec.type === 'vector') {
+                                        rowHtml += `<td><code>${(labelValue && labelValue.join(', ')) || '-'}</code></td>`;
+                                    } else {
+                                        rowHtml += `<td>${labelValue || '-'}</td>`;
+                                    }
+                                } else {
+                                    rowHtml += `<td>-</td>`;
+                                }
+                            });
+                            rowHtml += '</tr>';
+                            evaluationResultsBody.insertAdjacentHTML('beforeend', rowHtml);
+                        });
                     }
-                    rowHtml += '</tr>';
-                    evaluationResultsBody.insertAdjacentHTML('beforeend', rowHtml);
                 }
             };
 
@@ -1017,71 +1097,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         renderEvaluationButtons(); // Render evaluation buttons on initialization
     }
-
-    // --- Initial render of existing semantic labels ---
-    if (documentData.semantic_labels && documentData.semantic_labels.length > 0) {
-        // Assume all existing labels belong to the same category for initial header render or choose a representative
-        const firstLabel = documentData.semantic_labels[0];
-        const classificationName = firstLabel.category;
-        
-        if (classificationName && semanticLabelSchema[classificationName]) {
-            currentEvaluationResultsTitle.textContent = `${classificationName} 評価結果 (既存)`;
-            const labelsForClassification = semanticLabelSchema[classificationName];
-            let headerHtml = '<tr><th>カテゴリ</th><th>要素名</th><th style="width: 40%;">テキスト</th>';
-            for (const labelKey in labelsForClassification) {
-                headerHtml += `<th>${labelKey}</th>`;
-            }
-            headerHtml += '</tr>';
-            evaluationResultsThead.innerHTML = headerHtml;
-
-            // Populate existing rows
-            documentData.semantic_labels.forEach(item => {
-                const classificationName = item.category;
-                const labelsForClassification = semanticLabelSchema[classificationName];
-                
-                if (labelsForClassification) {
-                    let rowHtml = `
-                        <tr>
-                            <td>${item.category}</td>
-                            <td>${item.element}</td>
-                            <td><small>${item.text}</small></td>
-                    `;
-                    for (const labelKey in labelsForClassification) {
-                        const labelValue = item.labels[labelKey];
-                        const labelSpec = labelsForClassification[labelKey];
-
-                        if (labelSpec.type === 'scalar') {
-                            rowHtml += `<td>${labelValue || '-'}</td>`;
-                        } else if (labelSpec.type === 'vector') {
-                            rowHtml += `<td><code>${(labelValue && labelValue.join(', ')) || '-'}</code></td>`;
-                        } else {
-                            rowHtml += `<td>${labelValue || '-'}</td>`;
-                        }
-                    }
-                    rowHtml += '</tr>';
-                    evaluationResultsBody.insertAdjacentHTML('beforeend', rowHtml);
-                }
-            });
-        } else {
-            currentEvaluationResultsTitle.textContent = `既存評価結果`;
-            // Fallback for existing labels if schema data is not found for the category
-            let headerHtml = '<tr><th>カテゴリ</th><th>要素名</th><th style="width: 40%;">テキスト</th><th>ラベル</th></tr>';
-            evaluationResultsThead.innerHTML = headerHtml;
-
-             documentData.semantic_labels.forEach(item => {
-                 let rowHtml = `
-                    <tr>
-                        <td>${item.category}</td>
-                        <td>${item.element}</td>
-                        <td><small>${item.text}</small></td>
-                        <td><code>${JSON.stringify(item.labels, null, 2)}</code></td>
-                    </tr>
-                `;
-                evaluationResultsBody.insertAdjacentHTML('beforeend', rowHtml);
-            });
-        }
-    }
-
 
     initializeView();
 });
