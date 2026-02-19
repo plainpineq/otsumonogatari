@@ -30,9 +30,6 @@
         <button class="nav-link" id="evaluation-tab" data-bs-toggle="tab" data-bs-target="#evaluation" type="button" role="tab" aria-controls="evaluation" aria-selected="false">評価</button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="vectorization-tab" data-bs-toggle="tab" data-bs-target="#vectorization" type="button" role="tab" aria-controls="vectorization" aria-selected="false">数値化</button>
-    </li>
-    <li class="nav-item" role="presentation">
         <button class="nav-link" id="ideal-profile-tab" data-bs-toggle="tab" data-bs-target="#ideal-profile" type="button" role="tab" aria-controls="ideal-profile" aria-selected="false">評価基準</button>
     </li>
     <li class="nav-item" role="presentation">
@@ -236,72 +233,6 @@
             <div id="evaluation-results-sections-container">
                 <!-- Category-specific evaluation result tables will be dynamically generated here -->
             </div>
-        </div>
-    </div>
-    <div class="tab-pane fade" id="vectorization" role="tabpanel" aria-labelledby="vectorization-tab">
-        <div class="card p-4 shadow-sm mt-3">
-            <h2 class="h4 mb-3">数値特徴量化</h2>
-            <p>「評価」タブで付与された意味ラベルを、後続の最適化処理で使用できる数値ベクトルに変換します。</p>
-            <div class="d-flex gap-2">
-                <form id="vectorization-form" action="{{ url_for('vectorize_document', doc_id=document.id) }}" method="POST">
-                    <button type="submit" id="vectorization-button" class="btn btn-primary">数値化を実行</button>
-                </form>
-            </div>
-            <hr>
-
-            {% if document.numerical_features %}
-                <h3 class="h5 mt-3">数値化結果</h3>
-                <div class="table-responsive">
-                    <table class="table table-bordered table-sm">
-                        <thead class="table-light">
-                            <tr>
-                                <th>カテゴリ</th>
-                                <th>要素名</th>
-                                <th style="width: 40%;">テキスト</th>
-                                {# Dynamically generate scalar and vector feature headers with Japanese labels #}
-                                {% set first_feature_set = document.numerical_features[0].features if document.numerical_features else none %}
-                                {% if first_feature_set %}
-                                    {% for scalar_key in first_feature_set.scalar_features.keys() %}
-                                        {% set ja_label = scalar_key %}
-                                        {% for cat, cat_schema in semantic_label_schema.items() %}
-                                            {% if scalar_key in cat_schema %}
-                                                {% set ja_label = cat_schema[scalar_key].ja_label %}
-                                            {% endif %}
-                                        {% endfor %}
-                                        <th>{{ ja_label }}</th>
-                                    {% endfor %}
-                                    {% for vector_key in first_feature_set.vector_features.keys() %}
-                                        {% set ja_label = vector_key %}
-                                        {% for cat, cat_schema in semantic_label_schema.items() %}
-                                            {% if vector_key in cat_schema %}
-                                                {% set ja_label = cat_schema[vector_key].ja_label %}
-                                            {% endif %}
-                                        {% endfor %}
-                                        <th>{{ ja_label }} (Vector)</th>
-                                    {% endfor %}
-                                {% endif %}
-                            </tr>
-                        </thead>
-                        <tbody>
-                        {% for item in document.numerical_features %}
-                            <tr>
-                                <td>{{ item.category }}</td>
-                                <td>{{ item.element }}</td>
-                                <td><small>{{ item.text }}</small></td>
-                                {% for scalar_value in item.features.scalar_features.values() %}
-                                    <td>{{ scalar_value }}</td>
-                                {% endfor %}
-                                {% for vector_value in item.features.vector_features.values() %}
-                                    <td><code>{{ vector_value | join(', ') }}</code></td>
-                                {% endfor %}
-                            </tr>
-                        {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            {% elif document.numerical_features is not none %}
-                <div class="alert alert-warning">数値化されたデータがありません。</div>
-            {% endif %}
         </div>
     </div>
     <div class="tab-pane fade" id="element-fit" role="tabpanel" aria-labelledby="element-fit-tab">

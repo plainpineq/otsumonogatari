@@ -1,97 +1,155 @@
 import json
-from typing import List, Dict, Any
+from typing import Dict, Any
+
 
 class FeatureExtractor:
     """
-    意味ラベルを汎用的な数値特徴量（スカラーおよびベクトル）に変換するクラス。
-    ラベルの定義はすべて外部のconfigファイルに依存する。
+    既存 classification を変更せず、
+    5段階評価（0-4）へ対応した安全版
     """
-    def __init__(self, config_path: str = 'prompt_templates/semantic_label_schema.json'):
+
+    def __init__(self, schema_path: str = "prompt_templates/semantic_label_schema.json"):
+        self.schema_path = schema_path
+        self.schema = self._load_schema()
+        self._build_global_label_index()
+
+    # --------------------------
+    # スキーマ読み込み
+    # --------------------------
+    def _load_schema(self):
+        with open(self.schema_path, "r", encoding="utf-8") as f:
+            schema = json.load(f)
+        return schema
+
+    def _build_global_label_index(self):
+        self.global_label_order = []
+        self.global_index_map = {}
+        index = 0
+
+        # schema ルートの 'scale' 等を除外して分類のみをループ
+        for classification in self.schema.keys():
+            if classification == "scale":
+                continue
+            
+            # 各分類のラベルを取得（日本語ラベル ja_label ではなく、キー名 dramatic, causal 等を使用）
+            labels = list(self.schema[classification].keys())
+            for label in labels:
+                if label == "scale": continue # 分類内個別スケールがあれば除外
+                
+                key = (classification, label)
+                self.global_label_order.append(key)
+                self.global_index_map[key] = index
+                index += 1
+
+    def to_global_vector(self, feature_data: Dict[str, Any]) -> list:
         """
-        コンストラクタ。ラベル設定ファイルを読み込み、特徴量化の準備を行う。
+        全分類・全ラベルを含む固定次元のベクトルを返す。
         """
+        vector = [0] * len(self.global_label_order)
+
+        classification = feature_data.get("classification")
+        scalar_features = feature_data.get("scalar_features", {})
+
+        if not classification:
+            return vector
+
+        for label, value in scalar_features.items():
+            key = (classification, label)
+            if key in self.global_index_map:
+                index = self.global_index_map[key]
+                vector[index] = value
+
+        return vector
+
+    def get_global_dimension(self) -> int:
+        """
+        グローバルベクトルの次元数を返す。
+        """
+        return len(self.global_label_order)
+
+    # --------------------------
+    # ラベル取得（既存分類のみ）
+    # --------------------------
+    def get_labels(self, classification: str):
+        if classification not in self.schema:
+            raise KeyError(
+                f"schemaに存在しないclassificationです: {classification}"
+            )
+
+        return list(self.schema[classification].keys())
+
+    # --------------------------
+    # スケール取得（0-4固定）
+    # --------------------------
+    def get_scale(self, classification: str = None):
+        # グローバルスケールまたは分類別スケールを返す
+        if classification and classification in self.schema and "scale" in self.schema[classification]:
+            return self.schema[classification]["scale"]
+        return self.schema.get("scale", {"min": 0, "max": 4})
+
+    # --------------------------
+    # 値バリデーション（0-4）
+    # --------------------------
+    def _validate_value(self, value: Any, classification: str) -> int:
+        scale = self.get_scale(classification)
+        min_v = scale["min"]
+        max_v = scale["max"]
+
         try:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            raise ValueError(f"設定ファイル '{config_path}' の読み込みに失敗しました: {e}")
+            value = int(value)
+        except Exception:
+            return min_v
 
-        self.classification_features_specs = {}
+        return max(min_v, min(max_v, value))
 
-        for classification_name, labels_config in config.items():
-            if classification_name == "scale": continue # Skip global scale config
-
-            scalar_label_maps = {}
-
-            for key, spec in labels_config.items():
-                label_type = spec.get("type", "scalar")
-                values_data = spec.get("values", {})
-
-                if label_type == "scalar":
-                    if isinstance(values_data, dict):
-                        # Ensure values are ints
-                        scalar_label_maps[key] = {k: int(k) for k in values_data.keys()}
-                    else:
-                        raise ValueError(f"FeatureExtractor: スカラー型ラベル '{key}' の'values'フィールドは辞書である必要があります。")
-            
-            self.classification_features_specs[classification_name] = {
-                "scalar_label_maps": scalar_label_maps
-            }
-
-
-    def featurize_suggestion(self, classification: str, suggestion: Dict[str, Any]) -> Dict[str, Any]:
+    # --------------------------
+    # 特徴抽出（分類構造はそのまま）
+    # --------------------------
+    def extract_features(self, element_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        単一の構成要素候補を受け取り、数値特徴量（スカラー）を付与して返す。
-        未定義ラベルは 0 で埋める。
-        """
-        if classification not in self.classification_features_specs:
-            raise ValueError(f"未知の分類 '{classification}' の特徴量化はできません。")
+        element_data 例:
 
-        specs = self.classification_features_specs[classification]
-        scalar_label_maps = specs["scalar_label_maps"]
-
-        # Ensure labels from input is handled correctly
-        raw_labels = suggestion.get("labels", {})
-        if isinstance(raw_labels, list) and len(raw_labels) > 0:
-            labels = raw_labels[0] # Take first if it's a list
-        else:
-            labels = raw_labels
-        
-        # --- スカラー特徴量の抽出 ---
-        scalar_features = {}
-        for key in scalar_label_maps.keys():
-            # Get value from labels, default to 0 if not found
-            val = labels.get(key, 0)
-            try:
-                label_value_int = int(val)
-            except (ValueError, TypeError):
-                label_value_int = 0
-            scalar_features[key] = label_value_int
-            
-        return {
-            "category": suggestion.get("category"),
-            "element": suggestion.get("element"),
-            "text": suggestion.get("text"),
-            "features": {
-                "scalar_features": scalar_features,
-                "vector_features": {} # Keep empty for compatibility or remove
+        {
+            "element": "村の掟",
+            "classification": "世界観",
+            "evaluation": {
+                "緊張感": 3,
+                "謎の強度": 2
             }
         }
-
-    def create_numerical_features(self, semantic_labels_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        意味ラベルが付与された辞書のリストを受け取り、全要素を数値特徴量化する。
-        """
-        
-        # Group semantic labels by category to process them in batches or ensure category-aware processing
-        categorized_features = []
-        for suggestion in semantic_labels_list:
-            category = suggestion.get("category")
-            if not category:
-                raise ValueError("semantic_labels_list の各要素には 'category' が含まれている必要があります。")
-            
-            # Pass the category to featurize_suggestion
-            categorized_features.append(self.featurize_suggestion(category, suggestion))
-        
-        return categorized_features
 
+        classification = element_data.get("classification")
+
+        if not classification:
+            raise ValueError("classification が指定されていません")
+
+        labels = self.get_labels(classification)
+        raw_eval = element_data.get("evaluation", {})
+
+        scalar_features = {}
+
+        for label in labels:
+            raw_value = raw_eval.get(label, 0)
+            scalar_features[label] = self._validate_value(
+                raw_value,
+                classification
+            )
+
+        return {
+            "element": element_data.get("element"),
+            "classification": classification,
+            "scalar_features": scalar_features
+        }
+
+    # --------------------------
+    # ベクトル化（分類内のみ）
+    # --------------------------
+    def to_vector(self, feature_data: Dict[str, Any]) -> list:
+        classification = feature_data["classification"]
+        labels = self.get_labels(classification)
+
+        return [
+            feature_data["scalar_features"].get(label, 0)
+            for label in labels
+        ]

@@ -9,14 +9,25 @@ from services.llm_client import call_llm
 from lm_input import build_ideal_profile_prompt
 from user_files import get_user_data_path # This will be a new function we create
 
+from feature_extractor import FeatureExtractor
+
+def build_global_vector(classification: str, scalar_features: Dict[str, Any], extractor: FeatureExtractor) -> List[int]:
+    """
+    FeatureExtractorを使用して、分類とスカラー特徴量からグローバルベクトルを構築する。
+    """
+    return extractor.to_global_vector({
+        "classification": classification,
+        "scalar_features": scalar_features
+    })
+
 def generate_ideal_profile(
     document: Dict[str, Any],
     llm_config: Dict[str, Any],
     user_id: str,
-    suggestion_count: int = 3 # Default, though not strictly used in current IP gen
+    suggestion_count: int = 3
 ) -> Dict[str, Any]:
     """
-    Generates an ideal_profile based on document data and LLM configuration.
+    理想の物語構成要素プロファイルを生成し、グローバルベクトルを付与する。
     """
     if not llm_config:
         raise ValueError("LLM configuration is missing for ideal profile generation.")
@@ -26,19 +37,6 @@ def generate_ideal_profile(
     llm_model_name = llm_config.get("model_name")
     llm_base_url = llm_config.get("base_url")
 
-    is_config_incomplete = (
-        not llm_provider or
-        not llm_model_name or
-        (llm_provider in ["gemini", "chatgpt"] and not llm_api_key) or
-        (llm_provider == "other" and not llm_base_url)
-    )
-
-    if is_config_incomplete:
-        # For ideal_profile, we might not want to return mock data, but rather
-        # ensure the config is complete. Or provide a very basic default.
-        # For now, let's raise an error, consistent with app.py's generate_composition.
-        raise ValueError("LLM configuration is incomplete for ideal profile generation.")
-
     # 1. Build the prompt
     prompt = build_ideal_profile_prompt(document, user_id, suggestion_count)
 
@@ -47,27 +45,50 @@ def generate_ideal_profile(
         llm_api_key, llm_model_name, prompt, llm_provider, base_url=llm_base_url
     )
 
-    # Save raw and structured responses
+    # Save raw responses
     user_data_dir = get_user_data_path(session["user_id"])
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    with open(os.path.join(user_data_dir, f"generated_ideal_profile_{timestamp}.txt"), "w", encoding="utf-8") as f:
-        f.write(raw_text)
     with open(os.path.join(user_data_dir, f"generated_ideal_profile_{timestamp}.json"), "w", encoding="utf-8") as f:
         json.dump(llm_response_json, f, ensure_ascii=False, indent=2)
 
-    # 3. Format the LLM response into the ideal_profile structure
-    # Ensure llm_response_json has the expected 'base_profile'
     if "base_profile" not in llm_response_json:
         raise ValueError("LLM response did not contain 'base_profile' key.")
+
+    # 3. FeatureExtractorによるグローバルベクトルの付与
+    extractor = FeatureExtractor()
+    augmented_base_profile = {}
+    
+    # 全要素の合成ベクトルの初期化
+    composite_vector = [0] * extractor.get_global_dimension()
+
+    for classification, elements in llm_response_json["base_profile"].items():
+        if classification == "scale": continue
+        augmented_base_profile[classification] = {}
+        
+        for element_name, scalar_features in elements.items():
+            g_vec = build_global_vector(classification, scalar_features, extractor)
+            
+            # 構造の維持と拡張
+            augmented_base_profile[classification][element_name] = {
+                "element": element_name,
+                "classification": classification,
+                "scalar_features": scalar_features,
+                "global_vector": g_vec
+            }
+            
+            # 合成ベクトルの加算 (単純加算)
+            for i in range(len(composite_vector)):
+                composite_vector[i] += g_vec[i]
 
     ideal_profile_data = {
         "meta": {
             "created_at": datetime.now().isoformat(),
-            "version": 1
+            "version": 3,
+            "dimension": extractor.get_global_dimension()
         },
-        "base_profile": llm_response_json["base_profile"],
-        "author_modifier": {}, # Initialize as empty
-        "tolerance": llm_response_json.get("tolerance", {}) # Save if LLM outputs it
+        "base_profile": augmented_base_profile,
+        "author_modifier": {},
+        "composite_ideal_vector": composite_vector
     }
 
     return ideal_profile_data, raw_text, llm_response_json

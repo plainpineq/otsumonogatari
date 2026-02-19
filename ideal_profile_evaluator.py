@@ -53,25 +53,19 @@ class IdealProfileEvaluator:
 
     def _compute_single_fit_score(
         self, 
-        candidate_category: str,
-        candidate_features: Dict[str, Any], 
-        final_ideal_features: Dict[str, Any]
+        candidate_vector: List[int], 
+        ideal_vector: List[int]
     ) -> float:
         """
-        単一の候補と最終的な理想プロフィールとの間の fit スコアを計算する。
-        fit = Σ ((feature - ideal)^2) / 1.0 (system fixed tolerance)
+        グローバルベクトル空間において L2距離（2乗和）を計算する。
         """
-        fit_score = 0.0
-
-        candidate_scalars = candidate_features.get("scalar_features", {})
-        ideal_scalars = final_ideal_features.get("scalar_features", {})
+        # Ensure vectors are of the same length
+        dim = min(len(candidate_vector), len(ideal_vector))
         
-        # Scalar Features (now only scalars exist)
-        for label_type, ideal_value in ideal_scalars.items():
-            candidate_value = candidate_scalars.get(label_type, 0)
-            # tolerance = system (1.0)
-            fit_score += ((candidate_value - ideal_value) ** 2)
-
+        fit_score = 0.0
+        for i in range(dim):
+            fit_score += (candidate_vector[i] - ideal_vector[i]) ** 2
+            
         return fit_score
 
     def evaluate_and_score_candidates(
@@ -85,42 +79,39 @@ class IdealProfileEvaluator:
         if not candidates_numerical_features:
             return []
         
-        ideal_elements_with_features = self.convert_ideal_profile_to_features(ideal_profile_data)
-        if not ideal_elements_with_features:
-            return candidates_numerical_features
+        # ideal_profile から理想要素のリストを取得
+        base_profile = ideal_profile_data.get("base_profile", {})
 
         processed_candidates = []
         for candidate in candidates_numerical_features:
-            candidate_features = candidate.get("features")
+            # 候補をグローバルベクトル化
+            candidate_vec = self.feature_extractor.to_global_vector(candidate)
             candidate_category = candidate.get("category")
 
-            if not candidate_features or not candidate_category:
-                candidate["fit"] = {"best_fit_element": "No Features or Category", "score": float('inf')}
+            if not candidate_category:
+                candidate["fit"] = {"best_fit_element": "No Category", "score": float('inf')}
                 processed_candidates.append(candidate)
                 continue
 
             best_fit_score = float('inf')
             best_fit_element_name = "N/A"
 
-            # Filter ideal elements by the candidate's category
-            relevant_ideal_elements = [
-                ideal for ideal in ideal_elements_with_features 
-                if ideal.get("category") == candidate_category
-            ]
+            # 候補の分類に一致する理想要素のみを比較対象とする
+            relevant_ideals = base_profile.get(candidate_category, {})
 
-            if not relevant_ideal_elements:
+            if not relevant_ideals:
                 candidate["fit"] = {"best_fit_element": "No Matching Ideal Category", "score": float('inf')}
                 processed_candidates.append(candidate)
                 continue
 
-            for ideal_element_features in relevant_ideal_elements:
-                ideal_name = ideal_element_features.get("element", "Unknown")
+            for ideal_name, ideal_data in relevant_ideals.items():
+                # 理想側のグローバルベクトルを取得
+                ideal_vec = ideal_data.get("global_vector", [])
+                
+                if not ideal_vec:
+                    continue
 
-                score = self._compute_single_fit_score(
-                    candidate_category,
-                    candidate_features, 
-                    ideal_element_features.get("features", {})
-                )
+                score = self._compute_single_fit_score(candidate_vec, ideal_vec)
                 
                 if score < best_fit_score:
                     best_fit_score = score
@@ -128,7 +119,8 @@ class IdealProfileEvaluator:
 
             candidate["fit"] = {
                 "best_fit_element": best_fit_element_name,
-                "score": best_fit_score
+                "score": best_fit_score,
+                "global_vector": candidate_vec # デバッグ/QUBO用に保持
             }
             processed_candidates.append(candidate)
             
@@ -146,22 +138,18 @@ class IdealProfileEvaluator:
             yield {"progress": 100, "message": "候補がありません", "complete": True, "fit_results": []}
             return
         
-        ideal_elements_with_features = self.convert_ideal_profile_to_features(ideal_profile_data)
-        if not ideal_elements_with_features:
-            yield {"progress": 100, "message": "Ideal Profileが設定されていません", "complete": True, "fit_results": []}
-            return
-
+        base_profile = ideal_profile_data.get("base_profile", {})
         processed_candidates = []
         total_candidates = len(candidates_numerical_features)
         
         yield {"progress": 0, "message": "適合度計算を開始しました"}
 
         for i, candidate in enumerate(candidates_numerical_features):
-            candidate_features = candidate.get("features")
+            candidate_vec = self.feature_extractor.to_global_vector(candidate)
             candidate_category = candidate.get("category")
 
-            if not candidate_features or not candidate_category:
-                candidate["fit"] = {"best_fit_element": "No Features or Category", "score": float('inf')}
+            if not candidate_category:
+                candidate["fit"] = {"best_fit_element": "No Category", "score": float('inf')}
                 processed_candidates.append(candidate)
                 yield {"progress": int((i + 1) / total_candidates * 100), "message": f"{i + 1}/{total_candidates} スキップ中..."}
                 continue
@@ -169,25 +157,19 @@ class IdealProfileEvaluator:
             best_fit_score = float('inf')
             best_fit_element_name = "N/A"
 
-            relevant_ideal_elements = [
-                ideal for ideal in ideal_elements_with_features 
-                if ideal.get("category") == candidate_category
-            ]
+            relevant_ideals = base_profile.get(candidate_category, {})
 
-            if not relevant_ideal_elements:
+            if not relevant_ideals:
                 candidate["fit"] = {"best_fit_element": "No Matching Ideal Category", "score": float('inf')}
                 processed_candidates.append(candidate)
                 yield {"progress": int((i + 1) / total_candidates * 100), "message": f"{i + 1}/{total_candidates} 一致カテゴリなし..."}
                 continue
 
-            for ideal_element_features in relevant_ideal_elements:
-                ideal_name = ideal_element_features.get("element", "Unknown")
+            for ideal_name, ideal_data in relevant_ideals.items():
+                ideal_vec = ideal_data.get("global_vector", [])
+                if not ideal_vec: continue
 
-                score = self._compute_single_fit_score(
-                    candidate_category,
-                    candidate_features, 
-                    ideal_element_features.get("features", {})
-                )
+                score = self._compute_single_fit_score(candidate_vec, ideal_vec)
                 
                 if score < best_fit_score:
                     best_fit_score = score
@@ -195,7 +177,8 @@ class IdealProfileEvaluator:
 
             candidate["fit"] = {
                 "best_fit_element": best_fit_element_name,
-                "score": best_fit_score
+                "score": best_fit_score,
+                "global_vector": candidate_vec
             }
             processed_candidates.append(candidate)
             

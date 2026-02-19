@@ -818,6 +818,15 @@ def evaluate_stream(doc_id):
             else:
                 document["semantic_labels"] = all_results # No filter, replace all
 
+            # --- 自動数値化処理の追加 (案1) ---
+            try:
+                extractor = FeatureExtractor()
+                document["numerical_features"] = extractor.create_numerical_features(document["semantic_labels"])
+                logging.info("Evaluation completed: Numerical features automatically generated.")
+            except Exception as fe_err:
+                logging.error(f"Automatic vectorization failed: {fe_err}")
+            # ---------------------------------
+
             save_user_data(user_id_arg, data)
             yield "event: end_stream\ndata: {}\n\n"
             
