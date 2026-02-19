@@ -30,6 +30,9 @@
         <button class="nav-link" id="evaluation-tab" data-bs-toggle="tab" data-bs-target="#evaluation" type="button" role="tab" aria-controls="evaluation" aria-selected="false">評価</button>
     </li>
     <li class="nav-item" role="presentation">
+        <button class="nav-link" id="evaluation-criteria-tab" data-bs-toggle="tab" data-bs-target="#evaluation-criteria" type="button" role="tab" aria-controls="evaluation-criteria" aria-selected="false">評価基準</button>
+    </li>
+    <li class="nav-item" role="presentation">
         <button class="nav-link" id="element-fit-tab" data-bs-toggle="tab" data-bs-target="#element-fit" type="button" role="tab" aria-controls="element-fit" aria-selected="false">適合度</button>
     </li>
 </ul>
@@ -235,32 +238,37 @@
     <div class="tab-pane fade" id="element-fit" role="tabpanel" aria-labelledby="element-fit-tab">
         <div class="card p-4 shadow-sm mt-3">
             <h2 class="h4 mb-3">構成要素 適合度</h2>
-			<p>「構成要素」で定義された理想の役割と、「数値化」されたAI提案との適合度（距離）を計算します。スコアが小さいほど、その役割に近いことを示します。</p>        
+			<p>定義された「評価基準」の目標値と、AI提案との適合度（距離）を計算します。スコアが小さいほど、目標に近いことを示します。</p>        
             <div class="d-flex gap-2">
-                <form id="element-fit-form" action="{{ url_for('element_fit', doc_id=document.id) }}" method="POST">
-                    <button type="submit" id="element-fit-button" class="btn btn-primary">適合度を計算</button>
-                </form>
+                <button id="calculate-fit-btn-v2" class="btn btn-primary">適合度を計算</button>
             </div>
+            
+            <!-- Progress Bar -->
+            <div id="fit-progress-container" class="mt-3" style="display: none;">
+                <div class="progress">
+                    <div id="fit-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                </div>
+                <p id="fit-status-message" class="mt-2 text-muted text-center"></p>
+            </div>
+
             <hr>
 
-            {% if document.fit_results %}
+            <div id="fit-results-container" style="display: {% if document.fit_results %}block{% else %}none{% endif %};">
                 <h3 class="h5 mt-3">適合度の計算結果</h3>
                 <div class="table-responsive">
                     <table class="table table-bordered table-sm">
                         <thead class="table-light">
                             <tr>
                                 <th>候補テキスト</th>
-                                <th>最も適合する役割</th>
                                 <th>Fitスコア (距離)</th>
                                 <th>カテゴリ</th>
                                 <th>元の要素名</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="fit-results-body-v2">
                         {% for item in document.fit_results %}
                             <tr>
                                 <td><small>{{ item.text }}</small></td>
-                                <td><strong>{{ item.fit.best_fit_element }}</strong></td>
                                 <td>{{ "%.2f"|format(item.fit.score) }}</td>
                                 <td>{{ item.category }}</td>
                                 <td>{{ item.element }}</td>
@@ -269,7 +277,12 @@
                         </tbody>
                     </table>
                 </div>
-            {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="tab-pane fade" id="evaluation-criteria" role="tabpanel" aria-labelledby="evaluation-criteria-tab">
+        <div id="evaluation-criteria-container">
+            {% include "evaluation_criteria.html" %}
         </div>
     </div>
 
@@ -308,6 +321,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const evaluationResultsThead = document.getElementById('evaluation-results-thead');
     const downloadEvaluationCsvBtn = document.getElementById('download-evaluation-csv-btn');
     const currentEvaluationResultsTitle = document.getElementById('current-evaluation-results-title');
+
+    // --- UI Elements (Fit Tab) ---
+    const calculateFitBtnV2 = document.getElementById('calculate-fit-btn-v2');
+    const fitProgressContainer = document.getElementById('fit-progress-container');
+    const fitProgressBar = document.getElementById('fit-progress-bar');
+    const fitStatusMessage = document.getElementById('fit-status-message');
+    const fitResultsContainer = document.getElementById('fit-results-container');
+    const fitResultsBodyV2 = document.getElementById('fit-results-body-v2');
 
 
     // --- Functions ---
@@ -990,6 +1011,71 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         renderEvaluationButtons(); // Render evaluation buttons on initialization
         renderInitialSemanticLabels(); // NEW: Render existing evaluation results
+    }
+
+    if (calculateFitBtnV2) {
+        calculateFitBtnV2.addEventListener('click', async () => {
+            calculateFitBtnV2.disabled = true;
+            fitProgressContainer.style.display = 'block';
+            fitProgressBar.style.width = '0%';
+            fitProgressBar.textContent = '0%';
+            fitStatusMessage.textContent = '初期化中...';
+            fitResultsContainer.style.display = 'none';
+
+            const eventSource = new EventSource(`/document/${docId}/calculate_fit_stream`);
+
+            eventSource.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+
+                if (data.error) {
+                    showAlert(data.message || data.error, 'danger');
+                    eventSource.close();
+                    calculateFitBtnV2.disabled = false;
+                    fitProgressContainer.style.display = 'none';
+                    return;
+                }
+
+                if (data.progress !== undefined) {
+                    fitProgressBar.style.width = `${data.progress}%`;
+                    fitProgressBar.textContent = `${data.progress}%`;
+                    fitStatusMessage.textContent = data.message;
+                }
+
+                if (data.complete) {
+                    renderFitResultsV2(data.fit_results);
+                    fitResultsContainer.style.display = 'block';
+                    fitProgressContainer.style.display = 'none';
+                    calculateFitBtnV2.disabled = false;
+                    showAlert('適合度の計算が完了しました。', 'success');
+                    eventSource.close();
+                }
+            };
+
+            eventSource.onerror = function(err) {
+                console.error("EventSource failed:", err);
+                showAlert('適合度計算中に通信エラーが発生しました。', 'danger');
+                eventSource.close();
+                calculateFitBtnV2.disabled = false;
+                fitProgressContainer.style.display = 'none';
+            };
+        });
+    }
+
+    function renderFitResultsV2(results) {
+        fitResultsBodyV2.innerHTML = '';
+        results.sort((a, b) => a.fit.score - b.fit.score); // Sort by score ascending
+
+        results.forEach(item => {
+            const row = `
+                <tr>
+                    <td><small>${item.text}</small></td>
+                    <td>${item.fit.score.toFixed(2)}</td>
+                    <td>${item.category}</td>
+                    <td>${item.element}</td>
+                </tr>
+            `;
+            fitResultsBodyV2.insertAdjacentHTML('beforeend', row);
+        });
     }
 
     initializeView();
