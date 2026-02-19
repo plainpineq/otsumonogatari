@@ -19,89 +19,62 @@ class FeatureExtractor:
         self.classification_features_specs = {}
 
         for classification_name, labels_config in config.items():
+            if classification_name == "scale": continue # Skip global scale config
+
             scalar_label_maps = {}
-            vector_label_orders = {}
-            vector_index_maps = {}
 
             for key, spec in labels_config.items():
-                label_type = spec.get("type")
+                label_type = spec.get("type", "scalar")
                 values_data = spec.get("values", {})
 
-                if label_type is None:
-                    if isinstance(values_data, list):
-                        label_type = "vector"
-                    elif isinstance(values_data, dict):
-                        label_type = "scalar"
-                    else:
-                        raise ValueError(f"FeatureExtractor: ラベル '{key}' の型が不明です。'type'フィールドを指定するか、'values'フィールドをリストまたは辞書にしてください。")
-                
-                if label_type == "vector":
-                    if isinstance(values_data, list):
-                        vector_label_orders[key] = values_data
-                    elif isinstance(values_data, dict):
-                        vector_label_orders[key] = list(values_data.keys())
-                    else:
-                        raise ValueError(f"FeatureExtractor: ベクター型ラベル '{key}' の'values'フィールドはリストまたは辞書である必要があります。")
-                    vector_index_maps[key] = {value: i for i, value in enumerate(vector_label_orders[key])}
-                elif label_type == "scalar":
-                    # For scalar, we need a mapping from the string representation to a numerical value (1-5)
+                if label_type == "scalar":
                     if isinstance(values_data, dict):
-                        # Ensure values are ints for direct use in numerical features
-                        scalar_label_maps[key] = {k: int(v) for k, v in values_data.items()}
+                        # Ensure values are ints
+                        scalar_label_maps[key] = {k: int(k) for k in values_data.keys()}
                     else:
                         raise ValueError(f"FeatureExtractor: スカラー型ラベル '{key}' の'values'フィールドは辞書である必要があります。")
-                else:
-                    raise ValueError(f"FeatureExtractor: ラベル '{key}' の無効な型 '{label_type}' が指定されました。'scalar'または'vector'を指定してください。")
             
             self.classification_features_specs[classification_name] = {
-                "scalar_label_maps": scalar_label_maps,
-                "vector_label_orders": vector_label_orders,
-                "vector_index_maps": vector_index_maps
+                "scalar_label_maps": scalar_label_maps
             }
 
 
     def featurize_suggestion(self, classification: str, suggestion: Dict[str, Any]) -> Dict[str, Any]:
         """
-        単一の構成要素候補を受け取り、汎用的な数値特徴量を付与して返す。
-        出力形式: {"scalar_features": {...}, "vector_features": {...}}
+        単一の構成要素候補を受け取り、数値特徴量（スカラー）を付与して返す。
+        未定義ラベルは 0 で埋める。
         """
         if classification not in self.classification_features_specs:
             raise ValueError(f"未知の分類 '{classification}' の特徴量化はできません。")
 
         specs = self.classification_features_specs[classification]
         scalar_label_maps = specs["scalar_label_maps"]
-        vector_label_orders = specs["vector_label_orders"]
-        vector_index_maps = specs["vector_index_maps"]
 
-        labels = suggestion.get("labels", {})
+        # Ensure labels from input is handled correctly
+        raw_labels = suggestion.get("labels", {})
+        if isinstance(raw_labels, list) and len(raw_labels) > 0:
+            labels = raw_labels[0] # Take first if it's a list
+        else:
+            labels = raw_labels
         
         # --- スカラー特徴量の抽出 ---
         scalar_features = {}
-        for key, value_map in scalar_label_maps.items():
-            label_value_int = labels.get(key, 0) # Expecting integer from LLM
+        for key in scalar_label_maps.keys():
+            # Get value from labels, default to 0 if not found
+            val = labels.get(key, 0)
+            try:
+                label_value_int = int(val)
+            except (ValueError, TypeError):
+                label_value_int = 0
             scalar_features[key] = label_value_int
             
-        # --- ベクトル特徴量の抽出 ---
-        vector_features = {}
-        for key, value_order in vector_label_orders.items():
-            index_map = vector_index_maps[key]
-            # configで定義された順序に基づき、固定長のゼロベクトルを初期化
-            feature_vector = [0] * len(value_order)
-            
-            # 候補のラベルに含まれる各項目に対応するインデックスを1にする
-            for label_item in labels.get(key, []):
-                if label_item in index_map:
-                    feature_vector[index_map[label_item]] = 1
-            vector_features[key] = feature_vector
-
-        # 元のキーを維持しつつ、新しい汎用的な 'features' 構造を返す
         return {
             "category": suggestion.get("category"),
             "element": suggestion.get("element"),
             "text": suggestion.get("text"),
             "features": {
                 "scalar_features": scalar_features,
-                "vector_features": vector_features
+                "vector_features": {} # Keep empty for compatibility or remove
             }
         }
 

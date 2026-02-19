@@ -912,37 +912,30 @@ def element_fit(doc_id):
         flash("適合度を計算するには、先に「構成要素」タブで理想の役割を定義してください。", "warning")
         return redirect(f"/document/{doc_id}#element-fit")
 
-    # 2. Extract ideal elements from composition data and assign unique features
-    
-    # Load reader effects to create unique feature vectors for ideals
-    try:
-        with open("prompt_templates/novel_label_config.json", "r", encoding="utf-8") as f:
-            label_config = json.load(f)
-        reader_effects = list(label_config.get("labels", {}).get("reader_effect", {}).keys())
-    except Exception:
-        reader_effects = []
-
+    # 2. Extract ideal elements from composition data
     ideal_elements_raw = []
-    element_index = 0
-    for cat_group in composition_elements.values(): # "common", "doc_type_specific"
-        for category in cat_group.get("categories", []):
-            for element in category.get("elements", []):
-                
-                # Create a unique label set for each ideal to give it a unique feature vector
-                temp_labels = {}
-                if reader_effects:
-                    # Assign a unique reader_effect based on the element's index to ensure
-                    # each ideal has a different feature vector.
-                    effect_to_assign = reader_effects[element_index % len(reader_effects)]
-                    temp_labels["reader_effect"] = [effect_to_assign]
+    
+    # composition_elements['categories'] contains all categories after normalization
+    all_categories = composition_elements.get("categories", [])
 
-                ideal_elements_raw.append({
-                    "category": category.get("label"),
-                    "element": element.get("label"),
-                    "text": element.get("label"), # Use label as text for featurizing
-                    "labels": temp_labels # Use the generated labels instead of empty ones
-                })
-                element_index += 1
+    for category in all_categories:
+        category_label = category.get("label")
+        if not category_label or category_label == "基本設定":
+            continue
+            
+        for element in category.get("elements", []):
+            element_label = element.get("label")
+            if not element_label:
+                continue
+
+            # We no longer assign dummy reader_effects here. 
+            # Missing labels will be filled with 0 by FeatureExtractor.
+            ideal_elements_raw.append({
+                "category": category_label,
+                "element": element_label,
+                "text": element_label,
+                "labels": {} # FeatureExtractor will handle this by zero-filling
+            })
 
     if not ideal_elements_raw:
         flash("適合度を計算するための理想の役割が「構成要素」タブで定義されていません。", "warning")

@@ -5,7 +5,9 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h1 class="h2 mb-0" id="document-title-heading">{{ document.title }}</h1>
         <div id="document-data" data-doc='{{ document | tojson | default({}, true) }}'></div> {# documentデータをdata属性に埋め込む #}
-        <div id="semantic-label-schema" data-schema='{{ semantic_label_schema | tojson | default({}, true) }}'></div> {# semantic_label_schemaデータをdata属性に埋め込む #}
+        <div id="semantic-label-schema" 
+             data-schema='{{ semantic_label_schema | tojson | default({}, true) }}'
+             data-ordered-keys='{{ semantic_label_schema.keys() | list | tojson | default([], true) }}'></div> {# schemaとキーの順序を埋め込む #}
         <div>
             <a href="/dashboard" class="btn btn-outline-secondary me-2">ダッシュボード</a>
             <form action="/document/{{ document.id }}/download" method="GET" style="display:inline-block;">
@@ -360,7 +362,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const documentDataElement = document.getElementById('document-data');
     const documentData = JSON.parse(documentDataElement.dataset.doc || '{}');
     const semanticLabelSchemaElement = document.getElementById('semantic-label-schema');
-    const semanticLabelSchema = JSON.parse(semanticLabelSchemaElement.dataset.schema || '{}'); // Access from the moved div
+    const semanticLabelSchema = JSON.parse(semanticLabelSchemaElement.dataset.schema || '{}');
+    const semanticLabelSchemaOrder = JSON.parse(semanticLabelSchemaElement.dataset.orderedKeys || '[]'); // Get original key order
 
     // --- UI Elements ---
     const step1Div = document.getElementById('step1-proposals');
@@ -690,8 +693,15 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- Dynamic Evaluation Buttons Generation ---
     function renderEvaluationButtons() {
         evaluationButtonsContainer.innerHTML = '';
-        for (const classificationName in semanticLabelSchema) {
-            if (classificationName === "基本設定") continue; // Exclude Basic Settings
+        
+        // Use the order from semanticLabelSchemaOrder if available, fallback to Object.keys
+        const classificationsToRender = semanticLabelSchemaOrder.length > 0 
+                                        ? semanticLabelSchemaOrder 
+                                        : Object.keys(semanticLabelSchema);
+
+        classificationsToRender.forEach(classificationName => {
+            if (classificationName === "基本設定" || classificationName === "scale") return; // Exclude
+            if (!semanticLabelSchema[classificationName]) return; // Safety check
 
             const button = document.createElement('button');
             button.type = 'button';
@@ -701,8 +711,9 @@ document.addEventListener('DOMContentLoaded', function() {
             evaluationButtonsContainer.appendChild(button);
 
             button.addEventListener('click', () => runClassificationEvaluation(classificationName));
-        }
-        if (Object.keys(semanticLabelSchema).length > 0) {
+        });
+
+        if (classificationsToRender.length > 0) {
              const allButton = document.createElement('button');
             allButton.type = 'button';
             allButton.className = 'btn btn-info evaluation-btn ms-2';
@@ -812,11 +823,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     const labelValue = proposalLabels[jaLabel];
 
                     if (labelSpec.type === 'scalar') {
-                        rowHtml += `<td>${labelValue || '-'}</td>`;
+                        rowHtml += `<td>${(labelValue !== undefined && labelValue !== null) ? labelValue : '-'}</td>`;
                     } else if (labelSpec.type === 'vector') {
                         rowHtml += `<td><code>${(labelValue && labelValue.join(', ')) || '-'}</code></td>`;
                     } else {
-                        rowHtml += `<td>${labelValue || '-'}</td>`;
+                        rowHtml += `<td>${(labelValue !== undefined && labelValue !== null) ? labelValue : '-'}</td>`;
                     }
                 } else {
                     rowHtml += `<td>-</td>`;
