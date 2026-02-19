@@ -7,35 +7,12 @@ import glob # Import glob for file pattern matching
 
 
 from user_files import load_user_data, save_user_data, get_user_data_path
-from ideal_profile_generator import generate_ideal_profile
-from ideal_profile_evaluator import IdealProfileEvaluator
+import evaluation_engine
 from services.services import find_document, DEFAULT_COMPOSITION_META
 from services.llm_client import call_llm # For explicit mock calls if needed
 from feature_extractor import FeatureExtractor # For numerical features of candidates
 
 evaluation_bp = Blueprint('evaluation_bp', __name__, template_folder='templates')
-
-def _cleanup_old_ideal_profile_files(user_id: str):
-    """
-    Cleans up old generated ideal profile files for a given user.
-    """
-    user_data_dir = get_user_data_path(user_id)
-    if not os.path.exists(user_data_dir):
-        return
-
-    # Patterns for files to delete
-    patterns = [
-        os.path.join(user_data_dir, "generated_ideal_profile_*.txt"),
-        os.path.join(user_data_dir, "generated_ideal_profile_*.json")
-    ]
-
-    for pattern in patterns:
-        for file_path in glob.glob(pattern):
-            try:
-                os.remove(file_path)
-                print(f"Cleaned up old ideal profile file: {file_path}")
-            except OSError as e:
-                print(f"Error deleting ideal profile file {file_path}: {e}")
 
 
 @evaluation_bp.route("/document/<doc_id>/evaluation_tab")
@@ -51,19 +28,11 @@ def evaluation_tab(doc_id):
         return redirect(url_for("dashboard"))
     
     # Ensure document has necessary default keys for the template
-    document.setdefault("ideal_profile", {})
     document.setdefault("numerical_features", []) # Used for fit calculation
     document.setdefault("semantic_labels", []) # Used for fit calculation
     document.setdefault("fit_results", []) # NEW: Ensure fit_results has a default
 
-
-    # Get persistent server configurations for evaluation role
-    llm_servers = session.get("llm_servers", {})
-    # For ideal_profile generation, we will use a new role, let's call it 'ideal_profile_generation'
-    ideal_profile_llm_config = llm_servers.get("ideal_profile_generation", {})
-
     user_config = {
-        "ideal_profile_llm_config": ideal_profile_llm_config,
         "suggestion_count": session.get("suggestion_count", 3)
     }
 
@@ -72,110 +41,6 @@ def evaluation_tab(doc_id):
         document=document,
         user_config=user_config
     )
-
-@evaluation_bp.route("/document/<doc_id>/generate_ideal_profile", methods=["POST"])
-def generate_ideal_profile_route(doc_id):
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-    
-    # Clean up old ideal profile files
-    _cleanup_old_ideal_profile_files(session["user_id"])
-
-    data = load_user_data(session["user_id"])
-    document = find_document(data, doc_id)
-    if document is None:
-        return jsonify({"error": "Document not found"}), 404
-    
-    # Get LLM config for ideal_profile generation
-    llm_servers = session.get("llm_servers", {})
-    ideal_profile_llm_config = llm_servers.get("ideal_profile_generation", {})
-    
-    # Check if LLM config is complete, if not, provide mock data or error
-    is_config_incomplete = (
-        not ideal_profile_llm_config.get("provider") or
-        not ideal_profile_llm_config.get("model_name") or
-        (ideal_profile_llm_config.get("provider") in ["gemini", "chatgpt"] and not ideal_profile_llm_config.get("api_key")) or
-        (ideal_profile_llm_config.get("provider") == "other" and not ideal_profile_llm_config.get("base_url"))
-    )
-    print(f"Ideal Profile LLM Config: {ideal_profile_llm_config}")
-    print(f"Is LLM Config Incomplete for Ideal Profile: {is_config_incomplete}")
-
-    # For now, let's just mock if config is incomplete
-    if is_config_incomplete:
-        # Generate mock ideal_profile structure
-        mock_ideal_profile = {
-            "meta": {
-                "created_at": datetime.now().isoformat(),
-                "version": 1
-            },
-            "base_profile": {
-                "主人公": {
-                    "change_type": 2,
-                    "causal_exposure": 2,
-                    "conflict_type": 2,
-                    "reader_effect": ["違和感", "緊張"]
-                },
-                "ヒロイン": {
-                    "change_type": 1,
-                    "causal_exposure": 1,
-                    "conflict_type": 1,
-                    "reader_effect": ["希望"]
-                }
-            },
-            "author_modifier": {},
-            "tolerance": {
-                 "主人公": {
-                    "change_type": 1.0,
-                    "causal_exposure": 1.0,
-                    "conflict_type": 1.0,
-                    "reader_effect": 1.0
-                },
-            }
-        }
-        flash("LLM設定が不完全なため、モックのideal_profileを生成しました。", "warning")
-        document["ideal_profile"] = mock_ideal_profile
-        save_user_data(session["user_id"], data)
-        return jsonify({"success": True, "ideal_profile": mock_ideal_profile})
-
-    try:
-        ideal_profile_data, raw_llm_text, llm_response_json = generate_ideal_profile(
-            document, ideal_profile_llm_config, session["user_id"]
-        )
-        print("Received ideal_profile_data from generate_ideal_profile function.")
-        document["ideal_profile"] = ideal_profile_data
-        print("Saving user data with new ideal_profile...")
-        save_user_data(session["user_id"], data)
-        print("User data saved successfully.")
-
-        flash("Ideal Profileを生成しました。", "success")
-        return jsonify({"success": True, "ideal_profile": ideal_profile_data})
-
-    except Exception as e:
-        flash(f"Ideal Profileの生成中にエラーが発生しました: {str(e)}", "error")
-        return jsonify({"error": str(e)}), 500
-
-
-@evaluation_bp.route("/document/<doc_id>/save_ideal_profile", methods=["POST"])
-def save_ideal_profile_route(doc_id):
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-
-    data = load_user_data(session["user_id"])
-    document = find_document(data, doc_id)
-    if document is None:
-        return jsonify({"error": "Document not found"}), 404
-    
-    # Assuming the ideal_profile JSON is sent directly in the request body
-    updated_ideal_profile = request.get_json()
-    if not updated_ideal_profile:
-        return jsonify({"error": "No ideal profile data provided."}), 400
-    
-    # Validate structure if necessary. For now, trust client.
-    document["ideal_profile"] = updated_ideal_profile
-    save_user_data(session["user_id"], data)
-    
-    flash("Ideal Profileを保存しました。", "success")
-    return jsonify({"success": True, "ideal_profile": updated_ideal_profile})
 
 
 @evaluation_bp.route("/document/<doc_id>/calculate_fit_stream", methods=["GET"])
@@ -194,35 +59,60 @@ def calculate_fit_stream_route(doc_id):
             yield f"data: {json.dumps({'error': 'Document not found', 'message': 'ドキュメントが見つかりませんでした'})}\n\n"
             return
         
-        ideal_profile_data = document.get("ideal_profile")
-        if not ideal_profile_data or not ideal_profile_data.get("base_profile"):
-            yield f"data: {json.dumps({'error': 'Ideal Profile is not set', 'message': '先にIdeal Profileを生成・設定してください'})}\n\n"
-            return
-        
-        semantic_labels = document.get("semantic_labels")
-        if not semantic_labels:
-            yield f"data: {json.dumps({'error': 'Semantic labels are not available', 'message': '「評価」タブで先に意味ラベルを付与してください'})}\n\n"
+        # 候補者リストの取得
+        candidates = document.get("numerical_features")
+        if not candidates:
+            yield f"data: {json.dumps({'error': 'No candidates', 'message': '「評価」タブで先に意味ラベルを付与・数値化してください'})}\n\n"
             return
 
         try:
-            evaluator = IdealProfileEvaluator()
             extractor = FeatureExtractor()
-            candidates_numerical_features = extractor.create_numerical_features(semantic_labels)
+            label_order = extractor.global_label_order
+            
+            # --- 暫定的なターゲットと重みの設定 (将来的にUIから設定可能にする) ---
+            # 全次元 0 のターゲットベクトル
+            target_vec = [0] * len(label_order)
+            # 全分類 1.0 の重み
+            category_weights = {classification: 1.0 for classification, _ in label_order}
+            system_tolerance = 0.0 # システム固定値
+            # -----------------------------------------------------------
 
-            # Iterate through the generator from IdealProfileEvaluator
-            for event_data in evaluator.evaluate_and_score_candidates_stream(
-                candidates_numerical_features,
-                ideal_profile_data
-            ):
-                if "fit_results" in event_data and event_data["complete"]:
-                    # Save results once complete
-                    document["numerical_features"] = candidates_numerical_features # Save for consistency
-                    document["fit_results"] = event_data["fit_results"] # Save the final fit results
-                    save_user_data(user_id_arg, data)
-                    # No flash message here, client will handle completion notification
+            processed_candidates = []
+            total = len(candidates)
+            
+            yield f"data: {json.dumps({'progress': 0, 'message': '適合度計算を開始しました'})}\n\n"
+
+            for i, cand in enumerate(candidates):
+                # 候補のグローバルベクトルを取得
+                cand_features = cand.get("features", {})
                 
-                yield f"data: {json.dumps(event_data)}\n\n"
-                time.sleep(0.05) # Small delay to see progress updates for testing
+                # FeatureExtractorを使用して確実にグローバルベクトルに変換
+                cand_vec = extractor.to_global_vector(cand_features)
+                
+                # 新しい評価エンジンで計算
+                eval_result = evaluation_engine.evaluate(
+                    cand_vec, target_vec, category_weights, label_order, system_tolerance
+                )
+                
+                # 結果の格納 (既存UIとの互換性のために fit スコアとして保存)
+                cand["fit"] = {
+                    "best_fit_element": "Global Target", # 固定
+                    "score": eval_result["adjusted_distance"],
+                    "raw_distance": eval_result["raw_distance"],
+                    "global_vector": cand_vec
+                }
+                
+                processed_candidates.append(cand)
+                
+                progress = int((i + 1) / total * 100)
+                yield f"data: {json.dumps({'progress': progress, 'message': f'{i+1}/{total} 候補を評価中...'})}\n\n"
+                time.sleep(0.02)
+
+            # 最終結果の保存
+            document["fit_results"] = processed_candidates
+            save_user_data(user_id_arg, data)
+            
+            yield f"data: {json.dumps({'progress': 100, 'message': '適合度計算が完了しました', 'complete': True, 'fit_results': processed_candidates})}\n\n"
 
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e), 'message': f'適合度計算中にエラーが発生しました: {str(e)}'})}\n\n"

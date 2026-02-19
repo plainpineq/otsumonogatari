@@ -30,9 +30,6 @@
         <button class="nav-link" id="evaluation-tab" data-bs-toggle="tab" data-bs-target="#evaluation" type="button" role="tab" aria-controls="evaluation" aria-selected="false">評価</button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="ideal-profile-tab" data-bs-toggle="tab" data-bs-target="#ideal-profile" type="button" role="tab" aria-controls="ideal-profile" aria-selected="false">評価基準</button>
-    </li>
-    <li class="nav-item" role="presentation">
         <button class="nav-link" id="element-fit-tab" data-bs-toggle="tab" data-bs-target="#element-fit" type="button" role="tab" aria-controls="element-fit" aria-selected="false">適合度</button>
     </li>
 </ul>
@@ -273,16 +270,6 @@
                     </table>
                 </div>
             {% endif %}
-        </div>
-    </div>
-    <div class="tab-pane fade" id="ideal-profile" role="tabpanel" aria-labelledby="ideal-profile-tab">
-        <!-- Content for the new '評価基準' tab -->
-        <div class="card p-4 shadow-sm mt-3">
-            <h2 class="h4 mb-3">評価基準</h2>
-            <p>このタブは、`evaluation.html` の内容を読み込みます。</p>
-            <a href="{{ url_for('evaluation_bp.evaluation_tab', doc_id=document.id) }}" class="btn btn-primary">
-                評価基準ツールを開く
-            </a>
         </div>
     </div>
 

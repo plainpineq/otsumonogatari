@@ -137,7 +137,7 @@ def dashboard():
     quantum_server = session.get("quantum_server", {})
 
     # Ensure all roles have a default dictionary to prevent template errors
-    for role in ["generation", "evaluation", "drafting", "ideal_profile_generation"]: # NEW: Added ideal_profile_generation
+    for role in ["generation", "evaluation", "drafting"]:
         llm_servers.setdefault(role, {})
 
     user_config = {
@@ -237,7 +237,7 @@ def save_servers_config():
     
     # --- LLMサーバー設定の解析 ---
     llm_servers = {}
-    roles = ["generation", "evaluation", "drafting", "ideal_profile_generation"]
+    roles = ["generation", "evaluation", "drafting"]
     for role in roles:
         role_config = {
             "provider": request.form.get(f"llm_servers[{role}][provider]", "gemini"),
