@@ -165,3 +165,27 @@ def test_qubo_generation() -> None:
     )
 
     print("QUBO size:", len(Q))
+
+
+def compute_qubo_energy(
+    Q: Dict[Tuple[int, int], float],
+    binary_vector: List[int]
+) -> float:
+    """
+    QUBOエネルギー E = x^T Q x を計算
+    """
+    energy = 0.0
+    for (i, j), value in Q.items():
+        energy += value * binary_vector[i] * binary_vector[j]
+    return energy
+
+
+def to_onehot(values: List[int]) -> List[int]:
+    """
+    0-5整数リストをOne-hot72次元に変換
+    """
+    binary = []
+    for v in values:
+        for k in range(6):
+            binary.append(1 if k == v else 0)
+    return binary

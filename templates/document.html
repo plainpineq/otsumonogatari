@@ -704,6 +704,7 @@ document.addEventListener('DOMContentLoaded', function() {
                  // Fallback for unknown categories if schema is missing
                  headerHtml = '<tr><th>要素名</th><th style="width: 40%;">テキスト</th></tr>';
             }
+            headerHtml += '<th>QUBO Energy</th>';
             headerHtml += '</tr>';
             thead.innerHTML = headerHtml;
             thead.dataset.orderedKeys = JSON.stringify(allLabelKeysForRows);
@@ -772,6 +773,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     rowHtml += `<td>-</td>`;
                 }
             });
+            rowHtml += `<td>${(proposalLabels.qubo_energy !== undefined && proposalLabels.qubo_energy !== null) ? proposalLabels.qubo_energy : '-'}</td>`;
             rowHtml += '</tr>';
             tbody.insertAdjacentHTML('beforeend', rowHtml);
         });

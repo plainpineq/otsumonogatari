@@ -290,6 +290,65 @@ def document_create():
     save_user_data(session["user_id"], data)
     return redirect(f"/document/{document['id']}")
 
+from services.scoring import generate_onehot_qubo, compute_qubo_energy, to_onehot
+
+
+def calculate_qubo_energy_for_item(document, category, labels_ja, schema):
+    """
+    特定項目のQUBOエネルギーを計算する。
+    12次元（3カテゴリ×4ラベル）のベクトルを構成し、対象カテゴリ以外は目標値で埋める。
+    """
+    try:
+        criteria = document.get("evaluation_criteria", {})
+        targets = criteria.get("global_target", {})
+        weights = criteria.get("category_weights", {})
+        
+        # 1. ラベル順序と目標ベクトルの構築
+        label_order = []
+        global_target_vector = []
+        
+        for cat_name, labels_config in schema.items():
+            if cat_name == "scale":
+                continue
+            for en_key, spec in labels_config.items():
+                ja_label = spec.get("ja_label", en_key)
+                label_order.append(f"{cat_name}:{ja_label}")
+                global_target_vector.append(targets.get(cat_name, {}).get(en_key, 2))
+        
+        if not global_target_vector or len(global_target_vector) != 12:
+            return None
+
+        # QUBOの生成
+        Q = generate_onehot_qubo(global_target_vector, weights, label_order)
+        
+        # 2. 評価対象項目の12次元ベクトルを構築
+        current_vector = []
+        for full_label in label_order:
+            cat_name, ja_label = full_label.split(":")
+            if cat_name == category:
+                # 自身のカテゴリの評価値を使用
+                val = labels_ja.get(ja_label, 0)
+                current_vector.append(val)
+            else:
+                # 他のカテゴリは目標値を使用（エネルギー貢献を0にするため）
+                target_val = 2
+                if cat_name in schema:
+                    for en_k, spec in schema[cat_name].items():
+                        if spec.get("ja_label") == ja_label:
+                            target_val = targets.get(cat_name, {}).get(en_k, 2)
+                            break
+                current_vector.append(target_val)
+        
+        # One-hot変換とエネルギー計算
+        binary_vector = to_onehot(current_vector)
+        energy = compute_qubo_energy(Q, binary_vector)
+        return round(energy, 2)
+        
+    except Exception as e:
+        logging.error(f"QUBO Energy calculation failed: {e}")
+        return None
+
+
 @app.route("/document/<doc_id>", methods=["GET", "POST"])
 def view_document(doc_id):
     if "user_id" not in session: # Removed data_loaded check
@@ -341,6 +400,15 @@ def view_document(doc_id):
         logging.warning("Warning: semantic_label_schema.json not found.")
     except json.JSONDecodeError:
         logging.warning("Warning: semantic_label_schema.json is invalid JSON.")
+
+    # 既存の評価結果にQUBOエネルギーを付与
+    if semantic_label_schema:
+        for item in document.get("semantic_labels", []):
+            cat = item.get("category")
+            for labels_ja in item.get("labels", []):
+                if "qubo_energy" not in labels_ja:
+                    energy = calculate_qubo_energy_for_item(document, cat, labels_ja, semantic_label_schema)
+                    labels_ja["qubo_energy"] = energy
 
     response = make_response(render_template(
         "document.html",
@@ -803,6 +871,21 @@ def evaluate_stream(doc_id):
                 elif event_type == "semantic_label":
                     labeled_result = event_data.get("data")
                     if labeled_result:
+                        # Load semantic label schema for dynamic energy calculation
+                        semantic_label_schema = {}
+                        try:
+                            with open("prompt_templates/semantic_label_schema.json", "r", encoding="utf-8") as f:
+                                semantic_label_schema = json.load(f)
+                        except:
+                            pass
+                        
+                        # 各提案に対してエネルギーを計算
+                        if semantic_label_schema:
+                            cat = labeled_result.get("category")
+                            for labels_ja in labeled_result.get("labels", []):
+                                energy = calculate_qubo_energy_for_item(document, cat, labels_ja, semantic_label_schema)
+                                labels_ja["qubo_energy"] = energy
+
                         all_results.append(labeled_result)
                         yield f"data: {json.dumps({'semantic_label': labeled_result}, ensure_ascii=False)}\n\n"
                 else:
