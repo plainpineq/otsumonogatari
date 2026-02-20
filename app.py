@@ -291,7 +291,7 @@ def document_create():
     return redirect(f"/document/{document['id']}")
 
 from services.scoring import generate_onehot_qubo, compute_qubo_energy, to_onehot
-from services.quantum_solver import solve_and_decode
+from services.quantum_solver import solve_and_decode, solve_and_decode_multi
 
 
 def compute_quantum_optimal(current_values, category_weights, label_order):
@@ -305,12 +305,12 @@ def compute_quantum_optimal(current_values, category_weights, label_order):
             label_order=label_order
         )
 
-        optimal_values = solve_and_decode(Q)
-        return optimal_values
+        optimal_values, energy = solve_and_decode(Q)
+        return optimal_values, energy
 
     except Exception as e:
         print("Quantum optimization failed:", e)
-        return None
+        return None, None
 
 
 def calculate_qubo_energy_for_item(document, category, labels_ja, schema):
@@ -914,8 +914,24 @@ def evaluate_stream(doc_id):
                                         else:
                                             current_values.append(targets.get(cat_name, {}).get(en_key, 2))
                                 
-                                optimal_values = compute_quantum_optimal(current_values, weights, label_order)
+                                optimal_values, energy = compute_quantum_optimal(current_values, weights, label_order)
                                 
+                                # --- 乖離スコア (diff_score) の計算を追加 ---
+                                target_vector = []
+                                weights_vector = []
+                                for cn, lc in semantic_label_schema.items():
+                                    if cn == "scale": continue
+                                    w = weights.get(cn, 1.0)
+                                    for ek, sp in lc.items():
+                                        target_vector.append(targets.get(cn, {}).get(ek, 2))
+                                        weights_vector.append(w)
+                                
+                                diff_score = 0.0
+                                for i in range(len(current_values)):
+                                    diff_score += abs(current_values[i] - target_vector[i]) * weights_vector[i]
+                                labels_ja["diff_score"] = round(diff_score, 2)
+                                # -----------------------------------------
+
                                 start_idx = 0
                                 found_idx = False
                                 for cat_name, labels_config in semantic_label_schema.items():
@@ -927,8 +943,10 @@ def evaluate_stream(doc_id):
                                 
                                 if found_idx and optimal_values:
                                     labels_ja["quantum_optimal"] = optimal_values[start_idx : start_idx + 4]
+                                    labels_ja["quantum_energy"] = energy
                                 else:
                                     labels_ja["quantum_optimal"] = None
+                                    labels_ja["quantum_energy"] = None
 
                         all_results.append(labeled_result)
                         yield f"data: {json.dumps({'semantic_label': labeled_result}, ensure_ascii=False)}\n\n"
@@ -1114,13 +1132,58 @@ def quantum_optimize(doc_id):
         if len(current_values) != 12:
              return jsonify({"error": f"Invalid input size: {len(current_values)}. Expected 12 labels."}), 400
 
-        # QUBO生成と解決
+        # QUBO生成と複数解決
         Q = generate_onehot_qubo(current_values, weights, label_order)
-        optimal_values = solve_and_decode(Q)
+        solutions = solve_and_decode_multi(Q)
+
+        # 差分×重みスコアの計算準備
+        weights_vector = []
+        for cat_name, labels_config in semantic_label_schema.items():
+            if cat_name == "scale": continue
+            w = weights.get(cat_name, 1.0)
+            for _ in labels_config:
+                weights_vector.append(w)
+
+        def calculate_diff_score(current, candidate, weights):
+            total = 0.0
+            for i in range(len(current)):
+                diff = abs(candidate[i] - current[i])
+                total += diff * weights[i]
+            return total
+
+        # 各候補のスコア計算
+        for s in solutions:
+            s["diff_score"] = calculate_diff_score(current_values, s["values"], weights_vector)
+
+        # 正規化と合成
+        if solutions:
+            # エネルギー正規化 (低エネルギーほど高評価)
+            energy_values = [s["energy"] for s in solutions]
+            min_e, max_e = min(energy_values), max(energy_values)
+            for s in solutions:
+                if max_e == min_e: s["energy_norm"] = 1.0
+                else: s["energy_norm"] = 1.0 - (s["energy"] - min_e) / (max_e - min_e)
+
+            # 差分スコア正規化 (高乖離ほど高評価 - ユーザー指定ルール)
+            diff_values = [s["diff_score"] for s in solutions]
+            min_d, max_d = min(diff_values), max(diff_values)
+            for s in solutions:
+                if max_d == min_d: s["diff_norm"] = 1.0
+                else: s["diff_norm"] = (s["diff_score"] - min_d) / (max_d - min_d)
+
+            # 合成スコア
+            ALPHA, BETA = 0.5, 0.5
+            for s in solutions:
+                s["final_score"] = ALPHA * s["energy_norm"] + BETA * s["diff_norm"]
+
+            # 順位付け
+            solutions.sort(key=lambda x: x["final_score"], reverse=True)
+            for rank, s in enumerate(solutions, start=1):
+                s["rank"] = rank
 
         return jsonify({
             "success": True,
-            "optimal_values": optimal_values,
+            "solutions": solutions,
             "label_order": label_order
         })
 

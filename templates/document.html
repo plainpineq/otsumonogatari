@@ -215,9 +215,11 @@
             <div class="d-flex gap-2 flex-wrap" id="evaluation-buttons-container">
                 <!-- Dynamically generated evaluation buttons will go here -->
             </div>
-            <div class="mt-2">
-                <button type="button" id="quantum-optimize-btn" class="btn btn-outline-primary btn-sm">量子最適解を計算</button>
+            <div class="mt-2 d-flex align-items-center gap-3">
+                <button type="button" id="quantum-optimize-btn" class="btn btn-outline-primary btn-sm" style="display: none;">量子最適解を計算</button>
+                <span id="quantum-energy-display" class="text-muted small" style="display: none;">Energy: -</span>
             </div>
+            <!-- Optimized candidates list removed as per request -->
 
             <!-- Placeholders for real-time updates -->
             <div id="evaluation-status" class="mt-3"></div>
@@ -695,7 +697,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Generate headers
             const labelsForClassification = semanticLabelSchema[categoryName];
             const allLabelKeysForRows = [];
-            let headerHtml = '<tr><th>要素名</th><th style="width: 40%;">テキスト</th>';
+            let headerHtml = '<tr><th>選択</th><th>要素名</th><th style="width: 40%;">テキスト</th>';
             
             if (labelsForClassification) {
                 for (const labelKey in labelsForClassification) {
@@ -705,10 +707,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             } else {
                  // Fallback for unknown categories if schema is missing
-                 headerHtml = '<tr><th>要素名</th><th style="width: 40%;">テキスト</th></tr>';
+                 headerHtml = '<tr><th>選択</th><th>要素名</th><th style="width: 40%;">テキスト</th></tr>';
             }
-            headerHtml += '<th>QUBO Energy</th>';
-            headerHtml += '<th>Quantum Optimal</th>';
+            headerHtml += '<th>Energy</th>';
+            headerHtml += '<th>乖離スコア</th>';
             headerHtml += '</tr>';
             thead.innerHTML = headerHtml;
             thead.dataset.orderedKeys = JSON.stringify(allLabelKeysForRows);
@@ -753,9 +755,13 @@ document.addEventListener('DOMContentLoaded', function() {
             itemLabelsArray = [item.labels];
         }
 
-        itemLabelsArray.forEach(proposalLabels => {
+        itemLabelsArray.forEach((proposalLabels, index) => {
+            const radioName = `select_${item.category}_${item.element}`.replace(/\s+/g, '_');
+            const isChecked = index === 0 ? 'checked' : '';
+            
             let rowHtml = `
                 <tr>
+                    <td class="text-center"><input type="radio" name="${radioName}" ${isChecked}></td>
                     <td>${item.element}</td>
                     <td><small>${item.text}</small></td>
             `;
@@ -778,7 +784,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
             rowHtml += `<td>${(proposalLabels.qubo_energy !== undefined && proposalLabels.qubo_energy !== null) ? proposalLabels.qubo_energy : '-'}</td>`;
-            rowHtml += `<td>${(proposalLabels.quantum_optimal !== undefined && proposalLabels.quantum_optimal !== null) ? proposalLabels.quantum_optimal.join(', ') : '-'}</td>`;
+            rowHtml += `<td>${(proposalLabels.diff_score !== undefined && proposalLabels.diff_score !== null) ? proposalLabels.diff_score : '-'}</td>`;
             rowHtml += '</tr>';
             tbody.insertAdjacentHTML('beforeend', rowHtml);
         });
@@ -1058,34 +1064,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     const data = await response.json();
 
                     if (data.success) {
-                        // 2. 結果をテーブルの「Quantum Optimal」列に反映（スライダーは変更しない）
-                        const optimalValues = data.optimal_values;
-                        const labelOrder = data.label_order;
-
-                        // 各カテゴリセクション内の全行に対して、対応する最適解を表示
-                        const sections = document.querySelectorAll('.evaluation-results-section');
-                        sections.forEach(section => {
-                            const categoryName = section.querySelector('h4').textContent.replace(' 評価結果', '');
-                            const tbody = section.querySelector('tbody');
-                            
-                            // カテゴリに対応する4つの最適値を取得
-                            let catOptValues = [];
-                            labelOrder.forEach((fullLabel, idx) => {
-                                if (fullLabel.startsWith(categoryName + ':')) {
-                                    catOptValues.push(optimalValues[idx]);
-                                }
-                            });
-
-                            const rows = tbody.querySelectorAll('tr');
-                            rows.forEach(row => {
-                                const optCell = row.lastElementChild; // Quantum Optimal列は最後
-                                if (optCell) {
-                                    optCell.textContent = catOptValues.join(', ');
-                                }
-                            });
-                        });
-
-                        showAlert('量子最適解の計算が完了しました。評価テーブルの「Quantum Optimal」列を確認してください。', 'success');
+                        // 量子最適化の結果を評価結果テーブルに反映させるなどの処理をここに書くことができる
+                        // 現時点では、単に成功メッセージを表示するのみ
+                        showAlert('量子最適解の計算が完了しました。', 'success');
                     } else {
                         throw new Error(data.error || '最適化に失敗しました。');
                     }
@@ -1096,6 +1077,86 @@ document.addEventListener('DOMContentLoaded', function() {
                     quantumOptimizeBtn.textContent = '量子最適解を計算';
                 }
             });
+        }
+
+        // renderQuantumCandidates function removed as per request
+
+        function applyCandidatePreview(optimalValues, labelOrder, energy) {
+            // エネルギー表示を更新
+            const energyDisplay = document.getElementById('quantum-energy-display');
+            if (energyDisplay) {
+                energyDisplay.textContent = `Energy: ${energy.toFixed(4)}`;
+            }
+
+            // 各カテゴリセクション内の全行に対して、対応する最適解を表示
+            const sections = document.querySelectorAll('.evaluation-results-section');
+            sections.forEach(section => {
+                const categoryName = section.querySelector('h4').textContent.replace(' 評価結果', '');
+                const tbody = section.querySelector('tbody');
+                const numLabels = JSON.parse(section.querySelector('thead').dataset.orderedKeys || '[]').length;
+                
+                let catOptValues = [];
+                labelOrder.forEach((fullLabel, idx) => {
+                    if (fullLabel.startsWith(categoryName + ':')) {
+                        catOptValues.push(optimalValues[idx]);
+                    }
+                });
+
+                const rows = tbody.querySelectorAll('tr');
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    const optCell = row.lastElementChild; 
+                    if (optCell) {
+                        const currentValues = [];
+                        for(let i=2; i < 2 + numLabels; i++) {
+                            currentValues.push(parseInt(cells[i].textContent) || 0);
+                        }
+
+                        const optHtml = catOptValues.map((opt, i) => {
+                            const cur = currentValues[i];
+                            const diff = opt - cur;
+                            let color = 'white';
+                            let diffStr = '±0';
+                            if (diff > 0) {
+                                color = 'yellow';
+                                diffStr = `+${diff}`;
+                            } else if (diff < 0) {
+                                color = 'red';
+                                diffStr = `${diff}`;
+                            }
+                            return `<span style="color: ${color}">${opt} (${diffStr})</span>`;
+                        }).join(', ');
+
+                        optCell.innerHTML = optHtml;
+                    }
+                });
+            });
+        }
+
+        function adoptCandidateValues(values, labelOrder) {
+            labelOrder.forEach((fullLabel, idx) => {
+                const [catName, jaLabel] = fullLabel.split(':');
+                const catSchema = semanticLabelSchema[catName];
+                let enKey = null;
+                for (let key in catSchema) {
+                    if (catSchema[key].ja_label === jaLabel) {
+                        enKey = key;
+                        break;
+                    }
+                }
+                if (enKey) {
+                    const val = values[idx];
+                    const idBase = `${catName}_${enKey}`;
+                    const slider = document.getElementById(`target_range_${idBase}`);
+                    const badge = document.getElementById(`target_val_${idBase}`);
+                    const hidden = document.getElementById(`target_hidden_${idBase}`);
+                    
+                    if (slider) slider.value = val;
+                    if (badge) badge.innerText = val;
+                    if (hidden) hidden.value = val;
+                }
+            });
+            showAlert('候補提案の値をスライダーに適用しました。「評価基準」タブで確認し、「評価基準を保存」を押してください。', 'info');
         }
     }
 

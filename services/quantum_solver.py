@@ -38,13 +38,39 @@ def solve_and_decode(
     Q: Dict[Tuple[int, int], float],
     label_count: int = 12,
     num_reads: int = 200
-) -> List[int]:
+) -> Tuple[List[int], float]:
     """
-    QUBOを解き、0-5評価値のリストを返す
+    QUBOを解き、0-5評価値のリストとエネルギーを返す
     """
     result = solve_qubo_classical(Q, num_reads=num_reads)
     decoded = decode_onehot(result.sample, label_count)
-    return decoded
+    return decoded, float(result.energy)
+
+
+def solve_and_decode_multi(
+    Q: Dict[Tuple[int, int], float],
+    label_count: int = 12,
+    num_reads: int = 200,
+    top_n: int = 5
+) -> List[Dict]:
+    """
+    QUBOを解き、複数の候補解（評価値リストとエネルギー）を返す
+    """
+    bqm = dimod.BinaryQuadraticModel.from_qubo(Q)
+    sampler = SimulatedAnnealingSampler()
+    sampleset = sampler.sample(bqm, num_reads=num_reads)
+    
+    unique_samples = sampleset.aggregate().data(['sample', 'energy'], sorted_by='energy')
+    
+    results = []
+    for i, data in enumerate(unique_samples):
+        if i >= top_n: break
+        decoded = decode_onehot(data.sample, label_count)
+        results.append({
+            "values": decoded,
+            "energy": float(data.energy)
+        })
+    return results
 
 
 def test_quantum_solver():
