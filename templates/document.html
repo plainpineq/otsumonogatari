@@ -705,6 +705,7 @@ document.addEventListener('DOMContentLoaded', function() {
                  headerHtml = '<tr><th>要素名</th><th style="width: 40%;">テキスト</th></tr>';
             }
             headerHtml += '<th>QUBO Energy</th>';
+            headerHtml += '<th>Quantum Optimal</th>';
             headerHtml += '</tr>';
             thead.innerHTML = headerHtml;
             thead.dataset.orderedKeys = JSON.stringify(allLabelKeysForRows);
@@ -774,6 +775,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
             rowHtml += `<td>${(proposalLabels.qubo_energy !== undefined && proposalLabels.qubo_energy !== null) ? proposalLabels.qubo_energy : '-'}</td>`;
+            rowHtml += `<td>${(proposalLabels.quantum_optimal !== undefined && proposalLabels.quantum_optimal !== null) ? proposalLabels.quantum_optimal.join(', ') : '-'}</td>`;
             rowHtml += '</tr>';
             tbody.insertAdjacentHTML('beforeend', rowHtml);
         });

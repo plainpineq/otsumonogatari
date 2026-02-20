@@ -291,6 +291,26 @@ def document_create():
     return redirect(f"/document/{document['id']}")
 
 from services.scoring import generate_onehot_qubo, compute_qubo_energy, to_onehot
+from services.quantum_solver import solve_and_decode
+
+
+def compute_quantum_optimal(current_values, category_weights, label_order):
+    """
+    現在の入力値から量子最適解を計算
+    """
+    try:
+        Q = generate_onehot_qubo(
+            global_target_vector=current_values,
+            category_weights=category_weights,
+            label_order=label_order
+        )
+
+        optimal_values = solve_and_decode(Q)
+        return optimal_values
+
+    except Exception as e:
+        print("Quantum optimization failed:", e)
+        return None
 
 
 def calculate_qubo_energy_for_item(document, category, labels_ja, schema):
@@ -400,15 +420,6 @@ def view_document(doc_id):
         logging.warning("Warning: semantic_label_schema.json not found.")
     except json.JSONDecodeError:
         logging.warning("Warning: semantic_label_schema.json is invalid JSON.")
-
-    # 既存の評価結果にQUBOエネルギーを付与
-    if semantic_label_schema:
-        for item in document.get("semantic_labels", []):
-            cat = item.get("category")
-            for labels_ja in item.get("labels", []):
-                if "qubo_energy" not in labels_ja:
-                    energy = calculate_qubo_energy_for_item(document, cat, labels_ja, semantic_label_schema)
-                    labels_ja["qubo_energy"] = energy
 
     response = make_response(render_template(
         "document.html",
@@ -879,12 +890,45 @@ def evaluate_stream(doc_id):
                         except:
                             pass
                         
-                        # 各提案に対してエネルギーを計算
+                        # 各提案に対してエネルギーと量子最適解を計算
                         if semantic_label_schema:
                             cat = labeled_result.get("category")
+                            criteria = document.get("evaluation_criteria", {})
+                            targets = criteria.get("global_target", {})
+                            weights = criteria.get("category_weights", {})
+
                             for labels_ja in labeled_result.get("labels", []):
                                 energy = calculate_qubo_energy_for_item(document, cat, labels_ja, semantic_label_schema)
                                 labels_ja["qubo_energy"] = energy
+
+                                # Quantum Optimal
+                                current_values = []
+                                label_order = []
+                                for cat_name, labels_config in semantic_label_schema.items():
+                                    if cat_name == "scale": continue
+                                    for en_key, spec in labels_config.items():
+                                        ja_label = spec.get("ja_label", en_key)
+                                        label_order.append(f"{cat_name}:{ja_label}")
+                                        if cat_name == cat:
+                                            current_values.append(labels_ja.get(ja_label, 0))
+                                        else:
+                                            current_values.append(targets.get(cat_name, {}).get(en_key, 2))
+                                
+                                optimal_values = compute_quantum_optimal(current_values, weights, label_order)
+                                
+                                start_idx = 0
+                                found_idx = False
+                                for cat_name, labels_config in semantic_label_schema.items():
+                                    if cat_name == "scale": continue
+                                    if cat_name == cat:
+                                        found_idx = True
+                                        break
+                                    start_idx += len(labels_config)
+                                
+                                if found_idx and optimal_values:
+                                    labels_ja["quantum_optimal"] = optimal_values[start_idx : start_idx + 4]
+                                else:
+                                    labels_ja["quantum_optimal"] = None
 
                         all_results.append(labeled_result)
                         yield f"data: {json.dumps({'semantic_label': labeled_result}, ensure_ascii=False)}\n\n"
