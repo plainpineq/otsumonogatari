@@ -215,6 +215,9 @@
             <div class="d-flex gap-2 flex-wrap" id="evaluation-buttons-container">
                 <!-- Dynamically generated evaluation buttons will go here -->
             </div>
+            <div class="mt-2">
+                <button type="button" id="quantum-optimize-btn" class="btn btn-outline-primary btn-sm">量子最適解を計算</button>
+            </div>
 
             <!-- Placeholders for real-time updates -->
             <div id="evaluation-status" class="mt-3"></div>
@@ -1015,6 +1018,85 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         renderEvaluationButtons(); // Render evaluation buttons on initialization
         renderInitialSemanticLabels(); // NEW: Render existing evaluation results
+
+        // Quantum Optimize Button Logic
+        const quantumOptimizeBtn = document.getElementById('quantum-optimize-btn');
+        if (quantumOptimizeBtn) {
+            quantumOptimizeBtn.addEventListener('click', async () => {
+                // 1. 評価基準タブから最新の目標値と重みを取得（保存されていなくてもUI上の値を使用）
+                const criteriaForm = document.getElementById('evaluation-criteria-form');
+                const formData = new FormData(criteriaForm);
+                const currentCriteria = {
+                    global_target: {},
+                    category_weights: {}
+                };
+
+                for (let [key, value] of formData.entries()) {
+                    if (key.startsWith('weight_')) {
+                        const cat = key.replace('weight_', '');
+                        currentCriteria.category_weights[cat] = parseFloat(value);
+                    } else if (key.startsWith('target_')) {
+                        const parts = key.split('_');
+                        const enKey = parts.pop();
+                        const classification = parts.slice(1).join('_');
+                        if (!currentCriteria.global_target[classification]) {
+                            currentCriteria.global_target[classification] = {};
+                        }
+                        currentCriteria.global_target[classification][enKey] = parseInt(value);
+                    }
+                }
+
+                quantumOptimizeBtn.disabled = true;
+                quantumOptimizeBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 計算中...';
+
+                try {
+                    const response = await fetch(`/document/${docId}/quantum_optimize`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ criteria: currentCriteria }) // UI上の最新設定を送信
+                    });
+                    const data = await response.json();
+
+                    if (data.success) {
+                        // 2. 結果をテーブルの「Quantum Optimal」列に反映（スライダーは変更しない）
+                        const optimalValues = data.optimal_values;
+                        const labelOrder = data.label_order;
+
+                        // 各カテゴリセクション内の全行に対して、対応する最適解を表示
+                        const sections = document.querySelectorAll('.evaluation-results-section');
+                        sections.forEach(section => {
+                            const categoryName = section.querySelector('h4').textContent.replace(' 評価結果', '');
+                            const tbody = section.querySelector('tbody');
+                            
+                            // カテゴリに対応する4つの最適値を取得
+                            let catOptValues = [];
+                            labelOrder.forEach((fullLabel, idx) => {
+                                if (fullLabel.startsWith(categoryName + ':')) {
+                                    catOptValues.push(optimalValues[idx]);
+                                }
+                            });
+
+                            const rows = tbody.querySelectorAll('tr');
+                            rows.forEach(row => {
+                                const optCell = row.lastElementChild; // Quantum Optimal列は最後
+                                if (optCell) {
+                                    optCell.textContent = catOptValues.join(', ');
+                                }
+                            });
+                        });
+
+                        showAlert('量子最適解の計算が完了しました。評価テーブルの「Quantum Optimal」列を確認してください。', 'success');
+                    } else {
+                        throw new Error(data.error || '最適化に失敗しました。');
+                    }
+                } catch (error) {
+                    alert('エラー: ' + error.message);
+                } finally {
+                    quantumOptimizeBtn.disabled = false;
+                    quantumOptimizeBtn.textContent = '量子最適解を計算';
+                }
+            });
+        }
     }
 
     if (calculateFitBtnV2) {

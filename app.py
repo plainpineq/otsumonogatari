@@ -1070,5 +1070,64 @@ def load_server_settings():
         return jsonify({"success": False, "message": f"設定のロード中にエラーが発生しました: {str(e)}"}), 500
 
 
+@app.route("/document/<doc_id>/quantum_optimize", methods=["POST"])
+def quantum_optimize(doc_id):
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = load_user_data(session["user_id"])
+    document = find_document(data, doc_id)
+    if not document:
+        return jsonify({"error": "Document not found"}), 404
+
+    try:
+        # Request body から最新のUI設定を取得（提供されている場合）
+        req_data = request.get_json() or {}
+        criteria = req_data.get("criteria")
+        
+        if not criteria:
+            criteria = document.get("evaluation_criteria", {})
+            
+        targets = criteria.get("global_target", {})
+        weights = criteria.get("category_weights", {})
+
+        # Load semantic label schema to get label order
+        semantic_label_schema = {}
+        try:
+            with open("prompt_templates/semantic_label_schema.json", "r", encoding="utf-8") as f:
+                semantic_label_schema = json.load(f)
+        except:
+            return jsonify({"error": "Schema not found"}), 500
+
+        # 1. 構築: ラベル順序と現在の目標値
+        label_order = []
+        current_values = []
+        
+        for cat_name, labels_config in semantic_label_schema.items():
+            if cat_name == "scale":
+                continue
+            for en_key, spec in labels_config.items():
+                ja_label = spec.get("ja_label", en_key)
+                label_order.append(f"{cat_name}:{ja_label}")
+                current_values.append(targets.get(cat_name, {}).get(en_key, 2))
+
+        if len(current_values) != 12:
+             return jsonify({"error": f"Invalid input size: {len(current_values)}. Expected 12 labels."}), 400
+
+        # QUBO生成と解決
+        Q = generate_onehot_qubo(current_values, weights, label_order)
+        optimal_values = solve_and_decode(Q)
+
+        return jsonify({
+            "success": True,
+            "optimal_values": optimal_values,
+            "label_order": label_order
+        })
+
+    except Exception as e:
+        logging.error(f"Quantum optimization failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     app.run(debug=True)
