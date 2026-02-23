@@ -71,8 +71,16 @@
         <!-- STEP 3: Full Composition Generation -->
         <div id="step3-composition" class="card p-4 my-3" style="display: none;">
             <h3 class="h4">ステップ3: 物語の全体像を生成する</h3>
-            <p class="text-muted">確定した基本設定に基づいて、物語の全ての構成要素（導入、事件、転機、結末など）を生成します。</p>
-            <button id="generate-composition-btn" class="btn btn-primary">全体生成を開始</button>
+            <p class="text-muted">確定した基本設定に基づいて、物語の構成要素を生成します。全体を一括で生成するか、特定の分類のみを生成できます。</p>
+            
+            <div class="d-flex gap-2 mb-4">
+                <button id="generate-composition-btn" class="btn btn-primary">全分類を一括生成</button>
+            </div>
+
+            <div id="category-generation-list" class="mb-4">
+                <!-- JavaScriptで動的に生成されます -->
+            </div>
+
             <div id="composition-results" class="mt-3">
                 <!-- Suggestions will be loaded here -->
             </div>
@@ -572,6 +580,109 @@ document.addEventListener('DOMContentLoaded', function() {
         showStep(1);
     });
 
+    async function generateCategoryComposition(categoryLabel, resultsContainerId) {
+        const categorySectionId = `composition-for-${categoryLabel.replace(/\s/g, '-')}`;
+        let categorySection = document.getElementById(categorySectionId);
+        
+        if (!categorySection) {
+             const resultsDiv = document.getElementById(resultsContainerId);
+             resultsDiv.insertAdjacentHTML('beforeend', `
+                <div id="${categorySectionId}" class="card p-3 mb-2">
+                    <h5>分類: ${categoryLabel}</h5>
+                    <div class="results-content"></div>
+                </div>
+            `);
+            categorySection = document.getElementById(categorySectionId);
+        }
+
+        // Always show the header and a spinner
+        categorySection.innerHTML = `
+            <h5>分類: ${categoryLabel}</h5>
+            <div class="text-center my-2">
+                <div class="spinner-border text-secondary spinner-border-sm" role="status"></div>
+                <p class="mt-1 text-muted">生成中...</p>
+            </div>
+        `;
+
+        try {
+            const response = await fetch(`/document/${docId}/generate_composition`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ category_label: categoryLabel })
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                 categorySection.innerHTML = `
+                    <h5>分類: ${categoryLabel}</h5>
+                    <div class="alert alert-danger mb-0">${data.error || "提案の生成に失敗しました。"}</div>
+                `;
+                 return;
+            }
+
+            renderSingleCategorySuggestions(categorySectionId, data.suggestions[0]);
+
+            // Update client-side documentData with new composition suggestions
+            const newCategorySuggestion = data.suggestions[0];
+            if (newCategorySuggestion) {
+                const existingIndex = documentData.llm_suggestions.findIndex(s => s.category === newCategorySuggestion.category);
+                if (existingIndex > -1) {
+                    documentData.llm_suggestions[existingIndex] = newCategorySuggestion;
+                } else {
+                    documentData.llm_suggestions.push(newCategorySuggestion);
+                }
+            }
+        } catch (error) {
+            categorySection.innerHTML = `
+                <h5>分類: ${categoryLabel}</h5>
+                <div class="alert alert-danger mb-0">エラーが発生しました: ${error.message}</div>
+            `;
+        }
+    }
+
+    function renderCategoryGenerationList() {
+        const listContainer = document.getElementById('category-generation-list');
+        if (!listContainer) return;
+        listContainer.innerHTML = '<h5 class="h6 mb-3">分類ごとの生成:</h5>';
+        
+        const allCategoryLabels = documentData.composition_elements?.categories?.map(c => c.label) || [];
+        const categoriesToGenerate = allCategoryLabels.filter(label => label !== '基本設定');
+
+        if (categoriesToGenerate.length === 0) {
+            listContainer.innerHTML += '<p class="text-muted small">生成可能な分類がありません。「構成要素」タブで設定してください。</p>';
+            return;
+        }
+
+        const group = document.createElement('div');
+        group.className = 'list-group list-group-flush border rounded';
+
+        categoriesToGenerate.forEach(label => {
+            const item = document.createElement('div');
+            item.className = 'list-group-item d-flex justify-content-between align-items-center py-2';
+            item.innerHTML = `
+                <span>${label}</span>
+                <button class="btn btn-outline-primary btn-sm generate-cat-btn" data-category="${label}">生成 / 再生成</button>
+            `;
+            group.appendChild(item);
+        });
+        listContainer.appendChild(group);
+
+        // Add event listeners to individual buttons
+        listContainer.querySelectorAll('.generate-cat-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const categoryLabel = btn.dataset.category;
+                btn.disabled = true;
+                const originalText = btn.textContent;
+                btn.textContent = '生成中...';
+                
+                await generateCategoryComposition(categoryLabel, 'composition-results');
+                
+                btn.textContent = originalText;
+                btn.disabled = false;
+            });
+        });
+    }
+
     generateCompositionBtn.addEventListener('click', async () => {
         generateCompositionBtn.disabled = true;
         generateCompositionBtn.textContent = '全体を生成中...';
@@ -581,56 +692,10 @@ document.addEventListener('DOMContentLoaded', function() {
         const categoriesToGenerate = allCategoryLabels.filter(label => label !== '基本設定');
 
         for (const categoryLabel of categoriesToGenerate) {
-            const categorySectionId = `composition-for-${categoryLabel.replace(/\s/g, '-')}`;
-            compositionResultsDiv.innerHTML += `
-                <div id="${categorySectionId}" class="card p-3 mb-2">
-                    <h5>分類: ${categoryLabel}</h5>
-                    <div class="text-center my-2">
-                        <div class="spinner-border text-secondary spinner-border-sm" role="status"></div>
-                        <p class="mt-1 text-muted">生成中...</p>
-                    </div>
-                </div>
-            `;
-
-            try {
-                const response = await fetch(`/document/${docId}/generate_composition`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ category_label: categoryLabel })
-                });
-                const data = await response.json();
-
-                const categorySection = document.getElementById(categorySectionId);
-                if (!response.ok) {
-                     categorySection.innerHTML = `
-                        <h5>分類: ${categoryLabel}</h5>
-                        <div class="alert alert-danger mb-0">${data.error || "提案の生成に失敗しました。"}</div>
-                    `;
-                    continue;
-                }
-
-                renderSingleCategorySuggestions(categorySectionId, data.suggestions[0]);
-
-                // Update client-side documentData with new composition suggestions
-                const newCategorySuggestion = data.suggestions[0];
-                if (newCategorySuggestion) {
-                    const existingIndex = documentData.llm_suggestions.findIndex(s => s.category === newCategorySuggestion.category);
-                    if (existingIndex > -1) {
-                        documentData.llm_suggestions[existingIndex] = newCategorySuggestion;
-                    } else {
-                        documentData.llm_suggestions.push(newCategorySuggestion);
-                    }
-                }
-            } catch (error) {
-                const categorySection = document.getElementById(categorySectionId);
-                categorySection.innerHTML = `
-                    <h5>分類: ${categoryLabel}</h5>
-                    <div class="alert alert-danger mb-0">エラーが発生しました: ${error.message}</div>
-                `;
-            }
+            await generateCategoryComposition(categoryLabel, 'composition-results');
         }
 
-        generateCompositionBtn.textContent = '全体生成を再実行';
+        generateCompositionBtn.textContent = '全分類を一括生成 (再実行)';
         generateCompositionBtn.disabled = false;
     });
 
@@ -1022,6 +1087,7 @@ document.addEventListener('DOMContentLoaded', function() {
             generateProposalsBtn.title = "構成要素を定義してから生成を開始してください。";
             generateCompositionBtn.title = "構成要素を定義してから生成を開始してください。";
         }
+        renderCategoryGenerationList(); // Add this line
         renderEvaluationButtons(); // Render evaluation buttons on initialization
         renderInitialSemanticLabels(); // NEW: Render existing evaluation results
 
