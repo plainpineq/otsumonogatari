@@ -963,7 +963,13 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        let htmlContent = `<h5>分類: ${categoryObj.category}</h5><div class="list-group">`;
+        let htmlContent = `
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">分類: ${categoryObj.category}</h5>
+                <button class="btn btn-success btn-sm save-category-btn" data-category="${categoryObj.category}">この分類を保存</button>
+            </div>
+            <div class="list-group">
+        `;
 
         // document.composition_elements から現在のカテゴリの要素の順序とタイプを取得
         let orderedElementsForCategory = [];
@@ -979,20 +985,100 @@ document.addEventListener('DOMContentLoaded', function() {
             const elementName = elementMeta.label;
             if (categoryObj.elements.hasOwnProperty(elementName)) {
                 const suggestionsForElement = categoryObj.elements[elementName];
-                htmlContent += `<h6 class="ms-3 mb-1 mt-2">要素名: ${elementName}</h6>`;
-                htmlContent += `<ul class="list-group mb-2 ms-4">`;
+                htmlContent += `<h6 class="ms-1 mb-1 mt-2 small fw-bold">要素名: ${elementName}</h6>`;
+                
+                // If it's an array of suggestions, we'll join them or just take the first one?
+                // The current UI shows all. Let's make it a single editable area if multiple, or one textarea per suggestion?
+                // Request says "edit the generated elements". Usually LLM generates one definitive proposal per element in this step,
+                // but suggest_count might be > 1. Let's support editing all suggestions.
+                
                 if (Array.isArray(suggestionsForElement)) {
-                    suggestionsForElement.forEach(suggestion => {
-                        htmlContent += `<li class="list-group-item py-1">${suggestion}</li>`;
+                    suggestionsForElement.forEach((suggestion, idx) => {
+                        const textareaId = `edit-${categoryObj.category}-${elementName}-${idx}`.replace(/\s/g, '-');
+                        htmlContent += `
+                            <div class="mb-2">
+                                <textarea class="form-control form-control-sm suggestion-edit-area" 
+                                          id="${textareaId}" 
+                                          data-category="${categoryObj.category}" 
+                                          data-element="${elementName}" 
+                                          data-index="${idx}"
+                                          rows="3">${suggestion}</textarea>
+                            </div>
+                        `;
                     });
                 } else {
-                     htmlContent += `<li class="list-group-item py-1">${suggestionsForElement}</li>`;
+                    const textareaId = `edit-${categoryObj.category}-${elementName}-0`.replace(/\s/g, '-');
+                    htmlContent += `
+                        <div class="mb-2">
+                            <textarea class="form-control form-control-sm suggestion-edit-area" 
+                                      id="${textareaId}" 
+                                      data-category="${categoryObj.category}" 
+                                      data-element="${elementName}" 
+                                      data-index="0"
+                                      rows="3">${suggestionsForElement}</textarea>
+                        </div>
+                    `;
                 }
-                htmlContent += `</ul>`;
             }
         });
         htmlContent += `</div>`;
         categorySection.innerHTML = htmlContent;
+
+        // Add event listener for the save button
+        categorySection.querySelector('.save-category-btn').addEventListener('click', async (e) => {
+            const btn = e.target;
+            const categoryLabel = btn.dataset.category;
+            
+            // Collect updated values from textareas
+            const textareas = categorySection.querySelectorAll('.suggestion-edit-area');
+            const updatedElements = {};
+            
+            textareas.forEach(ta => {
+                const elemName = ta.dataset.element;
+                const idx = parseInt(ta.dataset.index);
+                const value = ta.value;
+                
+                if (!updatedElements[elemName]) {
+                    updatedElements[elemName] = [];
+                }
+                updatedElements[elemName][idx] = value;
+            });
+
+            // If an element only had one suggestion, convert array back to string if that was the original format?
+            // Actually, keep it as array to be safe, or match original. 
+            // The backend expects suggestions to be in documentData.llm_suggestions
+            
+            btn.disabled = true;
+            btn.textContent = '保存中...';
+
+            try {
+                const response = await fetch(`/document/${docId}/save_generated_category`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        category: categoryLabel,
+                        elements: updatedElements
+                    })
+                });
+
+                if (response.ok) {
+                    showAlert(`${categoryLabel} の変更を保存しました。`, 'success');
+                    // Update local data
+                    const existingIndex = documentData.llm_suggestions.findIndex(s => s.category === categoryLabel);
+                    if (existingIndex > -1) {
+                        documentData.llm_suggestions[existingIndex].elements = updatedElements;
+                    }
+                } else {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || '保存に失敗しました。');
+                }
+            } catch (err) {
+                showAlert(`エラー: ${err.message}`, 'danger');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'この分類を保存';
+            }
+        });
     }
 
     // --- Initial State ---

@@ -792,6 +792,49 @@ def download_document(doc_id):
     return response
 
 
+@app.route("/document/<doc_id>/save_generated_category", methods=["POST"])
+def save_generated_category(doc_id):
+    """
+    Save edited LLM-generated suggestions for a specific category.
+    """
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    data = load_user_data(session["user_id"])
+    document = find_document(data, doc_id)
+    if document is None:
+        return jsonify({"error": "Document not found"}), 404
+
+    try:
+        request_data = request.get_json()
+        category_label = request_data.get("category")
+        updated_elements = request_data.get("elements")
+
+        if not category_label or updated_elements is None:
+            return jsonify({"error": "Missing category or elements data"}), 400
+
+        if "llm_suggestions" not in document:
+            document["llm_suggestions"] = []
+
+        found = False
+        for i, suggestion in enumerate(document["llm_suggestions"]):
+            if suggestion.get("category") == category_label:
+                document["llm_suggestions"][i]["elements"] = updated_elements
+                found = True
+                break
+        
+        if not found:
+            document["llm_suggestions"].append({
+                "category": category_label,
+                "elements": updated_elements
+            })
+
+        save_user_data(session["user_id"], data)
+        return jsonify({"success": True})
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to save generated category: {str(e)}"}), 500
+
+
 @app.route("/document/<doc_id>/evaluate", methods=["POST"])
 def evaluate_document(doc_id):
     """
