@@ -538,14 +538,26 @@ def generate_proposals(doc_id):
         with open(os.path.join(user_data_dir, f"generated_llm{suffix}.json"), "w", encoding="utf-8") as f:
             json.dump(suggestions_dict, f, ensure_ascii=False, indent=2)
 
-        # Append suggestions to the main document object
+        # Update suggestions in the main document object
         if "llm_suggestions" not in document or not isinstance(document["llm_suggestions"], list):
             document["llm_suggestions"] = []
 
-        # This logic assumes the response contains suggestions for the requested category
+        # Update existing categories or append new ones
         new_suggestions = suggestions_dict.get("suggestions", [])
-        if new_suggestions:
-            document["llm_suggestions"].extend(new_suggestions)
+        for new_sug in new_suggestions:
+            category_name = new_sug.get("category")
+            if not category_name:
+                continue
+            
+            found = False
+            for i, existing_sug in enumerate(document["llm_suggestions"]):
+                if existing_sug.get("category") == category_name:
+                    document["llm_suggestions"][i] = new_sug
+                    found = True
+                    break
+            
+            if not found:
+                document["llm_suggestions"].append(new_sug)
         
         save_user_data(session["user_id"], data)
 
