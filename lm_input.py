@@ -8,6 +8,32 @@ from ui_labels import UI_LABELS
 
 # ... existing code ...
 
+def _get_formatted_intent_text(document: dict) -> str:
+    """
+    Format intent fields and genre_config into a readable string for prompts.
+    """
+    intent_fields = document.get("intent", {}).get("fields", {})
+    genre_cfg = document.get("genre_config", {})
+    
+    formatted_intent = ""
+    
+    # 1. Genre Configuration
+    main_genre = genre_cfg.get("main")
+    sub_genres = genre_cfg.get("sub", [])
+    if main_genre:
+        formatted_intent += f"- 主ジャンル: {main_genre}\n"
+    if sub_genres:
+        formatted_intent += f"- 副ジャンル: {', '.join(sub_genres)}\n"
+        
+    # 2. Other Intent Fields
+    for key, field in intent_fields.items():
+        if field.get("label") and field.get("value"):
+            formatted_intent += f"- {field['label']}: {field['value']}\n"
+            
+    if not formatted_intent:
+        formatted_intent = "（基本設定・作者の意図は特に指定されていません）"
+    return formatted_intent
+
 def build_composition_ideas_prompt(document: dict, composition_meta: dict, user_id: str, target_category_label: Optional[str] = None, suffix: str = "", suggestion_count: int = 3) -> str:
     """
     Builds a prompt for the LLM to generate composition element suggestions.
@@ -37,15 +63,7 @@ def build_composition_ideas_prompt(document: dict, composition_meta: dict, user_
     with open(template_file_path, "r", encoding="utf-8") as f:
         template_content = f.read()
     
-    intent_fields = document.get("intent", {}).get("fields", {})
-    
-    # Format intent fields into a readable string
-    formatted_intent = ""
-    for key, field in intent_fields.items():
-        if field.get("label") and field.get("value"):
-            formatted_intent += f"- {field['label']}: {field['value']}\n"
-    if not formatted_intent:
-        formatted_intent = "（作者の意図は特に指定されていません）"
+    formatted_intent = _get_formatted_intent_text(document)
 
     # Extract composition elements based on all defined categories and format them for the prompt
     elements_text = ""
@@ -191,6 +209,14 @@ def build_title_plot_proposals_prompt(document: dict, composition_meta: dict, us
 
     intent_fields = document.get("intent", {}).get("fields", {})
     intent_dict = {field.get("label"): field.get("value") for key, field in intent_fields.items() if field.get("label") and field.get("value")}
+    
+    # Add genre config to the dict
+    genre_cfg = document.get("genre_config", {})
+    if genre_cfg.get("main"):
+        intent_dict["主ジャンル"] = genre_cfg["main"]
+    if genre_cfg.get("sub"):
+        intent_dict["副ジャンル"] = ", ".join(genre_cfg["sub"])
+
     formatted_intent_json = json.dumps(intent_dict, indent=2, ensure_ascii=False)
 
     # Current Composition Elements for context
@@ -295,14 +321,8 @@ def build_category_composition_prompt(document: dict, composition_meta: dict, us
     # Current Composition Elements for context (moved to top for scope)
     all_document_categories = document.get("composition_elements", {}).get("categories", [])
 
-    # Author's Intent
-    intent_fields = document.get("intent", {}).get("fields", {})
-    formatted_intent = ""
-    for key, field in intent_fields.items():
-        if field.get("label") and field.get("value"):
-            formatted_intent += f"- {field['label']}: {field['value']}\n"
-    if not formatted_intent:
-        formatted_intent = "（作者の意図は特に指定されていません）"
+    # Author's Intent / Basic Settings
+    formatted_intent = _get_formatted_intent_text(document)
 
     # Selected Basic Elements
     basic_settings_text = ""

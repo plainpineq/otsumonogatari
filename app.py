@@ -439,12 +439,22 @@ def view_document(doc_id):
     except json.JSONDecodeError:
         logging.warning("Warning: semantic_label_schema.json is invalid JSON.")
 
+    # Load available genres from default_interactions.json
+    available_genres = []
+    try:
+        with open("default_interactions.json", "r", encoding="utf-8") as f:
+            defaults = json.load(f)
+            available_genres = list(defaults.get("genres", {}).keys())
+    except Exception as e:
+        logging.warning(f"Warning: Failed to load genres from default_interactions.json: {e}")
+
     response = make_response(render_template(
         "document.html",
         document=document,
         labels=labels,
         mapped_doc_type_id=mapped_doc_type_id,
-        semantic_label_schema=semantic_label_schema # NEW: Pass full schema to template
+        semantic_label_schema=semantic_label_schema, # NEW: Pass full schema to template
+        available_genres=available_genres # NEW: Pass genre list
     ))
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
