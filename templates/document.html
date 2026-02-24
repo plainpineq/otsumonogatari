@@ -1182,27 +1182,20 @@ document.addEventListener('DOMContentLoaded', function() {
         if (quantumOptimizeBtn) {
             quantumOptimizeBtn.addEventListener('click', async () => {
                 // 1. 評価基準タブから最新の目標値と重みを取得（保存されていなくてもUI上の値を使用）
-                const criteriaForm = document.getElementById('evaluation-criteria-form');
-                const formData = new FormData(criteriaForm);
                 const currentCriteria = {
-                    global_target: {},
+                    targets: {},
                     category_weights: {}
                 };
 
-                for (let [key, value] of formData.entries()) {
-                    if (key.startsWith('weight_')) {
-                        const cat = key.replace('weight_', '');
-                        currentCriteria.category_weights[cat] = parseFloat(value);
-                    } else if (key.startsWith('target_')) {
-                        const parts = key.split('_');
-                        const enKey = parts.pop();
-                        const classification = parts.slice(1).join('_');
-                        if (!currentCriteria.global_target[classification]) {
-                            currentCriteria.global_target[classification] = {};
-                        }
-                        currentCriteria.global_target[classification][enKey] = parseInt(value);
-                    }
-                }
+                // 目標値の取得
+                document.querySelectorAll('.target-slider').forEach(slider => {
+                    currentCriteria.targets[slider.dataset.targetKey] = parseInt(slider.value);
+                });
+
+                // 重みの取得
+                document.querySelectorAll('.category-weight-slider').forEach(slider => {
+                    currentCriteria.category_weights[slider.dataset.category] = parseFloat(slider.value);
+                });
 
                 quantumOptimizeBtn.disabled = true;
                 quantumOptimizeBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 計算中...';
@@ -1298,14 +1291,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 if (enKey) {
                     const val = values[idx];
-                    const idBase = `${catName}_${enKey}`;
-                    const slider = document.getElementById(`target_range_${idBase}`);
-                    const badge = document.getElementById(`target_val_${idBase}`);
-                    const hidden = document.getElementById(`target_hidden_${idBase}`);
+                    const targetKey = `${catName}::${enKey}`;
+                    const slider = document.querySelector(`.target-slider[data-target-key="${targetKey}"]`);
+                    const badge = document.querySelector(`.badge[data-target-badge="${targetKey}"]`);
                     
                     if (slider) slider.value = val;
                     if (badge) badge.innerText = val;
-                    if (hidden) hidden.value = val;
                 }
             });
             showAlert('候補提案の値をスライダーに適用しました。「評価基準」タブで確認し、「評価基準を保存」を押してください。', 'info');

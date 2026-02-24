@@ -319,9 +319,17 @@ def calculate_qubo_energy_for_item(document, category, labels_ja, schema):
     12次元（3カテゴリ×4ラベル）のベクトルを構成し、対象カテゴリ以外は目標値で埋める。
     """
     try:
+        config = document.get("evaluation_config", {})
         criteria = document.get("evaluation_criteria", {})
-        targets = criteria.get("global_target", {})
-        weights = criteria.get("category_weights", {})
+        
+        targets = config.get("targets", {})
+        weights = config.get("category_weights", {})
+        
+        # fallback to old format
+        if not targets and "global_target" in criteria:
+            targets = criteria.get("global_target", {})
+        if not weights and "category_weights" in criteria:
+            weights = criteria.get("category_weights", {})
         
         # 1. ラベル順序と目標ベクトルの構築
         label_order = []
@@ -333,7 +341,13 @@ def calculate_qubo_energy_for_item(document, category, labels_ja, schema):
             for en_key, spec in labels_config.items():
                 ja_label = spec.get("ja_label", en_key)
                 label_order.append(f"{cat_name}:{ja_label}")
-                global_target_vector.append(targets.get(cat_name, {}).get(en_key, 2))
+                
+                # 目標値の取得
+                target_key = f"{cat_name}::{en_key}"
+                if target_key in targets:
+                    global_target_vector.append(targets[target_key])
+                else:
+                    global_target_vector.append(targets.get(cat_name, {}).get(en_key, 2))
         
         if not global_target_vector or len(global_target_vector) != 12:
             return None
@@ -355,7 +369,11 @@ def calculate_qubo_energy_for_item(document, category, labels_ja, schema):
                 if cat_name in schema:
                     for en_k, spec in schema[cat_name].items():
                         if spec.get("ja_label") == ja_label:
-                            target_val = targets.get(cat_name, {}).get(en_k, 2)
+                            target_key = f"{cat_name}::{en_k}"
+                            if target_key in targets:
+                                target_val = targets[target_key]
+                            else:
+                                target_val = targets.get(cat_name, {}).get(en_k, 2)
                             break
                 current_vector.append(target_val)
         
@@ -948,9 +966,18 @@ def evaluate_stream(doc_id):
                         # 各提案に対してエネルギーと量子最適解を計算
                         if semantic_label_schema:
                             cat = labeled_result.get("category")
+                            
+                            config = document.get("evaluation_config", {})
                             criteria = document.get("evaluation_criteria", {})
-                            targets = criteria.get("global_target", {})
-                            weights = criteria.get("category_weights", {})
+                            
+                            targets = config.get("targets", {})
+                            weights = config.get("category_weights", {})
+                            
+                            # fallback
+                            if not targets and "global_target" in criteria:
+                                targets = criteria.get("global_target", {})
+                            if not weights and "category_weights" in criteria:
+                                weights = criteria.get("category_weights", {})
 
                             for labels_ja in labeled_result.get("labels", []):
                                 energy = calculate_qubo_energy_for_item(document, cat, labels_ja, semantic_label_schema)
@@ -967,7 +994,11 @@ def evaluate_stream(doc_id):
                                         if cat_name == cat:
                                             current_values.append(labels_ja.get(ja_label, 0))
                                         else:
-                                            current_values.append(targets.get(cat_name, {}).get(en_key, 2))
+                                            target_key = f"{cat_name}::{en_key}"
+                                            if target_key in targets:
+                                                current_values.append(targets[target_key])
+                                            else:
+                                                current_values.append(targets.get(cat_name, {}).get(en_key, 2))
                                 
                                 optimal_values, energy = compute_quantum_optimal(current_values, weights, label_order)
                                 
@@ -978,7 +1009,11 @@ def evaluate_stream(doc_id):
                                     if cn == "scale": continue
                                     w = weights.get(cn, 1.0)
                                     for ek, sp in lc.items():
-                                        target_vector.append(targets.get(cn, {}).get(ek, 2))
+                                        target_key = f"{cn}::{ek}"
+                                        if target_key in targets:
+                                            target_vector.append(targets[target_key])
+                                        else:
+                                            target_vector.append(targets.get(cn, {}).get(ek, 2))
                                         weights_vector.append(w)
                                 
                                 diff_score = 0.0
@@ -1158,11 +1193,29 @@ def quantum_optimize(doc_id):
         req_data = request.get_json() or {}
         criteria = req_data.get("criteria")
         
+        config = document.get("evaluation_config", {})
+        old_criteria = document.get("evaluation_criteria", {})
+
         if not criteria:
-            criteria = document.get("evaluation_criteria", {})
+            # UIからの送信がない場合は保存されているものを使用
+            targets = config.get("targets", {})
+            weights = config.get("category_weights", {})
             
-        targets = criteria.get("global_target", {})
-        weights = criteria.get("category_weights", {})
+            # fallback
+            if not targets and "global_target" in old_criteria:
+                targets = old_criteria.get("global_target", {})
+            if not weights and "category_weights" in old_criteria:
+                weights = old_criteria.get("category_weights", {})
+        else:
+            # UIからの送信（互換性のため旧フォーマットかもしれないが、新UIは evaluation_config を送るはず）
+            # ただし、現在の JS (quantumOptimizeBtn) は旧フォーマットで送っている可能性があるので調整
+            targets = criteria.get("global_target", {})
+            weights = criteria.get("category_weights", {})
+            
+            if not targets and "targets" in criteria:
+                targets = criteria.get("targets", {})
+            if not weights and "category_weights" in criteria:
+                weights = criteria.get("category_weights", {})
 
         # Load semantic label schema to get label order
         semantic_label_schema = {}
@@ -1182,7 +1235,12 @@ def quantum_optimize(doc_id):
             for en_key, spec in labels_config.items():
                 ja_label = spec.get("ja_label", en_key)
                 label_order.append(f"{cat_name}:{ja_label}")
-                current_values.append(targets.get(cat_name, {}).get(en_key, 2))
+                
+                target_key = f"{cat_name}::{en_key}"
+                if target_key in targets:
+                    current_values.append(targets[target_key])
+                else:
+                    current_values.append(targets.get(cat_name, {}).get(en_key, 2))
 
         if len(current_values) != 12:
              return jsonify({"error": f"Invalid input size: {len(current_values)}. Expected 12 labels."}), 400

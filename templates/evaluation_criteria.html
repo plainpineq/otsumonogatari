@@ -1,98 +1,237 @@
 <div class="card p-4 shadow-sm mt-3">
-    <h2 class="h4 mb-3">評価基準の設定</h2>
-    <p class="text-muted">各ラベルの目標値と、分類ごとの重要度（重み）を設定します。</p>
+    <h2 class="h4 mb-3">評価基準の再設計</h2>
+    <p class="text-muted">各ラベルの目標値、分類の重み、およびラベル間の相互作用を設定します。</p>
 
-    <form id="evaluation-criteria-form">
-        {% set criteria = document.get('evaluation_criteria', {}) %}
-        {% set targets = criteria.get('global_target', {}) %}
-        {% set weights = criteria.get('category_weights', {}) %}
+    {% set config = document.get('evaluation_config', {}) %}
+    {% set targets = config.get('targets', {}) %}
+    {% set weights = config.get('category_weights', {}) %}
+    {% set interactions = config.get('interactions', []) %}
 
+    <!-- 分類別アコーディオン -->
+    <div class="accordion mb-4" id="categoryAccordion">
         {% for classification, labels in semantic_label_schema.items() %}
             {% if classification != "scale" %}
-            <div class="card mb-4 border-primary">
-                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                    <h3 class="h6 mb-0">{{ classification }}</h3>
-                    <div class="d-flex align-items-center">
-                        <label class="me-2 mb-0 small">分類の重み:</label>
-                        <input type="number" step="0.1" name="weight_{{ classification }}" 
-                               value="{{ weights.get(classification, 1.0) }}" 
-                               class="form-control form-control-sm" style="width: 80px;">
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        {% for en_key, spec in labels.items() %}
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label mb-1">
-                                <strong>{{ spec.ja_label }}</strong> 
-                                <small class="text-muted">({{ en_key }})</small>
-                            </label>
+            <div class="accordion-item">
+                <h2 class="accordion-header" id="heading_{{ loop.index }}">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse_{{ loop.index }}" aria-expanded="false" aria-controls="collapse_{{ loop.index }}">
+                        {{ classification }}
+                    </button>
+                </h2>
+                <div id="collapse_{{ loop.index }}" class="accordion-collapse collapse" aria-labelledby="heading_{{ loop.index }}" data-bs-parent="#categoryAccordion">
+                    <div class="accordion-body">
+                        <!-- 分類重み設定 -->
+                        <div class="mb-4 p-3 bg-light rounded border">
+                            <label class="form-label fw-bold">分類の重み (0.0 〜 5.0)</label>
                             <div class="d-flex align-items-center">
-                                <input type="range" class="form-range flex-grow-1 me-3" 
-                                       min="0" max="4" step="1" 
-                                       id="target_range_{{ classification }}_{{ en_key }}"
-                                       value="{{ targets.get(classification, {}).get(en_key, 2) }}"
-                                       oninput="document.getElementById('target_val_{{ classification }}_{{ en_key }}').innerText = this.value">
-                                <span class="badge bg-secondary fs-6" style="width: 30px;" 
-                                      id="target_val_{{ classification }}_{{ en_key }}">
-                                    {{ targets.get(classification, {}).get(en_key, 2) }}
+                                <input type="range" class="form-range flex-grow-1 me-3 category-weight-slider" 
+                                       min="0" max="5" step="0.1" 
+                                       data-category="{{ classification }}"
+                                       value="{{ weights.get(classification, 1.0) }}"
+                                       oninput="this.nextElementSibling.innerText = parseFloat(this.value).toFixed(1)">
+                                <span class="badge bg-primary fs-6" style="width: 50px;" data-category-badge="{{ classification }}">
+                                    {{ "%.1f"|format(weights.get(classification, 1.0)) }}
                                 </span>
-                                <input type="hidden" name="target_{{ classification }}_{{ en_key }}" 
-                                       value="{{ targets.get(classification, {}).get(en_key, 2) }}"
-                                       id="target_hidden_{{ classification }}_{{ en_key }}">
                             </div>
-                            <div class="form-text mt-0">{{ spec.description }}</div>
                         </div>
-                        {% endfor %}
+
+                        <!-- 目標値設定 -->
+                        <div class="row">
+                            {% for en_key, spec in labels.items() %}
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label mb-1">
+                                    <strong>{{ spec.ja_label }}</strong> 
+                                    <small class="text-muted">({{ en_key }})</small>
+                                </label>
+                                <div class="d-flex align-items-center">
+                                    {% set target_key = classification ~ "::" ~ en_key %}
+                                    <input type="range" class="form-range flex-grow-1 me-3 target-slider" 
+                                           min="0" max="4" step="1" 
+                                           data-target-key="{{ target_key }}"
+                                           value="{{ targets.get(target_key, 2) }}"
+                                           oninput="this.nextElementSibling.innerText = this.value">
+                                    <span class="badge bg-secondary fs-6" style="width: 30px;" 
+                                          data-target-badge="{{ target_key }}">
+                                        {{ targets.get(target_key, 2) }}
+                                    </span>
+                                </div>
+                                <div class="form-text mt-0">{{ spec.description }}</div>
+                            </div>
+                            {% endfor %}
+                        </div>
                     </div>
                 </div>
             </div>
             {% endif %}
         {% endfor %}
+    </div>
 
-        <div class="d-flex justify-content-end mt-3 gap-2">
-            <button type="button" id="save-criteria-btn" class="btn btn-success px-4">評価基準を保存</button>
+    <!-- ラベル間相互作用セクション -->
+    <div class="card mb-4 border-info">
+        <div class="card-header bg-info text-white">
+            <h3 class="h5 mb-0">ラベル間相互作用（Interaction）</h3>
         </div>
-    </form>
+        <div class="card-body">
+            <div class="row g-3 align-items-end mb-4 bg-light p-3 rounded border">
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold">ラベルA</label>
+                    <select id="interaction-label-a" class="form-select form-select-sm">
+                        {% for classification, labels in semantic_label_schema.items() %}
+                            {% if classification != "scale" %}
+                                <optgroup label="{{ classification }}">
+                                    {% for en_key, spec in labels.items() %}
+                                        <option value="{{ classification }}::{{ en_key }}">{{ classification }}::{{ spec.ja_label }}</option>
+                                    {% endfor %}
+                                </optgroup>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold">ラベルB</label>
+                    <select id="interaction-label-b" class="form-select form-select-sm">
+                        {% for classification, labels in semantic_label_schema.items() %}
+                            {% if classification != "scale" %}
+                                <optgroup label="{{ classification }}">
+                                    {% for en_key, spec in labels.items() %}
+                                        <option value="{{ classification }}::{{ en_key }}">{{ classification }}::{{ spec.ja_label }}</option>
+                                    {% endfor %}
+                                </optgroup>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold">強度 (-3.0 〜 +3.0)</label>
+                    <div class="d-flex align-items-center">
+                        <input type="range" class="form-range flex-grow-1 me-2" id="interaction-strength" min="-3" max="3" step="0.1" value="0"
+                               oninput="document.getElementById('interaction-strength-val').innerText = parseFloat(this.value).toFixed(1)">
+                        <span class="badge bg-dark" style="width: 40px;" id="interaction-strength-val">0.0</span>
+                    </div>
+                </div>
+                <div class="col-md-1">
+                    <button type="button" id="add-interaction-btn" class="btn btn-primary btn-sm w-100">追加</button>
+                </div>
+                <div class="col-12 mt-2">
+                    <small class="text-muted">
+                        <span class="text-primary fw-bold">負：</span> 同時に高いと良い（相乗効果） / 
+                        <span class="text-danger fw-bold">正：</span> 同時に高いと悪い（トレードオフ）
+                    </small>
+                </div>
+            </div>
+
+            <h6>登録済み相互作用一覧</h6>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover border" id="interactions-table">
+                    <thead class="table-light">
+                        <tr>
+                            <th>ラベルA</th>
+                            <th>ラベルB</th>
+                            <th style="width: 100px;">強度</th>
+                            <th style="width: 80px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="interactions-list">
+                        <!-- JavaScriptで動的に生成 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-end mt-3 gap-2">
+        <button type="button" id="save-criteria-btn" class="btn btn-success px-4">評価基準を保存</button>
+    </div>
 </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const saveBtn = document.getElementById('save-criteria-btn');
-    const form = document.getElementById('evaluation-criteria-form');
+    const addInteractionBtn = document.getElementById('add-interaction-btn');
+    const interactionsList = document.getElementById('interactions-list');
+    
+    // 現在の相互作用リスト (初期データ投入)
+    let currentInteractions = {{ interactions | tojson | safe }};
 
-    // レンジスライダーの値をhidden inputに同期
-    form.querySelectorAll('input[type="range"]').forEach(range => {
-        range.addEventListener('input', (e) => {
-            const hiddenId = e.target.id.replace('target_range_', 'target_hidden_');
-            document.getElementById(hiddenId).value = e.target.value;
+    // 相互作用リストの描画
+    function renderInteractions() {
+        interactionsList.innerHTML = '';
+        if (currentInteractions.length === 0) {
+            interactionsList.innerHTML = '<tr><td colspan="4" class="text-center text-muted">登録された相互作用はありません。</td></tr>';
+            return;
+        }
+
+        currentInteractions.forEach((inter, index) => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td class="small">${inter.key_a}</td>
+                <td class="small">${inter.key_b}</td>
+                <td class="fw-bold text-center ${inter.strength < 0 ? 'text-primary' : 'text-danger'}">${inter.strength.toFixed(1)}</td>
+                <td>
+                    <button type="button" class="btn btn-outline-danger btn-sm py-0" onclick="deleteInteraction(${index})">削除</button>
+                </td>
+            `;
+            interactionsList.appendChild(row);
         });
+    }
+
+    // 相互作用の削除 (グローバルに関数を公開)
+    window.deleteInteraction = function(index) {
+        currentInteractions.splice(index, 1);
+        renderInteractions();
+    };
+
+    // 相互作用の追加
+    addInteractionBtn.addEventListener('click', () => {
+        const keyA = document.getElementById('interaction-label-a').value;
+        const keyB = document.getElementById('interaction-label-b').value;
+        const strength = parseFloat(document.getElementById('interaction-strength').value);
+
+        if (keyA === keyB) {
+            alert('同じラベル同士の相互作用は設定できません。');
+            return;
+        }
+
+        // 重複チェック (正規化して比較)
+        const sortedKeys = [keyA, keyB].sort();
+        const exists = currentInteractions.some(inter => {
+            const interKeys = [inter.key_a, inter.key_b].sort();
+            return interKeys[0] === sortedKeys[0] && interKeys[1] === sortedKeys[1];
+        });
+
+        if (exists) {
+            alert('このラベル間の相互作用は既に登録されています。');
+            return;
+        }
+
+        currentInteractions.push({
+            key_a: keyA,
+            key_b: keyB,
+            strength: strength
+        });
+
+        renderInteractions();
+        // 強度をリセット
+        document.getElementById('interaction-strength').value = 0;
+        document.getElementById('interaction-strength-val').innerText = '0.0';
     });
 
+    // 保存処理
     saveBtn.addEventListener('click', async () => {
-        const formData = new FormData(form);
-        const criteria = {
-            global_target: {},
-            category_weights: {}
+        const config = {
+            targets: {},
+            category_weights: {},
+            interactions: currentInteractions
         };
 
-        for (let [key, value] of formData.entries()) {
-            if (key.startsWith('weight_')) {
-                const cat = key.replace('weight_', '');
-                criteria.category_weights[cat] = parseFloat(value);
-            } else if (key.startsWith('target_')) {
-                // key format: target_ClassificationName_enKey
-                // ClassificationName might contain underscores, so we need careful splitting
-                const parts = key.split('_');
-                const enKey = parts.pop();
-                const classification = parts.slice(1).join('_');
-                
-                if (!criteria.global_target[classification]) {
-                    criteria.global_target[classification] = {};
-                }
-                criteria.global_target[classification][enKey] = parseInt(value);
-            }
-        }
+        // 目標値の取得
+        document.querySelectorAll('.target-slider').forEach(slider => {
+            config.targets[slider.dataset.targetKey] = parseInt(slider.value);
+        });
+
+        // 重みの取得
+        document.querySelectorAll('.category-weight-slider').forEach(slider => {
+            config.category_weights[slider.dataset.category] = parseFloat(slider.value);
+        });
 
         saveBtn.disabled = true;
         saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 保存中...';
@@ -101,11 +240,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const response = await fetch(`/document/{{ document.id }}/save_criteria`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(criteria)
+                body: JSON.stringify({ evaluation_config: config })
             });
             const data = await response.json();
             if (response.ok) {
                 alert('評価基準を保存しました。');
+                // ページ全体にデータを反映させるためリロード(オプション)
+                // location.reload();
             } else {
                 throw new Error(data.error || '保存に失敗しました。');
             }
@@ -116,5 +257,9 @@ document.addEventListener('DOMContentLoaded', function() {
             saveBtn.textContent = '評価基準を保存';
         }
     });
+
+    // 初期描画
+    renderInteractions();
 });
 </script>
+

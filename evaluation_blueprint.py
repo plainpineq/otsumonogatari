@@ -22,11 +22,16 @@ def save_criteria(doc_id):
     if document is None:
         return jsonify({"error": "Document not found"}), 404
 
-    criteria = request.get_json()
-    if not criteria:
+    payload = request.get_json()
+    if not payload:
         return jsonify({"error": "No criteria data provided"}), 400
 
-    document["evaluation_criteria"] = criteria
+    if "evaluation_config" in payload:
+        document["evaluation_config"] = payload["evaluation_config"]
+    else:
+        # 以前のUIや互換性のための処理
+        document["evaluation_criteria"] = payload
+        
     save_user_data(session["user_id"], data)
     
     return jsonify({"success": True})
@@ -52,9 +57,18 @@ def calculate_fit_stream_route(doc_id):
             yield f"data: {json.dumps({'error': 'No candidates', 'message': '先に意味ラベルを付与・数値化してください'})}\n\n"
             return
 
+        # 評価設定の取得 (新旧対応)
+        config = document.get("evaluation_config", {})
         criteria = document.get("evaluation_criteria", {})
-        targets_dict = criteria.get("global_target", {})
-        category_weights = criteria.get("category_weights", {})
+        
+        targets_dict = config.get("targets", {})
+        category_weights = config.get("category_weights", {})
+        
+        # fallback to old format if new one is empty
+        if not targets_dict and "global_target" in criteria:
+            targets_dict = criteria.get("global_target", {})
+        if not category_weights and "category_weights" in criteria:
+            category_weights = criteria.get("category_weights", {})
 
         try:
             extractor = FeatureExtractor()
@@ -63,7 +77,13 @@ def calculate_fit_stream_route(doc_id):
             # --- 保存された基準からグローバルターゲットベクトルを構築 ---
             target_vec = []
             for classification, label_key in label_order:
-                val = targets_dict.get(classification, {}).get(label_key, 0)
+                # 新フォーマットは "分類::ラベル" キー
+                new_key = f"{classification}::{label_key}"
+                if new_key in targets_dict:
+                    val = targets_dict[new_key]
+                else:
+                    # 旧フォーマットは 階層構造
+                    val = targets_dict.get(classification, {}).get(label_key, 0)
                 target_vec.append(val)
             # -----------------------------------------------------------
 
