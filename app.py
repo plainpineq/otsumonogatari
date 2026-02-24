@@ -452,6 +452,30 @@ def view_document(doc_id):
     return response
 
 
+@app.route("/document/<doc_id>/save_genre_config", methods=["POST"])
+def save_genre_config(doc_id):
+    if "user_id" not in session:
+        return redirect("/login")
+
+    data = load_user_data(session["user_id"])
+    document = find_document(data, doc_id)
+
+    if document is None:
+        return redirect("/dashboard")
+
+    main_genre = request.form.get("main_genre")
+    sub_genres = request.form.getlist("sub_genres")
+
+    document["genre_config"] = {
+        "main": main_genre,
+        "sub": sub_genres
+    }
+
+    save_user_data(session["user_id"], data)
+    flash("ジャンル設定を保存しました。", "success")
+    return redirect(f"/document/{doc_id}#intent")
+
+
 @app.route("/document/<doc_id>/intent", methods=["POST"])
 def edit_intent(doc_id):
     if "user_id" not in session: # Removed data_loaded check
