@@ -14,7 +14,7 @@ from auth import login
 from security import hash_password
 from user_files import load_user_data, save_user_data, get_user_data_path
 import semantic_labeler # NEW: Import the entire semantic_labeler module
-from evaluation_blueprint import evaluation_bp # NEW: Import the new blueprint
+from evaluation_blueprint import evaluation_bp, _synthesize_interactions # NEW: Import the new blueprint and synthesis helper
 
 def _reset_generation_counter(user_id: str):
     session[f"generation_counter_{user_id}"] = 0
@@ -479,6 +479,8 @@ def edit_intent(doc_id):
             "main": request.form.get("main_genre"),
             "sub": request.form.getlist("sub_genres")
         }
+        # ジャンル変更時に相互作用が空なら自動生成 (Requirement 9)
+        _synthesize_interactions(document)
 
     # ★ ここで正規化（重要）
     normalize_intent_service(document) # services.py の normalize_intent との衝突を避けるためリネーム

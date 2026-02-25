@@ -208,7 +208,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 <td class="small">${inter.key_b}</td>
                 <td class="fw-bold text-center ${inter.strength < 0 ? 'text-primary' : 'text-danger'}">${inter.strength.toFixed(1)}</td>
                 <td>
-                    <button type="button" class="btn btn-outline-danger btn-sm py-0" onclick="deleteInteraction(${index})">削除</button>
+                    <div class="btn-group">
+                        <button type="button" class="btn btn-outline-secondary btn-sm py-0" onclick="editInteraction(${index})">編集</button>
+                        <button type="button" class="btn btn-outline-danger btn-sm py-0" onclick="deleteInteraction(${index})">削除</button>
+                    </div>
                 </td>
             `;
             interactionsList.appendChild(row);
@@ -219,6 +222,27 @@ document.addEventListener('DOMContentLoaded', function() {
     window.deleteInteraction = function(index) {
         currentInteractions.splice(index, 1);
         renderInteractions();
+    };
+
+    // 相互作用の編集
+    window.editInteraction = function(index) {
+        const inter = currentInteractions[index];
+        
+        // セレクトボックスの値を設定
+        document.getElementById('interaction-label-a').value = inter.key_a;
+        document.getElementById('interaction-label-b').value = inter.key_b;
+        
+        // 強度を設定
+        const strengthSlider = document.getElementById('interaction-strength');
+        strengthSlider.value = inter.strength;
+        document.getElementById('interaction-strength-val').innerText = inter.strength.toFixed(1);
+        
+        // 既存のものを削除
+        currentInteractions.splice(index, 1);
+        renderInteractions();
+        
+        // 入力エリアへスクロール
+        document.getElementById('interaction-label-a').scrollIntoView({ behavior: 'smooth', block: 'center' });
     };
 
     // 相互作用の追加

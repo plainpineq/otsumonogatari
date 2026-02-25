@@ -55,20 +55,29 @@ def _synthesize_interactions(document: dict):
         "伏線案": "伏線案"
     }
 
+    # ラベル名の揺らぎ吸収用マップ (default_interactions.json のラベル名 -> schema の日本語ラベル名)
+    label_alias = {
+        "内面葛藤": "内的葛藤深度",
+        "成長度": "成長可能性",
+        "伏線密度": "伏線強度",
+        "回収確度": "回収明瞭性"
+    }
+
     interaction_map = {} # (key_a, key_b) -> strength
 
     def normalize_label(label_str):
         if "::" not in label_str: return None
         cat, lab = label_str.split("::")
         mapped_cat = cat_alias.get(cat, cat)
+        mapped_lab = label_alias.get(lab, lab)
         
         # 直接英語キーの場合
-        en_style = f"{mapped_cat}::{lab}"
+        en_style = f"{mapped_cat}::{mapped_lab}"
         if en_style in valid_labels:
             return en_style
         
         # 日本語ラベルから英語キーへ変換
-        ja_style = f"{mapped_cat}::{lab}"
+        ja_style = f"{mapped_cat}::{mapped_lab}"
         return label_map_ja_to_en.get(ja_style)
 
     def add_to_map(inter_list, weight=1.0):
