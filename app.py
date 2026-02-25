@@ -294,24 +294,6 @@ from services.scoring import generate_onehot_qubo, compute_qubo_energy, to_oneho
 from services.quantum_solver import solve_and_decode, solve_and_decode_multi
 
 
-def compute_quantum_optimal(current_values, category_weights, label_order):
-    """
-    現在の入力値から量子最適解を計算
-    """
-    try:
-        Q = generate_onehot_qubo(
-            global_target_vector=current_values,
-            category_weights=category_weights,
-            label_order=label_order
-        )
-
-        optimal_values, energy = solve_and_decode(Q)
-        return optimal_values, energy
-
-    except Exception as e:
-        print("Quantum optimization failed:", e)
-        return None, None
-
 
 def calculate_qubo_energy_for_item(document, category, labels_ja, schema):
     """
@@ -387,6 +369,34 @@ def calculate_qubo_energy_for_item(document, category, labels_ja, schema):
         return None
 
 
+def _migrate_semantic_labels(document: Dict[str, Any]) -> bool:
+    """
+    旧構造: { category, element, text: "A\nB", labels: [{eval1}, {eval2}] }
+    新構造: { category, element, labels: [{text: "A", eval1}, {text: "B", eval2}] }
+    """
+    modified = False
+    semantic_labels = document.get("semantic_labels", [])
+    if not isinstance(semantic_labels, list):
+        return False
+
+    for item in semantic_labels:
+        # labels 内に text が欠けている、かつ root.text が存在する場合に移行
+        labels = item.get("labels", [])
+        root_text = item.get("text")
+
+        if root_text is not None and any("text" not in lbl for lbl in labels):
+            texts = root_text.split("\n")
+            for i, lbl in enumerate(labels):
+                if "text" not in lbl:
+                    lbl["text"] = texts[i] if i < len(texts) else ""
+            
+            # root.text を削除
+            item.pop("text", None)
+            modified = True
+            
+    return modified
+
+
 @app.route("/document/<doc_id>", methods=["GET", "POST"])
 def view_document(doc_id):
     if "user_id" not in session: # Removed data_loaded check
@@ -397,6 +407,10 @@ def view_document(doc_id):
 
     if document is None:
         return redirect("/dashboard")
+
+    # データ構造の自動マイグレーション
+    if _migrate_semantic_labels(document):
+        save_user_data(session["user_id"], data)
 
     if request.method == "POST":
         # composition_elements の更新を処理
@@ -884,6 +898,29 @@ def save_generated_category(doc_id):
         return jsonify({"error": f"Failed to save generated category: {str(e)}"}), 500
 
 
+@app.route("/document/<doc_id>/calculate_energy", methods=["POST"])
+def calculate_energy(doc_id):
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = load_user_data(session["user_id"])
+    document = find_document(data, doc_id)
+    if not document:
+        return jsonify({"error": "Document not found"}), 404
+
+    try:
+        req_data = request.get_json()
+        selected_labels = req_data.get("selected_labels", {})
+        
+        evaluation_config = document.get("evaluation_config", {})
+        
+        results = evaluation_engine.calculate_energy_detail(selected_labels, evaluation_config)
+        return jsonify(results)
+    except Exception as e:
+        logging.error(f"Energy calculation failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/document/<doc_id>/evaluate", methods=["POST"])
 def evaluate_document(doc_id):
     """
@@ -1002,7 +1039,7 @@ def evaluate_stream(doc_id):
                                 energy = calculate_qubo_energy_for_item(document, cat, labels_ja, semantic_label_schema)
                                 labels_ja["qubo_energy"] = energy
 
-                                # Quantum Optimal
+                                # --- 乖離スコア (diff_score) の計算を追加 ---
                                 current_values = []
                                 label_order = []
                                 for cat_name, labels_config in semantic_label_schema.items():
@@ -1018,10 +1055,7 @@ def evaluate_stream(doc_id):
                                                 current_values.append(targets[target_key])
                                             else:
                                                 current_values.append(targets.get(cat_name, {}).get(en_key, 2))
-                                
-                                optimal_values, energy = compute_quantum_optimal(current_values, weights, label_order)
-                                
-                                # --- 乖離スコア (diff_score) の計算を追加 ---
+
                                 target_vector = []
                                 weights_vector = []
                                 for cn, lc in semantic_label_schema.items():
@@ -1041,26 +1075,17 @@ def evaluate_stream(doc_id):
                                 labels_ja["diff_score"] = round(diff_score, 2)
                                 # -----------------------------------------
 
-                                start_idx = 0
-                                found_idx = False
-                                for cat_name, labels_config in semantic_label_schema.items():
-                                    if cat_name == "scale": continue
-                                    if cat_name == cat:
-                                        found_idx = True
-                                        break
-                                    start_idx += len(labels_config)
-                                
-                                if found_idx and optimal_values:
-                                    labels_ja["quantum_optimal"] = optimal_values[start_idx : start_idx + 4]
-                                    labels_ja["quantum_energy"] = energy
-                                else:
-                                    labels_ja["quantum_optimal"] = None
-                                    labels_ja["quantum_energy"] = None
-
                         all_results.append(labeled_result)
+                        # labeled_result contains labels: [{text, ...}, ...] already from label_suggestions
                         yield f"data: {json.dumps({'semantic_label': labeled_result}, ensure_ascii=False)}\n\n"
                 else:
                     logging.warning(f"Received unexpected event type: {event_type} with data: {event_data}")
+            
+            # --- Ensure migration-like check for new items (though labeler is updated) ---
+            for res in all_results:
+                if "text" in res:
+                    res.pop("text", None)
+            # ---------------------------------------------------------------------------
             
             # Save all results to document["semantic_labels"]
             if classification_filter_arg:
@@ -1197,6 +1222,116 @@ def load_server_settings():
         return jsonify({"success": False, "message": f"設定のロード中にエラーが発生しました: {str(e)}"}), 500
 
 
+import random
+
+def solve_candidate_selection_qubo(elements_data, interactions, label_mapping):
+    """
+    候補選択型QUBOのヒューリスティックソルバー
+    elements_data: List[Dict] { element_id, candidates: List[Dict] }
+    interactions: List[Dict] { key_a, key_b, strength }
+    label_mapping: Dict { category: { en_key: ja_label } }
+    """
+    num_elements = len(elements_data)
+    if num_elements == 0:
+        return None
+
+    # 1. 初期解: 各要素で qubo_energy が最小の候補を選択
+    current_selection = []
+    for i in range(num_elements):
+        candidates = elements_data[i]["candidates"]
+        best_k = 0
+        min_qe = float('inf')
+        for k, cand in enumerate(candidates):
+            qe = cand.get("qubo_energy", 0.0)
+            if qe < min_qe:
+                min_qe = qe
+                best_k = k
+        current_selection.append(best_k)
+
+    def calculate_total_energy(selection):
+        e1 = 0.0
+        e2 = 0.0
+        
+        # E1: qubo_energy の合計
+        for i, k in enumerate(selection):
+            e1 += elements_data[i]["candidates"][k].get("qubo_energy", 0.0)
+        
+        # E2: ラベル間相互作用
+        for idx_i in range(num_elements):
+            for idx_j in range(idx_i + 1, num_elements):
+                cand_i = elements_data[idx_i]["candidates"][selection[idx_i]]
+                cand_j = elements_data[idx_j]["candidates"][selection[idx_j]]
+                cat_i = elements_data[idx_i]["category"]
+                cat_j = elements_data[idx_j]["category"]
+                
+                for inter in interactions:
+                    ka = inter["key_a"]
+                    kb = inter["key_b"]
+                    strength = inter["strength"]
+                    if strength == 0: continue
+                    
+                    # ka, kb は "Category::EnKey" 形式
+                    parts_a = ka.split("::")
+                    parts_b = kb.split("::")
+                    if len(parts_a) != 2 or len(parts_b) != 2: continue
+                    
+                    cat_a, en_a = parts_a
+                    cat_b, en_b = parts_b
+                    
+                    # カテゴリ一致確認
+                    val_a = None
+                    val_b = None
+                    
+                    if cat_a == cat_i and cat_b == cat_j:
+                        ja_a = label_mapping.get(cat_i, {}).get(en_a)
+                        ja_b = label_mapping.get(cat_j, {}).get(en_b)
+                        if ja_a in cand_i and ja_b in cand_j:
+                            val_a = cand_i[ja_a]
+                            val_b = cand_j[ja_b]
+                    elif cat_a == cat_j and cat_b == cat_i:
+                        ja_a = label_mapping.get(cat_j, {}).get(en_a)
+                        ja_b = label_mapping.get(cat_i, {}).get(en_b)
+                        if ja_a in cand_j and ja_b in cand_i:
+                            val_a = cand_j[ja_a]
+                            val_b = cand_i[ja_b]
+                            
+                    if val_a is not None and val_b is not None:
+                        # 正規化: 0-4 -> 0-1
+                        e2 += strength * (val_a / 4.0) * (val_b / 4.0)
+        return e1, e2
+
+    cur_e1, cur_e2 = calculate_total_energy(current_selection)
+    best_e1, best_e2 = cur_e1, cur_e2
+    best_selection = list(current_selection)
+    
+    # 2. 反復改善 (ランダムスワップ)
+    max_iter = 2000
+    for _ in range(max_iter):
+        target_i = random.randint(0, num_elements - 1)
+        num_candidates = len(elements_data[target_i]["candidates"])
+        if num_candidates <= 1: continue
+        
+        old_k = current_selection[target_i]
+        new_k = random.randint(0, num_candidates - 1)
+        if old_k == new_k: continue
+        
+        current_selection[target_i] = new_k
+        new_e1, new_e2 = calculate_total_energy(current_selection)
+        
+        if (new_e1 + new_e2) < (best_e1 + best_e2):
+            best_e1, best_e2 = new_e1, new_e2
+            best_selection = list(current_selection)
+        else:
+            # 元に戻す (Hill Climbing的な挙動。SAにするなら確率で受け入れる)
+            current_selection[target_i] = old_k
+            
+    return {
+        "selection": best_selection,
+        "total_energy": round(best_e1 + best_e2, 4),
+        "e1": round(best_e1, 4),
+        "e2": round(best_e2, 4)
+    }
+
 @app.route("/document/<doc_id>/quantum_optimize", methods=["POST"])
 def quantum_optimize(doc_id):
     if "user_id" not in session:
@@ -1208,35 +1343,10 @@ def quantum_optimize(doc_id):
         return jsonify({"error": "Document not found"}), 404
 
     try:
-        # Request body から最新のUI設定を取得（提供されている場合）
-        req_data = request.get_json() or {}
-        criteria = req_data.get("criteria")
-        
         config = document.get("evaluation_config", {})
-        old_criteria = document.get("evaluation_criteria", {})
-
-        if not criteria:
-            # UIからの送信がない場合は保存されているものを使用
-            targets = config.get("targets", {})
-            weights = config.get("category_weights", {})
-            
-            # fallback
-            if not targets and "global_target" in old_criteria:
-                targets = old_criteria.get("global_target", {})
-            if not weights and "category_weights" in old_criteria:
-                weights = old_criteria.get("category_weights", {})
-        else:
-            # UIからの送信（互換性のため旧フォーマットかもしれないが、新UIは evaluation_config を送るはず）
-            # ただし、現在の JS (quantumOptimizeBtn) は旧フォーマットで送っている可能性があるので調整
-            targets = criteria.get("global_target", {})
-            weights = criteria.get("category_weights", {})
-            
-            if not targets and "targets" in criteria:
-                targets = criteria.get("targets", {})
-            if not weights and "category_weights" in criteria:
-                weights = criteria.get("category_weights", {})
-
-        # Load semantic label schema to get label order
+        interactions = config.get("interactions", [])
+        
+        # Load semantic label schema for mappings
         semantic_label_schema = {}
         try:
             with open("prompt_templates/semantic_label_schema.json", "r", encoding="utf-8") as f:
@@ -1244,80 +1354,49 @@ def quantum_optimize(doc_id):
         except:
             return jsonify({"error": "Schema not found"}), 500
 
-        # 1. 構築: ラベル順序と現在の目標値
-        label_order = []
-        current_values = []
-        
-        for cat_name, labels_config in semantic_label_schema.items():
-            if cat_name == "scale":
-                continue
-            for en_key, spec in labels_config.items():
-                ja_label = spec.get("ja_label", en_key)
-                label_order.append(f"{cat_name}:{ja_label}")
-                
-                target_key = f"{cat_name}::{en_key}"
-                if target_key in targets:
-                    current_values.append(targets[target_key])
-                else:
-                    current_values.append(targets.get(cat_name, {}).get(en_key, 2))
+        label_mapping = {}
+        for cat, labels in semantic_label_schema.items():
+            if cat == "scale": continue
+            label_mapping[cat] = {en: spec["ja_label"] for en, spec in labels.items()}
 
-        if len(current_values) != 12:
-             return jsonify({"error": f"Invalid input size: {len(current_values)}. Expected 12 labels."}), 400
+        # 1. データのフラット化 (element単位で候補をまとめる)
+        # semantic_labels: List[Dict] { category, element, labels: List[Dict] }
+        raw_labels = document.get("semantic_labels", [])
+        elements_data = []
+        for item in raw_labels:
+            elements_data.append({
+                "category": item["category"],
+                "element": item["element"],
+                "candidates": item["labels"]
+            })
 
-        # QUBO生成と複数解決
-        Q = generate_onehot_qubo(current_values, weights, label_order)
-        solutions = solve_and_decode_multi(Q)
+        if not elements_data:
+            return jsonify({"error": "No evaluation data found."}), 400
 
-        # 差分×重みスコアの計算準備
-        weights_vector = []
-        for cat_name, labels_config in semantic_label_schema.items():
-            if cat_name == "scale": continue
-            w = weights.get(cat_name, 1.0)
-            for _ in labels_config:
-                weights_vector.append(w)
+        # 2. 候補選択型QUBOの解決
+        result = solve_candidate_selection_qubo(elements_data, interactions, label_mapping)
 
-        def calculate_diff_score(current, candidate, weights):
-            total = 0.0
-            for i in range(len(current)):
-                diff = abs(candidate[i] - current[i])
-                total += diff * weights[i]
-            return total
-
-        # 各候補のスコア計算
-        for s in solutions:
-            s["diff_score"] = calculate_diff_score(current_values, s["values"], weights_vector)
-
-        # 正規化と合成
-        if solutions:
-            # エネルギー正規化 (低エネルギーほど高評価)
-            energy_values = [s["energy"] for s in solutions]
-            min_e, max_e = min(energy_values), max(energy_values)
-            for s in solutions:
-                if max_e == min_e: s["energy_norm"] = 1.0
-                else: s["energy_norm"] = 1.0 - (s["energy"] - min_e) / (max_e - min_e)
-
-            # 差分スコア正規化 (高乖離ほど高評価 - ユーザー指定ルール)
-            diff_values = [s["diff_score"] for s in solutions]
-            min_d, max_d = min(diff_values), max(diff_values)
-            for s in solutions:
-                if max_d == min_d: s["diff_norm"] = 1.0
-                else: s["diff_norm"] = (s["diff_score"] - min_d) / (max_d - min_d)
-
-            # 合成スコア
-            ALPHA, BETA = 0.5, 0.5
-            for s in solutions:
-                s["final_score"] = ALPHA * s["energy_norm"] + BETA * s["diff_norm"]
-
-            # 順位付け
-            solutions.sort(key=lambda x: x["final_score"], reverse=True)
-            for rank, s in enumerate(solutions, start=1):
-                s["rank"] = rank
+        # ログ出力
+        logging.info("=== Candidate Selection QUBO Solve ===")
+        logging.info(f"Elements: {len(elements_data)}")
+        logging.info(f"Binary variables: {sum(len(e['candidates']) for e in elements_data)}")
+        logging.info(f"Best total energy: {result['total_energy']}")
+        logging.info(f"E1: {result['e1']}")
+        logging.info(f"E2: {result['e2']}")
+        logging.info("=======================================")
 
         return jsonify({
             "success": True,
-            "solutions": solutions,
-            "label_order": label_order
+            "best_selection": result["selection"],
+            "total_energy": result["total_energy"],
+            "e1": result["e1"],
+            "e2": result["e2"],
+            "elements": [{"category": e["category"], "element": e["element"]} for e in elements_data]
         })
+
+    except Exception as e:
+        logging.error(f"Quantum optimization failed: {e}")
+        return jsonify({"error": str(e)}), 500
 
     except Exception as e:
         logging.error(f"Quantum optimization failed: {e}")

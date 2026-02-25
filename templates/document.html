@@ -259,8 +259,12 @@
                 <!-- Dynamically generated evaluation buttons will go here -->
             </div>
             <div class="mt-2 d-flex align-items-center gap-3">
-                <button type="button" id="quantum-optimize-btn" class="btn btn-outline-primary btn-sm" style="display: none;">量子最適解を計算</button>
-                <span id="quantum-energy-display" class="text-muted small" style="display: none;">Energy: -</span>
+                <button type="button" id="quantum-optimize-btn" class="btn btn-primary btn-sm">全分類横断・最適組み合わせ選択 (QUBO)</button>
+                <div id="quantum-energy-display" class="text-muted small" style="display: none;">
+                    <span class="badge bg-secondary">Total Energy: <span id="q-total-e">-</span></span>
+                    <span class="ms-1">E1: <span id="q-e1">-</span></span>
+                    <span class="ms-1">E2: <span id="q-e2">-</span></span>
+                </div>
             </div>
             <!-- Optimized candidates list removed as per request -->
 
@@ -269,6 +273,26 @@
             <div id="evaluation-progress-container" class="mt-3" style="display: none;">
                 <div class="progress">
                     <div id="evaluation-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                </div>
+            </div>
+
+            <!-- Energy Breakdown Section -->
+            <div id="energy-breakdown-container" class="mt-4 card p-3 shadow-sm" style="display: none;">
+                <h3 class="h5 mb-3">【現在エネルギー】</h3>
+                <div id="energy-summary" class="mb-3">
+                    <!-- Summary will be populated here -->
+                </div>
+                
+                <hr>
+                <h4 class="h6 fw-bold">【一次項 詳細（ラベル別）】</h4>
+                <div id="e1-details-list" class="list-group list-group-flush mb-3">
+                    <!-- E1 details will be populated here -->
+                </div>
+
+                <hr>
+                <h4 class="h6 fw-bold">【二次項 詳細（相互作用ペア別）】</h4>
+                <div id="e2-details-list" class="list-group list-group-flush">
+                    <!-- E2 details will be populated here -->
                 </div>
             </div>
 
@@ -369,6 +393,118 @@ document.addEventListener('DOMContentLoaded', function() {
     const evaluationResultsThead = document.getElementById('evaluation-results-thead');
     const downloadEvaluationCsvBtn = document.getElementById('download-evaluation-csv-btn');
     const currentEvaluationResultsTitle = document.getElementById('current-evaluation-results-title');
+
+    // --- Energy Breakdown UI Elements ---
+    const energyBreakdownContainer = document.getElementById('energy-breakdown-container');
+    const energySummary = document.getElementById('energy-summary');
+    const e1DetailsList = document.getElementById('e1-details-list');
+    const e2DetailsList = document.getElementById('e2-details-list');
+
+    async function updateEnergyBreakdown() {
+        const selectedLabels = {};
+        
+        // Collect selected radio buttons
+        const sections = document.querySelectorAll('.evaluation-results-section');
+        sections.forEach(section => {
+            const h4 = section.querySelector('h4');
+            if (!h4) return;
+            const categoryName = h4.textContent.replace(' 評価結果', '');
+            const selectedRadio = section.querySelector('input[type="radio"]:checked');
+            
+            if (selectedRadio) {
+                const row = selectedRadio.closest('tr');
+                const cells = row.querySelectorAll('td');
+                const thead = section.querySelector('thead');
+                const orderedKeys = JSON.parse(thead.dataset.orderedKeys || '[]');
+                
+                if (!selectedLabels[categoryName]) {
+                    selectedLabels[categoryName] = {};
+                }
+                
+                const labelsForClassification = semanticLabelSchema[categoryName];
+                orderedKeys.forEach((enKey, idx) => {
+                    const labelSpec = labelsForClassification[enKey];
+                    if (labelSpec) {
+                        // Skip radio, element, text cells (indices 0, 1, 2)
+                        const val = parseInt(cells[idx + 3].textContent);
+                        if (!isNaN(val)) {
+                            selectedLabels[categoryName][labelSpec.ja_label] = val;
+                        }
+                    }
+                });
+            }
+        });
+
+        if (Object.keys(selectedLabels).length === 0) {
+            energyBreakdownContainer.style.display = 'none';
+            return;
+        }
+
+        try {
+            const response = await fetch(`/document/${docId}/calculate_energy`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ selected_labels: selectedLabels })
+            });
+            const data = await response.json();
+
+            if (data.error) {
+                console.error("Energy calculation error:", data.error);
+                return;
+            }
+
+            // Update UI
+            energyBreakdownContainer.style.display = 'block';
+            
+            energySummary.innerHTML = `
+                <div class="row text-center">
+                    <div class="col-md-4">
+                        <div class="small text-muted">総エネルギー</div>
+                        <div class="h4 mb-0 fw-bold font-monospace">${data.total.toFixed(4)}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="small text-muted">一次項 (E1)</div>
+                        <div class="h4 mb-0 font-monospace">${data.E1.toFixed(4)} <small class="text-muted fs-6">(${data.ratio1.toFixed(2)}%)</small></div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="small text-muted">二次項 (E2)</div>
+                        <div class="h4 mb-0 font-monospace">${data.E2.toFixed(4)} <small class="text-muted fs-6">(${data.ratio2.toFixed(2)}%)</small></div>
+                    </div>
+                </div>
+            `;
+
+            e1DetailsList.innerHTML = data.E1_details.map(detail => `
+                <div class="list-group-item d-flex justify-content-between align-items-center py-1 bg-transparent">
+                    <span class="small">${detail.key}</span>
+                    <span class="small font-monospace">${detail.value.toFixed(4)} (${detail.ratio.toFixed(2)}%)</span>
+                </div>
+            `).join('');
+
+            e2DetailsList.innerHTML = data.E2_details.map(detail => `
+                <div class="list-group-item py-1 bg-transparent">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="small text-truncate" title="${detail.key_a} × ${detail.key_b}">
+                            ${detail.key_a} <span class="text-muted">×</span> ${detail.key_b}
+                        </span>
+                        <span class="small font-monospace ${detail.value < 0 ? 'text-primary' : 'text-danger'}">
+                            ${detail.value.toFixed(4)} (${detail.ratio.toFixed(2)}%)
+                        </span>
+                    </div>
+                </div>
+            `).join('') || '<div class="list-group-item text-muted small py-1 bg-transparent">相互作用なし</div>';
+
+        } catch (error) {
+            console.error("Failed to update energy breakdown:", error);
+        }
+    }
+
+    // Delegate radio change events for energy breakdown
+    const evaluationResultsSectionsContainer = document.getElementById('evaluation-results-sections-container');
+    evaluationResultsSectionsContainer.addEventListener('change', (e) => {
+        if (e.target.type === 'radio') {
+            updateEnergyBreakdown();
+        }
+    });
 
     // --- UI Elements (Fit Tab) ---
     const calculateFitBtnV2 = document.getElementById('calculate-fit-btn-v2');
@@ -738,10 +874,10 @@ document.addEventListener('DOMContentLoaded', function() {
     function renderEvaluationButtons() {
         evaluationButtonsContainer.innerHTML = '';
         
-        // Use the order from semanticLabelSchemaOrder if available, fallback to Object.keys
-        const classificationsToRender = semanticLabelSchemaOrder.length > 0 
-                                        ? semanticLabelSchemaOrder 
-                                        : Object.keys(semanticLabelSchema);
+        let classificationsToRender = semanticLabelSchemaOrder;
+        if (!classificationsToRender || classificationsToRender.length === 0) {
+            classificationsToRender = Object.keys(semanticLabelSchema);
+        }
 
         classificationsToRender.forEach(classificationName => {
             if (classificationName === "基本設定" || classificationName === "scale") return; // Exclude
@@ -749,7 +885,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const button = document.createElement('button');
             button.type = 'button';
-            button.className = 'btn btn-primary evaluation-btn';
+            button.className = 'btn btn-primary evaluation-btn me-2 mb-2';
             button.dataset.classification = classificationName;
             button.textContent = `${classificationName}を評価`;
             evaluationButtonsContainer.appendChild(button);
@@ -757,10 +893,10 @@ document.addEventListener('DOMContentLoaded', function() {
             button.addEventListener('click', () => runClassificationEvaluation(classificationName));
         });
 
-        if (classificationsToRender.length > 0) {
-             const allButton = document.createElement('button');
+        if (evaluationButtonsContainer.children.length > 0) {
+            const allButton = document.createElement('button');
             allButton.type = 'button';
-            allButton.className = 'btn btn-info evaluation-btn ms-2';
+            allButton.className = 'btn btn-info evaluation-btn mb-2';
             allButton.dataset.classification = ''; // Empty string for all
             allButton.textContent = `全て評価`;
             evaluationButtonsContainer.appendChild(allButton);
@@ -769,7 +905,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // --- Evaluation Results Rendering Helpers ---
-    const evaluationResultsSectionsContainer = document.getElementById('evaluation-results-sections-container');
 
     function getOrCreateEvaluationSection(categoryName) {
         const sectionId = `evaluation-results-section-${categoryName.replace(/\s+/g, '_')}`;
@@ -809,8 +944,7 @@ document.addEventListener('DOMContentLoaded', function() {
                  // Fallback for unknown categories if schema is missing
                  headerHtml = '<tr><th>選択</th><th>要素名</th><th style="width: 40%;">テキスト</th></tr>';
             }
-            headerHtml += '<th>Energy</th>';
-            headerHtml += '<th>乖離スコア</th>';
+            headerHtml += '<th>エネルギー・最適化詳細</th>';
             headerHtml += '</tr>';
             thead.innerHTML = headerHtml;
             thead.dataset.orderedKeys = JSON.stringify(allLabelKeysForRows);
@@ -859,13 +993,17 @@ document.addEventListener('DOMContentLoaded', function() {
             const radioName = `select_${item.category}_${item.element}`.replace(/\s+/g, '_');
             const isChecked = index === 0 ? 'checked' : '';
             
+            // Text is now inside proposalLabels
+            const proposalText = proposalLabels.text || item.text || "";
+
             let rowHtml = `
                 <tr>
                     <td class="text-center"><input type="radio" name="${radioName}" ${isChecked}></td>
                     <td>${item.element}</td>
-                    <td><small>${item.text}</small></td>
+                    <td><small>${proposalText}</small></td>
             `;
             
+            const currentValues = [];
             orderedKeys.forEach(enKey => {
                 const labelSpec = labelsForClassification[enKey];
                 if (labelSpec) {
@@ -873,7 +1011,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     const labelValue = proposalLabels[jaLabel];
 
                     if (labelSpec.type === 'scalar') {
-                        rowHtml += `<td>${(labelValue !== undefined && labelValue !== null) ? labelValue : '-'}</td>`;
+                        const val = (labelValue !== undefined && labelValue !== null) ? labelValue : 0;
+                        currentValues.push(val);
+                        rowHtml += `<td>${val}</td>`;
                     } else if (labelSpec.type === 'vector') {
                         rowHtml += `<td><code>${(labelValue && labelValue.join(', ')) || '-'}</code></td>`;
                     } else {
@@ -883,8 +1023,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     rowHtml += `<td>-</td>`;
                 }
             });
-            rowHtml += `<td>${(proposalLabels.qubo_energy !== undefined && proposalLabels.qubo_energy !== null) ? proposalLabels.qubo_energy : '-'}</td>`;
-            rowHtml += `<td>${(proposalLabels.diff_score !== undefined && proposalLabels.diff_score !== null) ? proposalLabels.diff_score : '-'}</td>`;
+
+            // Extra details block
+            let detailsHtml = '<div class="small mt-1">';
+            detailsHtml += `<div class="qubo-energy-val"><strong>QUBO Energy:</strong> ${proposalLabels.qubo_energy || '-'}</div>`;
+            detailsHtml += `<div><strong>Diff Score:</strong> ${proposalLabels.diff_score || '-'}</div>`;
+            detailsHtml += `<div class="qubo-optimal-badge mt-1" style="display:none;"><span class="badge bg-warning text-dark">★ QUBO最適選択</span></div>`;
+            detailsHtml += '</div>';
+
+            rowHtml += `<td>${detailsHtml}</td>`;
             rowHtml += '</tr>';
             tbody.insertAdjacentHTML('beforeend', rowHtml);
         });
@@ -978,6 +1125,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 eventSource.close();
                 document.querySelectorAll('.evaluation-btn').forEach(btn => btn.disabled = false); // Re-enable
                 downloadEvaluationCsvBtn.style.display = 'block'; // Show download button
+                updateEnergyBreakdown(); // NEW: Update energy breakdown after all evaluations
             });
 
         } catch (error) {
@@ -1211,42 +1359,62 @@ document.addEventListener('DOMContentLoaded', function() {
         renderCategoryGenerationList(); // Add this line
         renderEvaluationButtons(); // Render evaluation buttons on initialization
         renderInitialSemanticLabels(); // NEW: Render existing evaluation results
+        updateEnergyBreakdown(); // NEW: Calculate initial energy breakdown
 
-        // Quantum Optimize Button Logic
+        // Candidate Selection QUBO Optimize Button Logic
         const quantumOptimizeBtn = document.getElementById('quantum-optimize-btn');
+        const qEnergyDisplay = document.getElementById('quantum-energy-display');
+        const qTotalE = document.getElementById('q-total-e');
+        const qE1 = document.getElementById('q-e1');
+        const qE2 = document.getElementById('q-e2');
+
         if (quantumOptimizeBtn) {
             quantumOptimizeBtn.addEventListener('click', async () => {
-                // 1. 評価基準タブから最新の目標値と重みを取得（保存されていなくてもUI上の値を使用）
-                const currentCriteria = {
-                    targets: {},
-                    category_weights: {}
-                };
-
-                // 目標値の取得
-                document.querySelectorAll('.target-slider').forEach(slider => {
-                    currentCriteria.targets[slider.dataset.targetKey] = parseInt(slider.value);
-                });
-
-                // 重みの取得
-                document.querySelectorAll('.category-weight-slider').forEach(slider => {
-                    currentCriteria.category_weights[slider.dataset.category] = parseFloat(slider.value);
-                });
-
                 quantumOptimizeBtn.disabled = true;
-                quantumOptimizeBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 計算中...';
+                quantumOptimizeBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 最適化中...';
 
                 try {
                     const response = await fetch(`/document/${docId}/quantum_optimize`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ criteria: currentCriteria }) // UI上の最新設定を送信
+                        body: JSON.stringify({})
                     });
                     const data = await response.json();
 
                     if (data.success) {
-                        // 量子最適化の結果を評価結果テーブルに反映させるなどの処理をここに書くことができる
-                        // 現時点では、単に成功メッセージを表示するのみ
-                        showAlert('量子最適解の計算が完了しました。', 'success');
+                        // 1. エネルギー表示の更新
+                        qEnergyDisplay.style.display = 'block';
+                        qTotalE.textContent = data.total_energy.toFixed(4);
+                        qE1.textContent = data.e1.toFixed(4);
+                        qE2.textContent = data.e2.toFixed(4);
+
+                        // 2. ラジオボタンとバッジの更新
+                        const bestSelection = data.best_selection;
+                        const sections = document.querySelectorAll('.evaluation-results-section');
+                        
+                        // 全バッジを一旦非表示
+                        document.querySelectorAll('.qubo-optimal-badge').forEach(b => b.style.display = 'none');
+
+                        sections.forEach((section, i) => {
+                            const selectedIndex = bestSelection[i];
+                            const tbody = section.querySelector('tbody');
+                            const rows = tbody.querySelectorAll('tr');
+                            
+                            if (rows[selectedIndex]) {
+                                // ラジオボタンをチェック
+                                const radio = rows[selectedIndex].querySelector('input[type="radio"]');
+                                if (radio) radio.checked = true;
+                                
+                                // バッジを表示
+                                const badge = rows[selectedIndex].querySelector('.qubo-optimal-badge');
+                                if (badge) badge.style.display = 'block';
+                            }
+                        });
+
+                        // 3. エネルギー分解（一次項・二次項）表示を更新（ラジオボタン変更イベントをトリガー）
+                        updateEnergyBreakdown();
+
+                        showAlert('候補選択型QUBO（全分類横断組み合わせ最適化）が完了しました。', 'success');
                     } else {
                         throw new Error(data.error || '最適化に失敗しました。');
                     }
@@ -1254,88 +1422,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     alert('エラー: ' + error.message);
                 } finally {
                     quantumOptimizeBtn.disabled = false;
-                    quantumOptimizeBtn.textContent = '量子最適解を計算';
+                    quantumOptimizeBtn.textContent = '全分類横断・最適組み合わせ選択 (QUBO)';
                 }
             });
         }
 
-        // renderQuantumCandidates function removed as per request
-
-        function applyCandidatePreview(optimalValues, labelOrder, energy) {
-            // エネルギー表示を更新
-            const energyDisplay = document.getElementById('quantum-energy-display');
-            if (energyDisplay) {
-                energyDisplay.textContent = `Energy: ${energy.toFixed(4)}`;
-            }
-
-            // 各カテゴリセクション内の全行に対して、対応する最適解を表示
-            const sections = document.querySelectorAll('.evaluation-results-section');
-            sections.forEach(section => {
-                const categoryName = section.querySelector('h4').textContent.replace(' 評価結果', '');
-                const tbody = section.querySelector('tbody');
-                const numLabels = JSON.parse(section.querySelector('thead').dataset.orderedKeys || '[]').length;
-                
-                let catOptValues = [];
-                labelOrder.forEach((fullLabel, idx) => {
-                    if (fullLabel.startsWith(categoryName + ':')) {
-                        catOptValues.push(optimalValues[idx]);
-                    }
-                });
-
-                const rows = tbody.querySelectorAll('tr');
-                rows.forEach(row => {
-                    const cells = row.querySelectorAll('td');
-                    const optCell = row.lastElementChild; 
-                    if (optCell) {
-                        const currentValues = [];
-                        for(let i=2; i < 2 + numLabels; i++) {
-                            currentValues.push(parseInt(cells[i].textContent) || 0);
-                        }
-
-                        const optHtml = catOptValues.map((opt, i) => {
-                            const cur = currentValues[i];
-                            const diff = opt - cur;
-                            let color = 'white';
-                            let diffStr = '±0';
-                            if (diff > 0) {
-                                color = 'yellow';
-                                diffStr = `+${diff}`;
-                            } else if (diff < 0) {
-                                color = 'red';
-                                diffStr = `${diff}`;
-                            }
-                            return `<span style="color: ${color}">${opt} (${diffStr})</span>`;
-                        }).join(', ');
-
-                        optCell.innerHTML = optHtml;
-                    }
-                });
-            });
-        }
-
-        function adoptCandidateValues(values, labelOrder) {
-            labelOrder.forEach((fullLabel, idx) => {
-                const [catName, jaLabel] = fullLabel.split(':');
-                const catSchema = semanticLabelSchema[catName];
-                let enKey = null;
-                for (let key in catSchema) {
-                    if (catSchema[key].ja_label === jaLabel) {
-                        enKey = key;
-                        break;
-                    }
-                }
-                if (enKey) {
-                    const val = values[idx];
-                    const targetKey = `${catName}::${enKey}`;
-                    const slider = document.querySelector(`.target-slider[data-target-key="${targetKey}"]`);
-                    const badge = document.querySelector(`.badge[data-target-badge="${targetKey}"]`);
-                    
-                    if (slider) slider.value = val;
-                    if (badge) badge.innerText = val;
-                }
-            });
-            showAlert('候補提案の値をスライダーに適用しました。「評価基準」タブで確認し、「評価基準を保存」を押してください。', 'info');
-        }
     }
 
     if (calculateFitBtnV2) {
