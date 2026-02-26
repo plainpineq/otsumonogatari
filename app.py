@@ -1251,6 +1251,16 @@ def quantum_optimize(doc_id):
                 best_selection_map[cat] = {}
             best_selection_map[cat][el] = cand_idx
 
+        # 6. ドキュメントに保存 (永続化)
+        document["best_selection"] = best_selection_map
+        document["best_selection_energy"] = {
+            "total": result["total_energy"],
+            "e1": result["e1"],
+            "e2": result["e2"],
+            "solver": result["solver"]
+        }
+        save_user_data(session["user_id"], data)
+
         # ログ出力 (サーバーコンソールに確実に表示するため print を使用)
         unique_cats = len(set(item["category"] for item in semantic_labels))
         print("\n=== Candidate Selection QUBO Solve ===")

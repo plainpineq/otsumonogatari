@@ -1006,7 +1006,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
         labelsList.forEach((proposalLabels, index) => {
             const radioName = `select_${item.category}_${item.element}`.replace(/\s+/g, '_');
-            const isChecked = index === 0 ? 'checked' : '';
+            
+            // Determine if this row is the best selection
+            let isBest = false;
+            if (documentData.best_selection && 
+                documentData.best_selection[item.category] && 
+                documentData.best_selection[item.category][item.element] === index) {
+                isBest = true;
+            }
+            
+            // If best_selection exists in doc, use it. Otherwise, default to index 0 for UI.
+            const isChecked = documentData.best_selection ? (isBest ? 'checked' : '') : (index === 0 ? 'checked' : '');
             
             // ALWAYS use llm_suggestions for text if available, fallback to proposalLabels.text or item.text
             const proposalText = (proposalsList[index] !== undefined) ? proposalsList[index] : (proposalLabels.text || item.text || "");
@@ -1049,7 +1059,7 @@ document.addEventListener('DOMContentLoaded', function() {
             let detailsHtml = '<div class="small mt-1">';
             detailsHtml += `<div class="qubo-energy-val"><strong>構造スコア:</strong> ${proposalLabels.qubo_energy || '-'}</div>`;
             detailsHtml += `<div><strong>構造整合度:</strong> ${proposalLabels.diff_score || '-'}</div>`;
-            detailsHtml += `<div class="qubo-optimal-badge mt-1" style="display:none;"><span class="badge bg-warning text-dark">★ 推奨構成</span></div>`;
+            detailsHtml += `<div class="qubo-optimal-badge mt-1" style="display:${isBest ? 'block' : 'none'};"><span class="badge bg-warning text-dark">★ 推奨構成</span></div>`;
             detailsHtml += '</div>';
 
             rowHtml += `<td>${detailsHtml}</td>`;
@@ -1399,6 +1409,21 @@ document.addEventListener('DOMContentLoaded', function() {
         const qTotalE = document.getElementById('q-total-e');
         const qE1 = document.getElementById('q-e1');
         const qE2 = document.getElementById('q-e2');
+
+        // NEW: Restore saved optimization results display
+        if (documentData.best_selection_energy) {
+            const bse = documentData.best_selection_energy;
+            qEnergyDisplay.style.display = 'block';
+            qTotalE.textContent = parseFloat(bse.total).toFixed(4);
+            qE1.textContent = parseFloat(bse.e1).toFixed(4);
+            qE2.textContent = parseFloat(bse.e2).toFixed(4);
+            if (qSolverName) {
+                qSolverName.textContent = bse.solver === 'fixstars' ? 'Fixstars Amplify' : 'Heuristic (Local)';
+            }
+            if (qSolverBadge) {
+                qSolverBadge.className = bse.solver === 'fixstars' ? 'badge bg-primary' : 'badge bg-dark';
+            }
+        }
 
         if (quantumOptimizeBtn) {
             quantumOptimizeBtn.addEventListener('click', async () => {
