@@ -261,7 +261,8 @@
             <div class="mt-2 d-flex align-items-center gap-3">
                 <button type="button" id="quantum-optimize-btn" class="btn btn-primary btn-sm">全分類横断・最適組み合わせ選択 (QUBO)</button>
                 <div id="quantum-energy-display" class="text-muted small" style="display: none;">
-                    <span class="badge bg-secondary">Total Energy: <span id="q-total-e">-</span></span>
+                    <span id="q-solver-badge" class="badge bg-dark">Solver: <span id="q-solver-name">-</span></span>
+                    <span class="badge bg-secondary ms-1">Total Energy: <span id="q-total-e">-</span></span>
                     <span class="ms-1">E1: <span id="q-e1">-</span></span>
                     <span class="ms-1">E2: <span id="q-e2">-</span></span>
                 </div>
@@ -1393,6 +1394,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // Candidate Selection QUBO Optimize Button Logic
         const quantumOptimizeBtn = document.getElementById('quantum-optimize-btn');
         const qEnergyDisplay = document.getElementById('quantum-energy-display');
+        const qSolverBadge = document.getElementById('q-solver-badge');
+        const qSolverName = document.getElementById('q-solver-name');
         const qTotalE = document.getElementById('q-total-e');
         const qE1 = document.getElementById('q-e1');
         const qE2 = document.getElementById('q-e2');
@@ -1416,6 +1419,14 @@ document.addEventListener('DOMContentLoaded', function() {
                         qTotalE.textContent = data.total_energy.toFixed(4);
                         qE1.textContent = data.e1.toFixed(4);
                         qE2.textContent = data.e2.toFixed(4);
+                        
+                        // ソルバー情報の更新
+                        if (qSolverName) {
+                            qSolverName.textContent = data.solver === 'fixstars' ? 'Fixstars Amplify' : 'Heuristic (Local)';
+                        }
+                        if (qSolverBadge) {
+                            qSolverBadge.className = data.solver === 'fixstars' ? 'badge bg-primary' : 'badge bg-dark';
+                        }
 
                         // 2. ラジオボタンとバッジの更新
                         const bestSelection = data.best_selection;

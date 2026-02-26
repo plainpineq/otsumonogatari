@@ -1,23 +1,16 @@
-from amplify import VariableGenerator, solve, FixstarsClient
+from amplify import VariableGenerator, solve
+from amplify.client import FixstarsClient
 import logging
 
 def solve_with_fixstars(Q, api_key):
-    """
-    Fixstars Amplify SDKを使用してQUBOを解く
-    """
-    # 変数数を取得
-    max_index = 0
-    if not Q:
-        return {"selected_indices": [], "energy": 0.0}
-        
-    for i, j in Q.keys():
-        max_index = max(max_index, i, j)
+
+    # 変数数
+    max_index = max(max(i, j) for i, j in Q.keys())
     n = max_index + 1
 
     gen = VariableGenerator()
     x = gen.array("Binary", n)
 
-    # QUBO式構築
     objective = 0
     for (i, j), val in Q.items():
         if i == j:
@@ -25,24 +18,19 @@ def solve_with_fixstars(Q, api_key):
         else:
             objective += val * x[i] * x[j]
 
-    client = FixstarsClient(token=api_key)
+    client = FixstarsClient()
+    client.token = api_key
 
-    # v1.0.0+ の形式で実行
     result = solve(objective, client)
-    
-    if not result:
-        raise RuntimeError("No solutions returned from Fixstars Amplify.")
 
-    best = result.best
-    values = best.values
-    # v1では energy 属性ではなく objective 属性が一般的
-    # ただし、互換性のためにチェックする
-    energy = getattr(best, "objective", getattr(best, "energy", 0.0))
+    solution = result[0]
 
-    # 選択された変数インデックス抽出
+    values = solution.values
+    energy = solution.objective  # ← ここが修正点
+
     selected_indices = [
-        idx for idx in range(n)
-        if values.get(idx) == 1
+        i for i in range(n)
+        if values[x[i]] == 1
     ]
 
     return {
