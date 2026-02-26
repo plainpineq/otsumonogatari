@@ -18,7 +18,6 @@ def generate_candidate_selection_qubo(
     element_ranges = [] # List of (start_idx, end_idx)
     
     current_idx = 0
-    max_abs_qe = 0.0
     
     for item in semantic_labels:
         cat = item["category"]
@@ -28,7 +27,6 @@ def generate_candidate_selection_qubo(
         start = current_idx
         for k, cand in enumerate(candidates):
             qe = cand.get("qubo_energy", 0.0)
-            max_abs_qe = max(max_abs_qe, abs(qe))
             
             variables.append({
                 "category": cat,
@@ -43,25 +41,11 @@ def generate_candidate_selection_qubo(
 
     Q = {}
     
-    # 2. 制約: 各要素から必ず1つ選択 (Σ_k x_ik = 1)
-    # P * (Σ x - 1)^2 = P * (Σ x^2 + 2Σx_i x_j - 2Σx + 1)
-    # Binary x^2 = x => P * (Σ x + 2Σx_i x_j - 2Σx) = P * (2Σx_i x_j - Σx)
-    P = 10.0 * max_abs_qe if max_abs_qe > 0 else 10.0
-    
-    for start, end in element_ranges:
-        # 対角項 (Linear): -P * x
-        for i in range(start, end):
-            Q[(i, i)] = Q.get((i, i), 0.0) - P
-        # 二次項 (Interaction): 2P * x_i * x_j
-        for i in range(start, end):
-            for j in range(i + 1, end):
-                Q[(i, j)] = Q.get((i, j), 0.0) + 2.0 * P
-
-    # 3. 一次項 (E1): qubo_energy
+    # 2. 一次項 (E1): qubo_energy の設定
     for i, var in enumerate(variables):
         Q[(i, i)] = Q.get((i, i), 0.0) + var["qubo_energy"]
 
-    # 4. 二次項 (E2): ラベル間相互作用 (J_ab * l_a * l_b)
+    # 3. 二次項 (E2): ラベル間相互作用 (J_ab * l_a * l_b)
     interactions = evaluation_config.get("interactions", [])
     
     # 異なる構成要素間のみ計算
@@ -86,7 +70,6 @@ def generate_candidate_selection_qubo(
                         strength = inter["strength"]
                         if strength == 0: continue
                         
-                        # ka, kb は "Category::EnKey"
                         parts_a = ka.split("::")
                         parts_b = kb.split("::")
                         if len(parts_a) != 2 or len(parts_b) != 2: continue
@@ -97,14 +80,12 @@ def generate_candidate_selection_qubo(
                         val_a = None
                         val_b = None
                         
-                        # 候補 i が A かつ 候補 j が B
                         if cat_a == cat_i and cat_b == cat_j:
                             ja_a = label_mapping.get(cat_i, {}).get(en_a)
                             ja_b = label_mapping.get(cat_j, {}).get(en_b)
                             if ja_a in cand_i and ja_b in cand_j:
                                 val_a = cand_i[ja_a]
                                 val_b = cand_j[ja_b]
-                        # 候補 i が B かつ 候補 j が A
                         elif cat_a == cat_j and cat_b == cat_i:
                             ja_a = label_mapping.get(cat_j, {}).get(en_a)
                             ja_b = label_mapping.get(cat_i, {}).get(en_b)
@@ -113,9 +94,26 @@ def generate_candidate_selection_qubo(
                                 val_b = cand_i[ja_b]
                         
                         if val_a is not None and val_b is not None:
-                            # 正規化: 0-4 -> 0-1
                             contribution = strength * (val_a / 4.0) * (val_b / 4.0)
-                            # Q[(i, j)] に蓄積
                             Q[(i, j)] = Q.get((i, j), 0.0) + contribution
+
+    # 4. 制約ペナルティ係数 P の自動決定
+    if Q:
+        max_abs_q = max(abs(v) for v in Q.values())
+        P = max_abs_q * 10.0
+    else:
+        P = 10.0
+    if P == 0: P = 10.0
+
+    # 5. 制約追加: 各要素から必ず1つ選択 (Σ_k x_ik - 1)^2
+    # 展開: Σ x_k + 2Σx_i x_j - 2Σx_k + 1  => -Σ x_k + 2Σx_i x_j
+    for start, end in element_ranges:
+        # 対角項 (Linear): -P * x
+        for i in range(start, end):
+            Q[(i, i)] = Q.get((i, i), 0.0) - P
+        # 二次項 (Interaction): 2P * x_i * x_j
+        for i in range(start, end):
+            for j in range(i + 1, end):
+                Q[(i, j)] = Q.get((i, j), 0.0) + 2.0 * P
 
     return Q, variables

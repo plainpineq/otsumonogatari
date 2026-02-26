@@ -1221,6 +1221,10 @@ def quantum_optimize(doc_id):
             print("Warning: No semantic_labels found in document.")
             return jsonify({"error": "No evaluation data found."}), 400
 
+        # APIキーの取得
+        quantum_server = session.get("quantum_server", {})
+        api_key = quantum_server.get("api_key")
+
         # 2. QUBO生成
         Q, variables = generate_candidate_selection_qubo(semantic_labels, config, label_mapping)
         
@@ -1232,8 +1236,8 @@ def quantum_optimize(doc_id):
             current_idx += len(item["labels"])
             element_ranges.append((start, current_idx))
 
-        # 4. ヒューリスティック解決
-        result = solve_candidate_selection_qubo(Q, variables, element_ranges)
+        # 4. 解決 (Amplify or Heuristic)
+        result = solve_candidate_selection_qubo(Q, variables, element_ranges, api_key=api_key)
 
         # 5. 結果の構築 ( { category: { element: candidate_index } } )
         best_selection_map = {}
@@ -1250,6 +1254,7 @@ def quantum_optimize(doc_id):
         # ログ出力 (サーバーコンソールに確実に表示するため print を使用)
         unique_cats = len(set(item["category"] for item in semantic_labels))
         print("\n=== Candidate Selection QUBO Solve ===")
+        print(f"Solver: {result['solver']}")
         print(f"Categories: {unique_cats}")
         print(f"Elements: {len(semantic_labels)}")
         # 候補数の平均（または範囲）を表示
@@ -1266,7 +1271,8 @@ def quantum_optimize(doc_id):
             "best_selection": best_selection_map,
             "total_energy": result["total_energy"],
             "e1": result["e1"],
-            "e2": result["e2"]
+            "e2": result["e2"],
+            "solver": result["solver"]
         })
 
     except Exception as e:
