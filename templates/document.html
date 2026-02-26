@@ -932,7 +932,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Generate headers
             const labelsForClassification = semanticLabelSchema[categoryName];
             const allLabelKeysForRows = [];
-            let headerHtml = '<tr><th>選択</th><th>要素名</th><th style="width: 40%;">テキスト</th>';
+            let headerHtml = '<tr><th>選択</th><th>要素名</th><th>#</th><th style="width: 40%;">テキスト</th>';
             
             if (labelsForClassification) {
                 for (const labelKey in labelsForClassification) {
@@ -981,25 +981,45 @@ document.addEventListener('DOMContentLoaded', function() {
         const orderedKeys = JSON.parse(thead.dataset.orderedKeys || '[]');
         const labelsForClassification = semanticLabelSchema[classificationName];
 
-        // Ensure item.labels is always an array for iteration
-        let itemLabelsArray = [];
-        if (Array.isArray(item.labels)) {
-            itemLabelsArray = item.labels;
-        } else if (typeof item.labels === 'object' && item.labels !== null) {
-            itemLabelsArray = [item.labels];
+        // --- Find corresponding proposals in llm_suggestions ---
+        let proposalsList = [];
+        if (documentData.llm_suggestions) {
+            const catSuggestion = documentData.llm_suggestions.find(s => s.category === item.category);
+            if (catSuggestion && catSuggestion.elements && catSuggestion.elements[item.element]) {
+                proposalsList = catSuggestion.elements[item.element];
+            }
         }
 
-        itemLabelsArray.forEach((proposalLabels, index) => {
+        // Ensure item.labels is always an array for iteration
+        let labelsList = [];
+        if (Array.isArray(item.labels)) {
+            labelsList = item.labels;
+        } else if (typeof item.labels === 'object' && item.labels !== null) {
+            labelsList = [item.labels];
+        }
+
+        // Error Handling: Count Mismatch
+        if (proposalsList.length > 0 && proposalsList.length !== labelsList.length) {
+            console.warn(`WARNING: Proposal count mismatch\nCategory: ${item.category}\nElement: ${item.element}\nProposals: ${proposalsList.length}\nLabels: ${labelsList.length}`);
+        }
+
+        labelsList.forEach((proposalLabels, index) => {
             const radioName = `select_${item.category}_${item.element}`.replace(/\s+/g, '_');
             const isChecked = index === 0 ? 'checked' : '';
             
-            // Text is now inside proposalLabels
-            const proposalText = proposalLabels.text || item.text || "";
+            // ALWAYS use llm_suggestions for text if available, fallback to proposalLabels.text or item.text
+            const proposalText = (proposalsList[index] !== undefined) ? proposalsList[index] : (proposalLabels.text || item.text || "");
 
             let rowHtml = `
-                <tr>
-                    <td class="text-center"><input type="radio" name="${radioName}" ${isChecked}></td>
+                <tr data-qubo-row="${item.category}|${item.element}|${index}">
+                    <td class="text-center">
+                        <input type="radio" name="${radioName}" ${isChecked} 
+                               data-category="${item.category}" 
+                               data-element="${item.element}" 
+                               data-index="${index}">
+                    </td>
                     <td>${item.element}</td>
+                    <td>${index + 1}</td>
                     <td><small>${proposalText}</small></td>
             `;
             
@@ -1034,6 +1054,15 @@ document.addEventListener('DOMContentLoaded', function() {
             rowHtml += `<td>${detailsHtml}</td>`;
             rowHtml += '</tr>';
             tbody.insertAdjacentHTML('beforeend', rowHtml);
+
+            // Display sample to console for the first item of each element
+            if (index === 0) {
+                console.log(`Render Sample [${item.category} > ${item.element}]:`, {
+                    candidate_no: index + 1,
+                    text: proposalText.substring(0, 30) + (proposalText.length > 30 ? "..." : ""),
+                    labels: proposalLabels
+                });
+            }
         });
     }
 
@@ -1390,26 +1419,30 @@ document.addEventListener('DOMContentLoaded', function() {
 
                         // 2. ラジオボタンとバッジの更新
                         const bestSelection = data.best_selection;
-                        const sections = document.querySelectorAll('.evaluation-results-section');
                         
                         // 全バッジを一旦非表示
                         document.querySelectorAll('.qubo-optimal-badge').forEach(b => b.style.display = 'none');
 
-                        sections.forEach((section, i) => {
-                            const selectedIndex = bestSelection[i];
-                            const tbody = section.querySelector('tbody');
-                            const rows = tbody.querySelectorAll('tr');
-                            
-                            if (rows[selectedIndex]) {
-                                // ラジオボタンをチェック
-                                const radio = rows[selectedIndex].querySelector('input[type="radio"]');
-                                if (radio) radio.checked = true;
+                        // 階層構造 (category -> element -> cand_idx) を回して反映
+                        for (const cat in bestSelection) {
+                            for (const el in bestSelection[cat]) {
+                                const candIdx = bestSelection[cat][el];
                                 
-                                // バッジを表示
-                                const badge = rows[selectedIndex].querySelector('.qubo-optimal-badge');
-                                if (badge) badge.style.display = 'block';
+                                // data-qubo-row で行を特定
+                                const rowSelector = `tr[data-qubo-row="${cat}|${el}|${candIdx}"]`;
+                                const row = document.querySelector(rowSelector);
+                                
+                                if (row) {
+                                    // ラジオボタンをチェック
+                                    const radio = row.querySelector('input[type="radio"]');
+                                    if (radio) radio.checked = true;
+                                    
+                                    // バッジを表示
+                                    const badge = row.querySelector('.qubo-optimal-badge');
+                                    if (badge) badge.style.display = 'block';
+                                }
                             }
-                        });
+                        }
 
                         // 3. エネルギー分解（一次項・二次項）表示を更新（ラジオボタン変更イベントをトリガー）
                         updateEnergyBreakdown();

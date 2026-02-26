@@ -14,6 +14,7 @@ from auth import login
 from security import hash_password
 from user_files import load_user_data, save_user_data, get_user_data_path
 import semantic_labeler # NEW: Import the entire semantic_labeler module
+import evaluation_engine # NEW: Import evaluation_engine
 from evaluation_blueprint import evaluation_bp, _synthesize_interactions # NEW: Import the new blueprint and synthesis helper
 
 def _reset_generation_counter(user_id: str):
@@ -290,82 +291,46 @@ def document_create():
     save_user_data(session["user_id"], data)
     return redirect(f"/document/{document['id']}")
 
-from services.scoring import generate_onehot_qubo, compute_qubo_energy, to_onehot
-from services.quantum_solver import solve_and_decode, solve_and_decode_multi
+from services.scoring import compute_qubo_energy, to_onehot
 
 
 
 def calculate_qubo_energy_for_item(document, category, labels_ja, schema):
     """
-    特定項目のQUBOエネルギーを計算する。
-    12次元（3カテゴリ×4ラベル）のベクトルを構成し、対象カテゴリ以外は目標値で埋める。
+    特定項目のエネルギー貢献を計算する。
+    E = weight * (value - target)^2 の貢献分を返す。
+    ※候補選択型への移行に伴い、単体項のエネルギーとして再定義。
     """
     try:
         config = document.get("evaluation_config", {})
-        criteria = document.get("evaluation_criteria", {})
-        
         targets = config.get("targets", {})
-        weights = config.get("category_weights", {})
+        category_weights = config.get("category_weights", {})
         
-        # fallback to old format
-        if not targets and "global_target" in criteria:
-            targets = criteria.get("global_target", {})
-        if not weights and "category_weights" in criteria:
-            weights = criteria.get("category_weights", {})
+        energy = 0.0
         
-        # 1. ラベル順序と目標ベクトルの構築
-        label_order = []
-        global_target_vector = []
-        
-        for cat_name, labels_config in schema.items():
-            if cat_name == "scale":
-                continue
-            for en_key, spec in labels_config.items():
-                ja_label = spec.get("ja_label", en_key)
-                label_order.append(f"{cat_name}:{ja_label}")
-                
-                # 目標値の取得
-                target_key = f"{cat_name}::{en_key}"
-                if target_key in targets:
-                    global_target_vector.append(targets[target_key])
-                else:
-                    global_target_vector.append(targets.get(cat_name, {}).get(en_key, 2))
-        
-        if not global_target_vector or len(global_target_vector) != 12:
+        if category not in schema:
             return None
-
-        # QUBOの生成
-        Q = generate_onehot_qubo(global_target_vector, weights, label_order)
+            
+        weight = category_weights.get(category, 1.0)
         
-        # 2. 評価対象項目の12次元ベクトルを構築
-        current_vector = []
-        for full_label in label_order:
-            cat_name, ja_label = full_label.split(":")
-            if cat_name == category:
-                # 自身のカテゴリの評価値を使用
-                val = labels_ja.get(ja_label, 0)
-                current_vector.append(val)
-            else:
-                # 他のカテゴリは目標値を使用（エネルギー貢献を0にするため）
-                target_val = 2
-                if cat_name in schema:
-                    for en_k, spec in schema[cat_name].items():
-                        if spec.get("ja_label") == ja_label:
-                            target_key = f"{cat_name}::{en_k}"
-                            if target_key in targets:
-                                target_val = targets[target_key]
-                            else:
-                                target_val = targets.get(cat_name, {}).get(en_k, 2)
-                            break
-                current_vector.append(target_val)
-        
-        # One-hot変換とエネルギー計算
-        binary_vector = to_onehot(current_vector)
-        energy = compute_qubo_energy(Q, binary_vector)
-        return round(energy, 2)
+        for en_key, spec in schema[category].items():
+            ja_label = spec.get("ja_label", en_key)
+            val = labels_ja.get(ja_label, 0)
+            
+            # 目標値の取得
+            target_key = f"{category}::{en_key}"
+            target_val = targets.get(target_key, 2) # デフォルト2
+            
+            # 正規化 (0-4 -> 0-1)
+            val_norm = val / 4.0
+            target_norm = target_val / 4.0
+            
+            energy += weight * ((val_norm - target_norm) ** 2)
+            
+        return round(energy, 4)
         
     except Exception as e:
-        logging.error(f"QUBO Energy calculation failed: {e}")
+        logging.error(f"Energy calculation failed: {e}")
         return None
 
 
@@ -1041,12 +1006,10 @@ def evaluate_stream(doc_id):
 
                                 # --- 乖離スコア (diff_score) の計算を追加 ---
                                 current_values = []
-                                label_order = []
                                 for cat_name, labels_config in semantic_label_schema.items():
                                     if cat_name == "scale": continue
                                     for en_key, spec in labels_config.items():
                                         ja_label = spec.get("ja_label", en_key)
-                                        label_order.append(f"{cat_name}:{ja_label}")
                                         if cat_name == cat:
                                             current_values.append(labels_ja.get(ja_label, 0))
                                         else:
@@ -1222,118 +1185,12 @@ def load_server_settings():
         return jsonify({"success": False, "message": f"設定のロード中にエラーが発生しました: {str(e)}"}), 500
 
 
-import random
-
-def solve_candidate_selection_qubo(elements_data, interactions, label_mapping):
-    """
-    候補選択型QUBOのヒューリスティックソルバー
-    elements_data: List[Dict] { element_id, candidates: List[Dict] }
-    interactions: List[Dict] { key_a, key_b, strength }
-    label_mapping: Dict { category: { en_key: ja_label } }
-    """
-    num_elements = len(elements_data)
-    if num_elements == 0:
-        return None
-
-    # 1. 初期解: 各要素で qubo_energy が最小の候補を選択
-    current_selection = []
-    for i in range(num_elements):
-        candidates = elements_data[i]["candidates"]
-        best_k = 0
-        min_qe = float('inf')
-        for k, cand in enumerate(candidates):
-            qe = cand.get("qubo_energy", 0.0)
-            if qe < min_qe:
-                min_qe = qe
-                best_k = k
-        current_selection.append(best_k)
-
-    def calculate_total_energy(selection):
-        e1 = 0.0
-        e2 = 0.0
-        
-        # E1: qubo_energy の合計
-        for i, k in enumerate(selection):
-            e1 += elements_data[i]["candidates"][k].get("qubo_energy", 0.0)
-        
-        # E2: ラベル間相互作用
-        for idx_i in range(num_elements):
-            for idx_j in range(idx_i + 1, num_elements):
-                cand_i = elements_data[idx_i]["candidates"][selection[idx_i]]
-                cand_j = elements_data[idx_j]["candidates"][selection[idx_j]]
-                cat_i = elements_data[idx_i]["category"]
-                cat_j = elements_data[idx_j]["category"]
-                
-                for inter in interactions:
-                    ka = inter["key_a"]
-                    kb = inter["key_b"]
-                    strength = inter["strength"]
-                    if strength == 0: continue
-                    
-                    # ka, kb は "Category::EnKey" 形式
-                    parts_a = ka.split("::")
-                    parts_b = kb.split("::")
-                    if len(parts_a) != 2 or len(parts_b) != 2: continue
-                    
-                    cat_a, en_a = parts_a
-                    cat_b, en_b = parts_b
-                    
-                    # カテゴリ一致確認
-                    val_a = None
-                    val_b = None
-                    
-                    if cat_a == cat_i and cat_b == cat_j:
-                        ja_a = label_mapping.get(cat_i, {}).get(en_a)
-                        ja_b = label_mapping.get(cat_j, {}).get(en_b)
-                        if ja_a in cand_i and ja_b in cand_j:
-                            val_a = cand_i[ja_a]
-                            val_b = cand_j[ja_b]
-                    elif cat_a == cat_j and cat_b == cat_i:
-                        ja_a = label_mapping.get(cat_j, {}).get(en_a)
-                        ja_b = label_mapping.get(cat_i, {}).get(en_b)
-                        if ja_a in cand_j and ja_b in cand_i:
-                            val_a = cand_j[ja_a]
-                            val_b = cand_i[ja_b]
-                            
-                    if val_a is not None and val_b is not None:
-                        # 正規化: 0-4 -> 0-1
-                        e2 += strength * (val_a / 4.0) * (val_b / 4.0)
-        return e1, e2
-
-    cur_e1, cur_e2 = calculate_total_energy(current_selection)
-    best_e1, best_e2 = cur_e1, cur_e2
-    best_selection = list(current_selection)
-    
-    # 2. 反復改善 (ランダムスワップ)
-    max_iter = 2000
-    for _ in range(max_iter):
-        target_i = random.randint(0, num_elements - 1)
-        num_candidates = len(elements_data[target_i]["candidates"])
-        if num_candidates <= 1: continue
-        
-        old_k = current_selection[target_i]
-        new_k = random.randint(0, num_candidates - 1)
-        if old_k == new_k: continue
-        
-        current_selection[target_i] = new_k
-        new_e1, new_e2 = calculate_total_energy(current_selection)
-        
-        if (new_e1 + new_e2) < (best_e1 + best_e2):
-            best_e1, best_e2 = new_e1, new_e2
-            best_selection = list(current_selection)
-        else:
-            # 元に戻す (Hill Climbing的な挙動。SAにするなら確率で受け入れる)
-            current_selection[target_i] = old_k
-            
-    return {
-        "selection": best_selection,
-        "total_energy": round(best_e1 + best_e2, 4),
-        "e1": round(best_e1, 4),
-        "e2": round(best_e2, 4)
-    }
+from services.candidate_qubo import generate_candidate_selection_qubo
+from services.candidate_solver import solve_candidate_selection_qubo
 
 @app.route("/document/<doc_id>/quantum_optimize", methods=["POST"])
 def quantum_optimize(doc_id):
+    print(f"\n--- Received Quantum Optimization Request for Doc: {doc_id} ---")
     if "user_id" not in session:
         return jsonify({"error": "Unauthorized"}), 401
 
@@ -1344,7 +1201,6 @@ def quantum_optimize(doc_id):
 
     try:
         config = document.get("evaluation_config", {})
-        interactions = config.get("interactions", [])
         
         # Load semantic label schema for mappings
         semantic_label_schema = {}
@@ -1359,44 +1215,59 @@ def quantum_optimize(doc_id):
             if cat == "scale": continue
             label_mapping[cat] = {en: spec["ja_label"] for en, spec in labels.items()}
 
-        # 1. データのフラット化 (element単位で候補をまとめる)
-        # semantic_labels: List[Dict] { category, element, labels: List[Dict] }
-        raw_labels = document.get("semantic_labels", [])
-        elements_data = []
-        for item in raw_labels:
-            elements_data.append({
-                "category": item["category"],
-                "element": item["element"],
-                "candidates": item["labels"]
-            })
-
-        if not elements_data:
+        # 1. データの構築
+        semantic_labels = document.get("semantic_labels", [])
+        if not semantic_labels:
+            print("Warning: No semantic_labels found in document.")
             return jsonify({"error": "No evaluation data found."}), 400
 
-        # 2. 候補選択型QUBOの解決
-        result = solve_candidate_selection_qubo(elements_data, interactions, label_mapping)
+        # 2. QUBO生成
+        Q, variables = generate_candidate_selection_qubo(semantic_labels, config, label_mapping)
+        
+        # 3. 構造情報の抽出
+        element_ranges = []
+        current_idx = 0
+        for item in semantic_labels:
+            start = current_idx
+            current_idx += len(item["labels"])
+            element_ranges.append((start, current_idx))
 
-        # ログ出力
-        logging.info("=== Candidate Selection QUBO Solve ===")
-        logging.info(f"Elements: {len(elements_data)}")
-        logging.info(f"Binary variables: {sum(len(e['candidates']) for e in elements_data)}")
-        logging.info(f"Best total energy: {result['total_energy']}")
-        logging.info(f"E1: {result['e1']}")
-        logging.info(f"E2: {result['e2']}")
-        logging.info("=======================================")
+        # 4. ヒューリスティック解決
+        result = solve_candidate_selection_qubo(Q, variables, element_ranges)
+
+        # 5. 結果の構築 ( { category: { element: candidate_index } } )
+        best_selection_map = {}
+        for var_idx in result["best_selection_indices"]:
+            var = variables[var_idx]
+            cat = var["category"]
+            el = var["element"]
+            cand_idx = var["cand_idx"]
+            
+            if cat not in best_selection_map:
+                best_selection_map[cat] = {}
+            best_selection_map[cat][el] = cand_idx
+
+        # ログ出力 (サーバーコンソールに確実に表示するため print を使用)
+        unique_cats = len(set(item["category"] for item in semantic_labels))
+        print("\n=== Candidate Selection QUBO Solve ===")
+        print(f"Categories: {unique_cats}")
+        print(f"Elements: {len(semantic_labels)}")
+        # 候補数の平均（または範囲）を表示
+        avg_cands = len(variables) / len(semantic_labels) if semantic_labels else 0
+        print(f"Candidates per element: {avg_cands:.1f} (avg)")
+        print(f"Binary variables: {len(variables)}")
+        print(f"Best total energy: {result['total_energy']}")
+        print(f"E1: {result['e1']}")
+        print(f"E2: {result['e2']}")
+        print("=======================================\n")
 
         return jsonify({
             "success": True,
-            "best_selection": result["selection"],
+            "best_selection": best_selection_map,
             "total_energy": result["total_energy"],
             "e1": result["e1"],
-            "e2": result["e2"],
-            "elements": [{"category": e["category"], "element": e["element"]} for e in elements_data]
+            "e2": result["e2"]
         })
-
-    except Exception as e:
-        logging.error(f"Quantum optimization failed: {e}")
-        return jsonify({"error": str(e)}), 500
 
     except Exception as e:
         logging.error(f"Quantum optimization failed: {e}")

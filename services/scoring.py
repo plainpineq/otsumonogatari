@@ -1,5 +1,5 @@
 # scoring.py
-from typing import List
+from typing import List, Dict, Tuple
 from models import Intent
 
 
@@ -69,102 +69,6 @@ def score_intent_unit_alignment(
     final_score = max(0.0, raw_score - penalty)
 
     return round(min(final_score, 1.0), 3)
-
-
-from typing import Dict, List, Tuple
-
-
-def generate_onehot_qubo(
-    global_target_vector: List[int],
-    category_weights: Dict[str, float],
-    label_order: List[str],
-    penalty: float = 20.0
-) -> Dict[Tuple[int, int], float]:
-    """
-    12ラベル × 6bit = 72変数のOne-hot QUBOを生成する。
-
-    - 各ラベルは0-5の整数
-    - One-hot制約 Σ b = 1 を導入
-    - 目的関数: Σ w_i (value_i - target_i)^2
-    - QUBOは dict[(i,j)] = value 形式で返す（i <= j のみ）
-    """
-
-    def expand_weights(
-        label_order: List[str],
-        category_weights: Dict[str, float]
-    ) -> List[float]:
-        expanded = []
-        for label in label_order:
-            category = label.split(":")[0]
-            expanded.append(category_weights.get(category, 1.0))
-        return expanded
-
-    weights = expand_weights(label_order, category_weights)
-
-    Q: Dict[Tuple[int, int], float] = {}
-    var_index = 0
-    label_bit_indices: List[List[int]] = []
-
-    # 1. 各ラベルに6ビット割り当て
-    for _ in global_target_vector:
-        bits = list(range(var_index, var_index + 6))
-        label_bit_indices.append(bits)
-        var_index += 6
-
-    # 2. 目的関数項
-    for i, (target, weight) in enumerate(zip(global_target_vector, weights)):
-        bits = label_bit_indices[i]
-        for k, bit in enumerate(bits):
-            cost = weight * ((k - target) ** 2)
-            Q[(bit, bit)] = Q.get((bit, bit), 0.0) + cost
-
-    # 3. One-hot制約: P(Σb - 1)^2
-    for bits in label_bit_indices:
-        # 対角項: -2P
-        for b in bits:
-            Q[(b, b)] = Q.get((b, b), 0.0) + (-2.0 * penalty)
-
-        # ペア項: +2P
-        for i in range(len(bits)):
-            for j in range(i + 1, len(bits)):
-                b1 = bits[i]
-                b2 = bits[j]
-                Q[(b1, b2)] = Q.get((b1, b2), 0.0) + (2.0 * penalty)
-
-    print("=== QUBO Generation Summary ===")
-    print("Label count:", len(global_target_vector))
-    print("Total binary variables:", var_index)
-    print("Non-zero Q terms:", len(Q))
-
-    return Q
-
-
-def test_qubo_generation() -> None:
-    """
-    簡易テスト用関数（既存処理には影響しない）
-    """
-
-    dummy_target = [3] * 12
-    dummy_weights = {
-        "CategoryA": 1.0,
-        "CategoryB": 1.0,
-        "CategoryC": 1.0
-    }
-
-    # 実プロジェクトのラベル順に合わせること
-    label_order = [
-        "CategoryA:Item1", "CategoryA:Item2", "CategoryA:Item3", "CategoryA:Item4",
-        "CategoryB:Item1", "CategoryB:Item2", "CategoryB:Item3", "CategoryB:Item4",
-        "CategoryC:Item1", "CategoryC:Item2", "CategoryC:Item3", "CategoryC:Item4",
-    ]
-
-    Q = generate_onehot_qubo(
-        dummy_target,
-        dummy_weights,
-        label_order
-    )
-
-    print("QUBO size:", len(Q))
 
 
 def compute_qubo_energy(

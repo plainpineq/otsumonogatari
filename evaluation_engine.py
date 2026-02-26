@@ -155,30 +155,3 @@ def calculate_energy_detail(semantic_labels: Dict[str, Dict[str, int]], evaluati
         "E1_details": E1_details,
         "E2_details": E2_details
     }
-
-
-def generate_qubo(target: List[int], weights: List[float]):
-    """
-    目的関数: min Σ w_i (x_i - t_i)^2
-    を最小化するための QUBO 係数を生成する。
-    ※ここでは各成分 x_i が 0 or 1 のバイナリ変数の場合を想定。
-    (x_i - t_i)^2 = x_i^2 - 2*t_i*x_i + t_i^2
-    x_i^2 = x_i (バイナリ変数の特性)
-    = (1 - 2*t_i)*x_i + t_i^2
-    定数項 t_i^2 は最適化に影響しないため除外。
-    """
-
-    Q = {}
-
-    for i, (t, w) in enumerate(zip(target, weights)):
-        # 線形項（バイアス）: w * (1 - 2*t)
-        # ※要求された形式 Q[(i,)] = -2 * w * t に合わせつつ、w*x_i^2 分を調整
-        # 本来バイナリ変数なら x_i^2 = x_i なので係数を合算する。
-        
-        # 要求されたロジックに基づく実装:
-        # 二次項 Q[(i, i)] = w
-        Q[(i, i)] = w
-        # 線形項 Q[(i,)] = -2 * w * t
-        Q[(i,)] = -2 * w * t
-
-    return Q
