@@ -259,12 +259,12 @@
                 <!-- Dynamically generated evaluation buttons will go here -->
             </div>
             <div class="mt-2 d-flex align-items-center gap-3">
-                <button type="button" id="quantum-optimize-btn" class="btn btn-primary btn-sm">全分類横断・最適組み合わせ選択 (QUBO)</button>
+                <button type="button" id="quantum-optimize-btn" class="btn btn-primary btn-sm">組み合わせ最適化</button>
                 <div id="quantum-energy-display" class="text-muted small" style="display: none;">
-                    <span id="q-solver-badge" class="badge bg-dark">Solver: <span id="q-solver-name">-</span></span>
-                    <span class="badge bg-secondary ms-1">Total Energy: <span id="q-total-e">-</span></span>
-                    <span class="ms-1">E1: <span id="q-e1">-</span></span>
-                    <span class="ms-1">E2: <span id="q-e2">-</span></span>
+                    <span id="q-solver-badge" class="badge bg-dark">方式: <span id="q-solver-name">-</span></span>
+                    <span class="badge bg-secondary ms-1">構造スコア: <span id="q-total-e">-</span></span>
+                    <span class="ms-1">要素適合: <span id="q-e1">-</span></span>
+                    <span class="ms-1">相互作用: <span id="q-e2">-</span></span>
                 </div>
             </div>
             <!-- Optimized candidates list removed as per request -->
@@ -279,19 +279,19 @@
 
             <!-- Energy Breakdown Section -->
             <div id="energy-breakdown-container" class="mt-4 card p-3 shadow-sm" style="display: none;">
-                <h3 class="h5 mb-3">【現在エネルギー】</h3>
+                <h3 class="h5 mb-3">【現在の構造分析】</h3>
                 <div id="energy-summary" class="mb-3">
                     <!-- Summary will be populated here -->
                 </div>
                 
                 <hr>
-                <h4 class="h6 fw-bold">【一次項 詳細（ラベル別）】</h4>
+                <h4 class="h6 fw-bold">【個別要素の適合度（ラベル別）】</h4>
                 <div id="e1-details-list" class="list-group list-group-flush mb-3">
                     <!-- E1 details will be populated here -->
                 </div>
 
                 <hr>
-                <h4 class="h6 fw-bold">【二次項 詳細（相互作用ペア別）】</h4>
+                <h4 class="h6 fw-bold">【要素間の相乗効果（相互作用ペア別）】</h4>
                 <div id="e2-details-list" class="list-group list-group-flush">
                     <!-- E2 details will be populated here -->
                 </div>
@@ -437,8 +437,8 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
         if (Object.keys(selectedLabels).length === 0) {
-            energyBreakdownContainer.style.display = 'none';
-            return;
+        energyBreakdownContainer.style.display = 'none';
+           return;
         }
 
         try {
@@ -455,20 +455,20 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             // Update UI
-            energyBreakdownContainer.style.display = 'block';
+//            energyBreakdownContainer.style.display = 'block';
             
             energySummary.innerHTML = `
                 <div class="row text-center">
                     <div class="col-md-4">
-                        <div class="small text-muted">総エネルギー</div>
+                        <div class="small text-muted">総構造スコア</div>
                         <div class="h4 mb-0 fw-bold font-monospace">${data.total.toFixed(4)}</div>
                     </div>
                     <div class="col-md-4">
-                        <div class="small text-muted">一次項 (E1)</div>
+                        <div class="small text-muted">個別要素の適合度</div>
                         <div class="h4 mb-0 font-monospace">${data.E1.toFixed(4)} <small class="text-muted fs-6">(${data.ratio1.toFixed(2)}%)</small></div>
                     </div>
                     <div class="col-md-4">
-                        <div class="small text-muted">二次項 (E2)</div>
+                        <div class="small text-muted">要素間の相乗効果</div>
                         <div class="h4 mb-0 font-monospace">${data.E2.toFixed(4)} <small class="text-muted fs-6">(${data.ratio2.toFixed(2)}%)</small></div>
                     </div>
                 </div>
@@ -945,7 +945,7 @@ document.addEventListener('DOMContentLoaded', function() {
                  // Fallback for unknown categories if schema is missing
                  headerHtml = '<tr><th>選択</th><th>要素名</th><th style="width: 40%;">テキスト</th></tr>';
             }
-            headerHtml += '<th>エネルギー・最適化詳細</th>';
+            headerHtml += '<th>構造分析詳細</th>';
             headerHtml += '</tr>';
             thead.innerHTML = headerHtml;
             thead.dataset.orderedKeys = JSON.stringify(allLabelKeysForRows);
@@ -1047,9 +1047,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Extra details block
             let detailsHtml = '<div class="small mt-1">';
-            detailsHtml += `<div class="qubo-energy-val"><strong>QUBO Energy:</strong> ${proposalLabels.qubo_energy || '-'}</div>`;
-            detailsHtml += `<div><strong>Diff Score:</strong> ${proposalLabels.diff_score || '-'}</div>`;
-            detailsHtml += `<div class="qubo-optimal-badge mt-1" style="display:none;"><span class="badge bg-warning text-dark">★ QUBO最適選択</span></div>`;
+            detailsHtml += `<div class="qubo-energy-val"><strong>構造スコア:</strong> ${proposalLabels.qubo_energy || '-'}</div>`;
+            detailsHtml += `<div><strong>構造整合度:</strong> ${proposalLabels.diff_score || '-'}</div>`;
+            detailsHtml += `<div class="qubo-optimal-badge mt-1" style="display:none;"><span class="badge bg-warning text-dark">★ 推奨構成</span></div>`;
             detailsHtml += '</div>';
 
             rowHtml += `<td>${detailsHtml}</td>`;
@@ -1458,7 +1458,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         // 3. エネルギー分解（一次項・二次項）表示を更新（ラジオボタン変更イベントをトリガー）
                         updateEnergyBreakdown();
 
-                        showAlert('候補選択型QUBO（全分類横断組み合わせ最適化）が完了しました。', 'success');
+                        showAlert('組み合わせ最適化が完了しました。', 'success');
                     } else {
                         throw new Error(data.error || '最適化に失敗しました。');
                     }
@@ -1466,7 +1466,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     alert('エラー: ' + error.message);
                 } finally {
                     quantumOptimizeBtn.disabled = false;
-                    quantumOptimizeBtn.textContent = '全分類横断・最適組み合わせ選択 (QUBO)';
+                    quantumOptimizeBtn.textContent = '組み合わせ最適化';
                 }
             });
         }

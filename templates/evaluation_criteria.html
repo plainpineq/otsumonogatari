@@ -1,6 +1,6 @@
 <div class="card p-4 shadow-sm mt-3">
     <h2 class="h4 mb-3">評価基準の再設計</h2>
-    <p class="text-muted">各ラベルの目標値、分類の重み、およびラベル間の相互作用を設定します。</p>
+    <p class="text-muted">各ラベルの目標値、分類の重み、および要素間の相乗効果を設定します。</p>
 
     {% set config = document.get('evaluation_config', {}) %}
     {% set targets = config.get('targets', {}) %}
@@ -68,7 +68,7 @@
     <!-- ラベル間相互作用セクション -->
     <div class="card mb-4 border-info">
         <div class="card-header bg-info text-white">
-            <h3 class="h5 mb-0">ラベル間相互作用（Interaction）</h3>
+            <h3 class="h5 mb-0">要素間の相乗効果</h3>
         </div>
         <div class="card-body">
             <div class="row g-3 align-items-end mb-4 bg-light p-3 rounded border">
@@ -120,7 +120,7 @@
             </div>
 
             <div class="d-flex justify-content-between align-items-center mb-3">
-                <h6>登録済み相互作用一覧</h6>
+                <h6>登録済み効果一覧</h6>
                 <button type="button" id="auto-generate-interactions-btn" class="btn btn-outline-info btn-sm">ジャンルから自動生成</button>
             </div>
             <div class="table-responsive">
