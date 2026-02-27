@@ -1392,22 +1392,38 @@ def draft_update():
     scene_id = params.get("scene_id")
     title = params.get("title")
     order = params.get("order")
+    manuscript_content = params.get("manuscript_content")
     
     dm = DraftManager(user_id)
+
+    # 全文保存の場合
+    if manuscript_content is not None:
+        if "manuscript" not in dm.data:
+            dm.data["manuscript"] = {}
+        dm.data["manuscript"]["full_text"] = manuscript_content
+        # バージョン更新
+        current_version = dm.data["manuscript"].get("version", 0)
+        dm.data["manuscript"]["version"] = current_version + 1
+        dm.data["manuscript"]["last_saved"] = datetime.now().isoformat()
+        dm.save()
+        return jsonify({"success": True, "version": dm.data["manuscript"]["version"]})
+
     if chapter_id and scene_id:
-        scene = dm.find_scene(chapter_id, scene_id)
-        if scene:
-            if title is not None: scene["title"] = title
-            if order is not None: scene["order"] = order
+        if scene_id == 'new':
+            dm.add_scene(chapter_id, title or "新しいシーン")
         else:
-            dm.add_scene(chapter_id, title or "名称未設定シーン", order)
+            scene = dm.find_scene(chapter_id, scene_id)
+            if scene:
+                if title is not None: scene["title"] = title
+                if order is not None: scene["order"] = order
     elif chapter_id:
-        chapter = dm.find_chapter(chapter_id)
-        if chapter:
-            if title is not None: chapter["title"] = title
-            if order is not None: chapter["order"] = order
+        if chapter_id == 'new':
+            dm.add_chapter(title or "新しい章")
         else:
-            dm.add_chapter(title or "名称未設定章", order)
+            chapter = dm.find_chapter(chapter_id)
+            if chapter:
+                if title is not None: chapter["title"] = title
+                if order is not None: chapter["order"] = order
     else:
         # 両方ない場合は新規章
         dm.add_chapter(title or "新しい章", order)

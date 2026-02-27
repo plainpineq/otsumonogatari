@@ -32,9 +32,13 @@
     <li class="nav-item" role="presentation">
         <button class="nav-link" id="evaluation-tab" data-bs-toggle="tab" data-bs-target="#evaluation" type="button" role="tab" aria-controls="evaluation" aria-selected="false">評価</button>
     </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="drafting-tab" data-bs-toggle="tab" data-bs-target="#drafting" type="button" role="tab" aria-controls="drafting" aria-selected="false">下書き</button>
-            </li></ul>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="drafting-tab" data-bs-toggle="tab" data-bs-target="#drafting" type="button" role="tab" aria-controls="drafting" aria-selected="false">下書き</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="manuscript-tab" data-bs-toggle="tab" data-bs-target="#manuscript" type="button" role="tab" aria-controls="manuscript" aria-selected="false">原稿</button>
+    </li>
+</ul>
 
 <div class="tab-content" id="documentTabContent">
     <div class="tab-pane fade" id="suggestions" role="tabpanel" aria-labelledby="suggestions-tab">
@@ -309,55 +313,141 @@
     </div>
     <div class="tab-pane fade" id="drafting" role="tabpanel" aria-labelledby="drafting-tab">
         <div class="card p-4 shadow-sm mt-3">
-            <h2 class="h4 mb-3">原稿の下書き生成</h2>
-            <p>「評価」タブで推奨された、あるいは選択された構成要素を元に、LLMで原稿の下書きを生成します。</p>
-            
+            <h2 class="h4 mb-3">原稿案の執筆</h2>
+            <p class="text-muted small">物語の構成要素を元に、AIが下書きを執筆します。</p>
+
+            <div class="mb-4 p-3 border rounded bg-white">
+                <label class="form-label fw-bold">執筆対象の選択</label>
+                <div class="d-flex gap-4 align-items-center mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="draft-target-type" id="target-chapter" value="chapter" checked>
+                        <label class="form-check-label" for="target-chapter">章単位</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="draft-target-type" id="target-scene" value="scene">
+                        <label class="form-check-label" for="target-scene">シーン単位</label>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-5 mb-2">
+                        <label for="select-chapter" class="form-label small">章の選択</label>
+                        <select id="select-chapter" class="form-select"></select>
+                    </div>
+                    <div id="scene-select-container" class="col-md-5 mb-2" style="display: none;">
+                        <label for="select-scene" class="form-label small">シーンの選択</label>
+                        <select id="select-scene" class="form-select"></select>
+                    </div>
+                    <div class="col-md-2 mb-2 d-flex align-items-end">
+                        <button id="btn-add-structure" class="btn btn-outline-secondary btn-sm w-100">章/シーン追加</button>
+                    </div>
+                </div>
+            </div>
+
             <div class="row">
-                <div class="col-md-4">
+                <!-- 左ペイン: 構成編集 -->
+                <div class="col-md-6">
                     <div class="card p-3 mb-3 bg-light">
-                        <h3 class="h6 fw-bold">生成設定</h3>
+                        <h3 class="h6 fw-bold">物語の構成（スナップショット）</h3>
                         <div class="mb-3">
-                            <label for="draft-target" class="form-label small">下書き対象の分類</label>
-                            <select id="draft-target" class="form-select form-select-sm">
-                                <!-- Dynamically populated based on available categories -->
-                            </select>
+                            <label for="draft-structure" class="form-label small">シーン構成・展開</label>
+                            <textarea id="draft-structure" class="form-control" rows="5" placeholder="この章/シーンの主な出来事や流れを入力してください。"></textarea>
                         </div>
                         <div class="mb-3">
-                            <label for="draft-style" class="form-label small">文体</label>
-                            <input type="text" id="draft-style" class="form-control form-select-sm" placeholder="例：三人称、硬めの文体、叙情的など">
+                            <label for="draft-characters" class="form-label small">登場キャラクター設定</label>
+                            <textarea id="draft-characters" class="form-control" rows="3" placeholder="名前、役割、このシーンでの心情など。"></textarea>
                         </div>
                         <div class="mb-3">
-                            <label for="draft-perspective" class="form-label small">視点</label>
-                            <input type="text" id="draft-perspective" class="form-control form-select-sm" placeholder="例：主人公、神の視点など">
+                            <label for="draft-foreshadowing" class="form-label small">伏線・重要要素</label>
+                            <textarea id="draft-foreshadowing" class="form-control" rows="3" placeholder="回収する伏線や、新しく張る伏線など。"></textarea>
                         </div>
-                        <div class="mb-3">
-                            <label for="draft-length" class="form-label small">目安の文字数</label>
-                            <input type="number" id="draft-length" class="form-control form-select-sm" value="1000" step="100">
-                        </div>
-                        <div class="mb-3">
-                            <label for="draft-instruction" class="form-label small">補足指示</label>
-                            <textarea id="draft-instruction" class="form-control form-select-sm" rows="4" placeholder="特定のセリフを入れたい、結末を指定したいなどの指示があれば入力してください。"></textarea>
-                        </div>
-                        <button id="generate-draft-btn" class="btn btn-primary w-100">下書きを生成</button>
                     </div>
                 </div>
-                <div class="col-md-8">
-                    <div class="card p-3 h-100">
-                        <h3 class="h6 fw-bold d-flex justify-content-between align-items-center">
-                            生成結果
-                            <button id="copy-draft-btn" class="btn btn-outline-secondary btn-sm" style="display: none;">コピー</button>
-                        </h3>
-                        <div id="draft-loading" class="text-center py-5" style="display: none;">
-                            <div class="spinner-border text-primary" role="status">
-                                <span class="visually-hidden">Loading...</span>
+                <!-- 右ペイン: 追加情報 -->
+                <div class="col-md-6">
+                    <div class="card p-3 mb-3 bg-light">
+                        <h3 class="h6 fw-bold">執筆の演出設定</h3>
+                        <div class="row">
+                            <div class="col-md-6 mb-2">
+                                <label for="draft-location" class="form-label small">場所</label>
+                                <input type="text" id="draft-location" class="form-control form-control-sm" placeholder="例：図書室">
                             </div>
-                            <p class="mt-2 text-muted">下書きを執筆中...</p>
+                            <div class="col-md-6 mb-2">
+                                <label for="draft-time" class="form-label small">時間</label>
+                                <input type="text" id="draft-time" class="form-control form-control-sm" placeholder="例：放課後の夕暮れ">
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label for="draft-weather" class="form-label small">天候</label>
+                                <input type="text" id="draft-weather" class="form-control form-control-sm" placeholder="例：霧雨">
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label for="draft-viewpoint" class="form-label small">視点</label>
+                                <input type="text" id="draft-viewpoint" class="form-control form-control-sm" placeholder="三人称、特定のキャラ視点など">
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label for="draft-style" class="form-label small">文体</label>
+                                <input type="text" id="draft-style" class="form-control form-control-sm" placeholder="叙情的、淡々とした文体など">
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label for="draft-length" class="form-label small">文字数目安</label>
+                                <input type="text" id="draft-length" class="form-control form-control-sm" placeholder="2000文字程度">
+                            </div>
                         </div>
-                        <div id="draft-result-area" class="border rounded p-3 bg-white overflow-auto" style="min-height: 400px; max-height: 600px; white-space: pre-wrap;">
-                            <p class="text-muted text-center mt-5">設定を入力して「下書きを生成」を押してください。</p>
+                        <div class="mb-3">
+                            <label for="draft-additional-info" class="form-label small">補足指示</label>
+                            <textarea id="draft-additional-info" class="form-control" rows="4" placeholder="特定のセリフを入れたい、結末を指定したいなどの詳細指示があれば入力してください。"></textarea>
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <div class="text-center my-4">
+                <button id="btn-generate-draft" class="btn btn-primary btn-lg px-5">この構成で原稿案を生成する</button>
+            </div>
+
+            <div id="draft-gen-loading" class="text-center my-4" style="display: none;">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2 text-primary fw-bold">執筆のインスピレーションを集めています。少々お待ちください...</p>
+            </div>
+
+            <hr>
+
+            <h3 class="h5 mt-4">生成済みの原稿案一覧</h3>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>ID</th>
+                            <th>作成日時</th>
+                            <th>内容プレビュー</th>
+                            <th class="text-end">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="draft-list-body">
+                        <!-- JavaScriptで動的に生成 -->
+                        <tr>
+                            <td colspan="4" class="text-center text-muted py-4">まだ原稿案が生成されていません。</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade" id="manuscript" role="tabpanel" aria-labelledby="manuscript-tab">
+        <div class="card p-4 shadow-sm mt-3">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h2 class="h4 mb-0">原稿の推敲・執筆</h2>
+                <div class="badge bg-info" id="manuscript-status">執筆中</div>
+            </div>
+            <p class="text-muted small">AIが生成した原稿案を元に、ここで物語を仕上げていきます。</p>
+            <div class="mb-3">
+                <textarea id="manuscript-editor" class="form-control" placeholder="ここに物語を書き込んでください。" style="min-height: 600px; font-family: 'Sawarabi Mincho', serif; line-height: 1.8; font-size: 1.1rem; padding: 2rem;"></textarea>
+            </div>
+            <div class="d-flex justify-content-end gap-2">
+                <button id="btn-save-manuscript" class="btn btn-success px-4">原稿を推敲保存</button>
+                <button id="btn-finalize-manuscript" class="btn btn-outline-primary px-4">完成稿にする</button>
             </div>
         </div>
     </div>
@@ -1554,22 +1644,277 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    function renderFitResultsV2(results) {
-        fitResultsBodyV2.innerHTML = '';
-        results.sort((a, b) => a.fit.score - b.fit.score); // Sort by score ascending
+    // --- 下書き・原稿管理 (Draft & Manuscript Management) ---
 
-        results.forEach(item => {
-            const row = `
-                <tr>
-                    <td><small>${item.text}</small></td>
-                    <td>${item.fit.score.toFixed(2)}</td>
-                    <td>${item.category}</td>
-                    <td>${item.element}</td>
-                </tr>
-            `;
-            fitResultsBodyV2.insertAdjacentHTML('beforeend', row);
+    const selectChapter = document.getElementById('select-chapter');
+    const selectScene = document.getElementById('select-scene');
+    const sceneSelectContainer = document.getElementById('scene-select-container');
+    const targetChapterRadio = document.getElementById('target-chapter');
+    const targetSceneRadio = document.getElementById('target-scene');
+    const btnGenerateDraft = document.getElementById('btn-generate-draft');
+    const draftGenLoading = document.getElementById('draft-gen-loading');
+    const draftListBody = document.getElementById('draft-list-body');
+    const manuscriptEditor = document.getElementById('manuscript-editor');
+    const btnSaveManuscript = document.getElementById('btn-save-manuscript');
+    const btnFinalizeManuscript = document.getElementById('btn-finalize-manuscript');
+    const manuscriptStatus = document.getElementById('manuscript-status');
+
+    let manuscriptData = { chapters: [] };
+
+    // 対象切り替え (章 vs シーン)
+    const toggleTarget = () => {
+        if (targetSceneRadio.checked) {
+            sceneSelectContainer.style.display = 'block';
+            updateSceneDropdown();
+        } else {
+            sceneSelectContainer.style.display = 'none';
+        }
+    };
+
+    targetChapterRadio.addEventListener('change', toggleTarget);
+    targetSceneRadio.addEventListener('change', toggleTarget);
+
+    const updateSceneDropdown = () => {
+        const chapterId = selectChapter.value;
+        const chapter = manuscriptData.chapters.find(c => c.chapter_id === chapterId);
+        selectScene.innerHTML = '';
+        if (chapter && chapter.scenes) {
+            chapter.scenes.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.scene_id;
+                opt.textContent = `${s.order}. ${s.title}`;
+                selectScene.appendChild(opt);
+            });
+        }
+    };
+
+    selectChapter.addEventListener('change', () => {
+        if (targetSceneRadio.checked) updateSceneDropdown();
+    });
+
+    // 一覧の読み込み
+    const loadDraftList = async () => {
+        try {
+            const response = await fetch('/api/draft/list');
+            const data = await response.json();
+            if (data.success) {
+                manuscriptData = data.manuscript;
+                renderDraftList();
+                updateChapterDropdown();
+            }
+        } catch (e) {
+            console.error("Failed to load draft list:", e);
+        }
+    };
+
+    const updateChapterDropdown = () => {
+        const currentVal = selectChapter.value;
+        selectChapter.innerHTML = '';
+        manuscriptData.chapters.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.chapter_id;
+            opt.textContent = `${c.order}. ${c.title}`;
+            selectChapter.appendChild(opt);
         });
-    }
+        if (currentVal) selectChapter.value = currentVal;
+        if (targetSceneRadio.checked) updateSceneDropdown();
+    };
+
+    const renderDraftList = () => {
+        draftListBody.innerHTML = '';
+        let hasDrafts = false;
+
+        manuscriptData.chapters.forEach(chap => {
+            // 章レベルのドラフト
+            chap.chapter_level_drafts?.forEach(d => {
+                hasDrafts = true;
+                appendDraftRow(d, chap.title, chap.chapter_id, null);
+            });
+
+            // シーンレベルのドラフト
+            chap.scenes?.forEach(scene => {
+                scene.drafts?.forEach(d => {
+                    hasDrafts = true;
+                    appendDraftRow(d, `${chap.title} > ${scene.title}`, chap.chapter_id, scene.scene_id);
+                });
+            });
+        });
+
+        if (!hasDrafts) {
+            draftListBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">まだ原稿案が生成されていません。</td></tr>';
+        }
+    };
+
+    const appendDraftRow = (draft, locationName, chapId, sceneId) => {
+        const dateStr = draft.created_at ? draft.created_at.substring(0, 8) : '不明'; // draft_managerでuuidの一部を使っているため暫定
+        const preview = draft.content ? draft.content.substring(0, 50) + '...' : '(本文なし)';
+        
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><small class="text-muted">${draft.draft_id}</small></td>
+            <td><small>${locationName}</small></td>
+            <td class="small text-truncate" style="max-width: 300px;">${preview}</td>
+            <td class="text-end">
+                <button class="btn btn-sm btn-outline-primary" onclick="openDraft('${chapId}', '${sceneId || ''}', '${draft.draft_id}')">原稿として開く</button>
+            </td>
+        `;
+        draftListBody.appendChild(tr);
+    };
+
+    // グローバル関数として公開 (HTMLから呼ぶため)
+    window.openDraft = async (chapId, sceneId, draftId) => {
+        try {
+            const url = sceneId 
+                ? `/api/draft/get?chapter_id=${chapId}&scene_id=${sceneId}`
+                : `/api/draft/get?chapter_id=${chapId}`;
+            
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (data.success) {
+                const target = data.scene || data.chapter;
+                const drafts = data.scene ? target.drafts : target.chapter_level_drafts;
+                const draft = drafts.find(d => d.draft_id === draftId);
+                
+                if (draft) {
+                    manuscriptEditor.value = draft.content;
+                    // タブを切り替え
+                    const manuscriptTab = new bootstrap.Tab(document.getElementById('manuscript-tab'));
+                    manuscriptTab.show();
+                    showAlert('原稿案をエディタに読み込みました。', 'success');
+                }
+            }
+        } catch (e) {
+            showAlert('原稿の読み込みに失敗しました。', 'danger');
+        }
+    };
+
+    // ドラフト生成
+    btnGenerateDraft.addEventListener('click', async () => {
+        const targetType = targetChapterRadio.checked ? 'chapter' : 'scene';
+        const chapterId = selectChapter.value;
+        const sceneId = selectScene.value;
+
+        if (!chapterId && targetType === 'chapter') {
+            showAlert('章を選択してください。構成がない場合は「構成要素」タブで作成してください。', 'warning');
+            return;
+        }
+
+        const structureOverride = {
+            scene_structure: document.getElementById('draft-structure').value,
+            characters: [{ name: '設定済みキャラ', role: '役職', description: document.getElementById('draft-characters').value }],
+            foreshadowing: [document.getElementById('draft-foreshadowing').value],
+            location: document.getElementById('draft-location').value,
+            time: document.getElementById('draft-time').value,
+            weather: document.getElementById('draft-weather').value,
+            viewpoint: document.getElementById('draft-viewpoint').value,
+            style: document.getElementById('draft-style').value,
+            length: document.getElementById('draft-length').value,
+            instructions: document.getElementById('draft-additional-info').value
+        };
+
+        btnGenerateDraft.disabled = true;
+        draftGenLoading.style.display = 'block';
+
+        try {
+            const response = await fetch('/api/draft/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    target_type: targetType,
+                    chapter_id: chapterId,
+                    scene_id: sceneId,
+                    structure_override: structureOverride
+                })
+            });
+            const data = await response.json();
+            if (data.success) {
+                showAlert('原稿案の生成が完了しました！一覧から確認できます。', 'success');
+                loadDraftList();
+            } else {
+                throw new Error(data.error);
+            }
+        } catch (e) {
+            showAlert('生成エラー: ' + e.message, 'danger');
+        } finally {
+            btnGenerateDraft.disabled = false;
+            draftGenLoading.style.display = 'none';
+        }
+    });
+
+    // 章/シーン追加
+    const btnAddStructure = document.getElementById('btn-add-structure');
+    btnAddStructure.addEventListener('click', async () => {
+        const isScene = targetSceneRadio.checked;
+        const currentChapId = selectChapter.value;
+        const typeStr = isScene ? 'シーン' : '章';
+        const title = prompt(`${typeStr}のタイトルを入力してください：`, `新しい${typeStr}`);
+        
+        if (title) {
+            try {
+                const body = { title: title };
+                if (isScene) {
+                    if (!currentChapId) {
+                        showAlert('章が選択されていません。先に章を作成してください。', 'warning');
+                        return;
+                    }
+                    body.chapter_id = currentChapId;
+                    body.scene_id = 'new'; // 新規追加を示す
+                } else {
+                    body.chapter_id = 'new';
+                }
+                
+                const response = await fetch('/api/draft/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showAlert(`${typeStr}を追加しました。`, 'success');
+                    await loadDraftList();
+                }
+            } catch (e) {
+                showAlert('追加に失敗しました。', 'danger');
+            }
+        }
+    });
+
+    // 原稿保存
+    btnSaveManuscript.addEventListener('click', async () => {
+        const content = manuscriptEditor.value;
+        if (!content) {
+            showAlert('保存する内容がありません。', 'warning');
+            return;
+        }
+
+        // 推敲として保存する (APIの拡張があれば content も保存可能だが、今回は metadata の update を叩くデモ)
+        // 本来は manuscript 本文を保存する専用の API が望ましいが、要件の POST /api/draft/update を利用
+        try {
+            const response = await fetch('/api/draft/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    manuscript_content: content // API側での受け取りが必要
+                })
+            });
+            const data = await response.json();
+            if (data.success) {
+                showAlert('原稿を保存しました。', 'success');
+            }
+        } catch (e) {
+            showAlert('保存に失敗しました。', 'danger');
+        }
+    });
+
+    btnFinalizeManuscript.addEventListener('click', () => {
+        manuscriptStatus.textContent = '完成';
+        manuscriptStatus.className = 'badge bg-success';
+        showAlert('おめでとうございます！物語が完成稿になりました。', 'success');
+    });
+
+    // 初期化時にリスト読み込み
+    loadDraftList();
 
     initializeView();
 });
