@@ -1636,5 +1636,43 @@ def draft_status():
     """生成ステータス確認 (今回は同期的なので常に idle)"""
     return jsonify({"success": True, "status": "idle"})
 
+@app.route("/api/draft/delete", methods=["POST"])
+def draft_delete():
+    """原稿案の削除API"""
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    params = request.get_json()
+    draft_id = params.get("draft_id")
+    
+    dm = DraftManager(user_id)
+    deleted = False
+    
+    # 章レベルのドラフトから探す
+    for chap in dm.data["manuscript"]["chapters"]:
+        drafts = chap.get("chapter_level_drafts", [])
+        new_drafts = [d for d in drafts if d["draft_id"] != draft_id]
+        if len(new_drafts) < len(drafts):
+            chap["chapter_level_drafts"] = new_drafts
+            deleted = True
+            break
+        
+        # シーンレベルのドラフトから探す
+        for scene in chap.get("scenes", []):
+            s_drafts = scene.get("drafts", [])
+            new_s_drafts = [d for d in s_drafts if d["draft_id"] != draft_id]
+            if len(new_s_drafts) < len(s_drafts):
+                scene["drafts"] = new_s_drafts
+                deleted = True
+                break
+        if deleted: break
+
+    if deleted:
+        dm.save()
+        return jsonify({"success": True})
+    else:
+        return jsonify({"error": "Draft not found"}), 404
+
 if __name__ == "__main__":
     app.run(debug=True)
