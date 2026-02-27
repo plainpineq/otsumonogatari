@@ -372,7 +372,14 @@
                 <div class="col-md-6">
                     <div class="card h-100 border-0 shadow-sm" style="background-color: #252525;">
                         <div class="card-header bg-transparent border-bottom border-secondary d-flex justify-content-between align-items-center py-3">
-                            <h3 class="h6 fw-bold mb-0 text-info">物語の設計図</h3>
+                            <div>
+                                <h3 class="h6 fw-bold mb-1 text-info">物語の設計図</h3>
+                                <div class="d-flex gap-2">
+                                    <button id="btn-check-all" class="btn btn-link btn-sm p-0 text-decoration-none text-muted hover-white" style="font-size: 0.75rem;">全部選択</button>
+                                    <span class="text-secondary" style="font-size: 0.75rem;">|</span>
+                                    <button id="btn-uncheck-all" class="btn btn-link btn-sm p-0 text-decoration-none text-muted hover-white" style="font-size: 0.75rem;">全部外す</button>
+                                </div>
+                            </div>
                             <div class="form-check form-switch">
                                 <input class="form-check-input" type="checkbox" id="cb-lock-structure">
                                 <label class="form-check-label small text-muted" for="cb-lock-structure">固定</label>
@@ -445,7 +452,7 @@
                                 </div>
 
                                 <button id="btn-generate-draft" class="btn btn-success btn-lg w-100 shadow">
-                                    <i class="bi bi-pencil-square"></i> この構成で執筆を開始する
+                                    <i class="bi bi-pencil-square"></i> 下書きを作成する
                                 </button>
                                 <div id="draft-gen-loading" class="mt-3" style="display: none;">
                                     <div class="spinner-grow spinner-grow-sm text-success" role="status"></div>
@@ -1840,6 +1847,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
     btnReflectEvaluation.addEventListener('click', loadCurrentStructure);
     cbLockStructure.addEventListener('change', applyLockState);
+
+    // 全部選択・全部外す
+    document.getElementById('btn-check-all')?.addEventListener('click', () => {
+        if (cbLockStructure.checked) return;
+        document.querySelectorAll('.element-use-check').forEach(cb => cb.checked = true);
+    });
+    document.getElementById('btn-uncheck-all')?.addEventListener('click', () => {
+        if (cbLockStructure.checked) return;
+        document.querySelectorAll('.element-use-check').forEach(cb => cb.checked = false);
+    });
 
     // 対象切り替え (章 vs シーン)
     const toggleTarget = () => {
