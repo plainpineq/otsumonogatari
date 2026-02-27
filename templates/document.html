@@ -32,10 +32,9 @@
     <li class="nav-item" role="presentation">
         <button class="nav-link" id="evaluation-tab" data-bs-toggle="tab" data-bs-target="#evaluation" type="button" role="tab" aria-controls="evaluation" aria-selected="false">評価</button>
     </li>
-    <li class="nav-item" role="presentation">
-        <button class="nav-link" id="element-fit-tab" data-bs-toggle="tab" data-bs-target="#element-fit" type="button" role="tab" aria-controls="element-fit" aria-selected="false">適合度</button>
-    </li>
-</ul>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="drafting-tab" data-bs-toggle="tab" data-bs-target="#drafting" type="button" role="tab" aria-controls="drafting" aria-selected="false">下書き</button>
+            </li></ul>
 
 <div class="tab-content" id="documentTabContent">
     <div class="tab-pane fade" id="suggestions" role="tabpanel" aria-labelledby="suggestions-tab">
@@ -308,47 +307,56 @@
             </div>
         </div>
     </div>
-    <div class="tab-pane fade" id="element-fit" role="tabpanel" aria-labelledby="element-fit-tab">
+    <div class="tab-pane fade" id="drafting" role="tabpanel" aria-labelledby="drafting-tab">
         <div class="card p-4 shadow-sm mt-3">
-            <h2 class="h4 mb-3">構成要素 適合度</h2>
-			<p>定義された「評価基準」の目標値と、AI提案との適合度（距離）を計算します。スコアが小さいほど、目標に近いことを示します。</p>        
-            <div class="d-flex gap-2">
-                <button id="calculate-fit-btn-v2" class="btn btn-primary">適合度を計算</button>
-            </div>
+            <h2 class="h4 mb-3">原稿の下書き生成</h2>
+            <p>「評価」タブで推奨された、あるいは選択された構成要素を元に、LLMで原稿の下書きを生成します。</p>
             
-            <!-- Progress Bar -->
-            <div id="fit-progress-container" class="mt-3" style="display: none;">
-                <div class="progress">
-                    <div id="fit-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="card p-3 mb-3 bg-light">
+                        <h3 class="h6 fw-bold">生成設定</h3>
+                        <div class="mb-3">
+                            <label for="draft-target" class="form-label small">下書き対象の分類</label>
+                            <select id="draft-target" class="form-select form-select-sm">
+                                <!-- Dynamically populated based on available categories -->
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="draft-style" class="form-label small">文体</label>
+                            <input type="text" id="draft-style" class="form-control form-select-sm" placeholder="例：三人称、硬めの文体、叙情的など">
+                        </div>
+                        <div class="mb-3">
+                            <label for="draft-perspective" class="form-label small">視点</label>
+                            <input type="text" id="draft-perspective" class="form-control form-select-sm" placeholder="例：主人公、神の視点など">
+                        </div>
+                        <div class="mb-3">
+                            <label for="draft-length" class="form-label small">目安の文字数</label>
+                            <input type="number" id="draft-length" class="form-control form-select-sm" value="1000" step="100">
+                        </div>
+                        <div class="mb-3">
+                            <label for="draft-instruction" class="form-label small">補足指示</label>
+                            <textarea id="draft-instruction" class="form-control form-select-sm" rows="4" placeholder="特定のセリフを入れたい、結末を指定したいなどの指示があれば入力してください。"></textarea>
+                        </div>
+                        <button id="generate-draft-btn" class="btn btn-primary w-100">下書きを生成</button>
+                    </div>
                 </div>
-                <p id="fit-status-message" class="mt-2 text-muted text-center"></p>
-            </div>
-
-            <hr>
-
-            <div id="fit-results-container" style="display: {% if document.fit_results %}block{% else %}none{% endif %};">
-                <h3 class="h5 mt-3">適合度の計算結果</h3>
-                <div class="table-responsive">
-                    <table class="table table-bordered table-sm">
-                        <thead class="table-light">
-                            <tr>
-                                <th>候補テキスト</th>
-                                <th>Fitスコア (距離)</th>
-                                <th>カテゴリ</th>
-                                <th>元の要素名</th>
-                            </tr>
-                        </thead>
-                        <tbody id="fit-results-body-v2">
-                        {% for item in document.fit_results %}
-                            <tr>
-                                <td><small>{{ item.text }}</small></td>
-                                <td>{{ "%.2f"|format(item.fit.score) }}</td>
-                                <td>{{ item.category }}</td>
-                                <td>{{ item.element }}</td>
-                            </tr>
-                        {% endfor %}
-                        </tbody>
-                    </table>
+                <div class="col-md-8">
+                    <div class="card p-3 h-100">
+                        <h3 class="h6 fw-bold d-flex justify-content-between align-items-center">
+                            生成結果
+                            <button id="copy-draft-btn" class="btn btn-outline-secondary btn-sm" style="display: none;">コピー</button>
+                        </h3>
+                        <div id="draft-loading" class="text-center py-5" style="display: none;">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2 text-muted">下書きを執筆中...</p>
+                        </div>
+                        <div id="draft-result-area" class="border rounded p-3 bg-white overflow-auto" style="min-height: 400px; max-height: 600px; white-space: pre-wrap;">
+                            <p class="text-muted text-center mt-5">設定を入力して「下書きを生成」を押してください。</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

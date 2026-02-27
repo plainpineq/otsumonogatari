@@ -73,8 +73,9 @@ from semantic_labeler import label_suggestions
 from feature_extractor import FeatureExtractor
 from element_fitter import apply_fit_to_candidates
 
-
-
+from draft_manager import DraftManager
+from draft_context_builder import build_draft_prompt
+from llm_router import generate_draft
 
 app = Flask(__name__)
 app.secret_key = "storyforge-secret"
@@ -1289,6 +1290,135 @@ def quantum_optimize(doc_id):
         logging.error(f"Quantum optimization failed: {e}")
         return jsonify({"error": str(e)}), 500
 
+# ---------- 下書き管理 (Draft Management) API ----------
+
+@app.route("/api/draft/generate", methods=["POST"])
+def draft_generate():
+    """下書き生成API"""
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    params = request.get_json()
+    target_type = params.get("target_type") # "scene" or "chapter"
+    chapter_id = params.get("chapter_id")
+    scene_id = params.get("scene_id")
+    structure_override = params.get("structure_override")
+    additional_info = params.get("additional_info")
+    
+    dm = DraftManager(user_id)
+    
+    # LLM設定の取得 (working.json の settings.llm_servers.draft を参照)
+    llm_config = dm.data.get("settings", {}).get("llm_servers", {}).get("draft", {})
+    if not llm_config or not llm_config.get("provider"):
+        # デフォルト設定がなければ作成
+        llm_config = {
+            "provider": "openai", # デフォルト
+            "model": "gpt-4o",
+            "api_key": os.environ.get("OPENAI_API_KEY", "")
+        }
+        
+    try:
+        if target_type == "scene":
+            scene = dm.find_scene(chapter_id, scene_id)
+            if not scene:
+                return jsonify({"error": "Scene not found"}), 404
+            
+            # スナップショット優先、なければシーンの設定から構築
+            structure = structure_override if structure_override else scene.get("structure_snapshot", {})
+            prompt = build_draft_prompt(structure, additional_info)
+            content = generate_draft(prompt, llm_config)
+            
+            draft = dm.add_scene_draft(chapter_id, scene_id, content, prompt, structure)
+            dm.save()
+            return jsonify({"success": True, "draft": draft})
+            
+        elif target_type == "chapter":
+            chapter = dm.find_chapter(chapter_id)
+            if not chapter:
+                return jsonify({"error": "Chapter not found"}), 404
+            
+            structure = structure_override if structure_override else {}
+            prompt = build_draft_prompt(structure, additional_info)
+            content = generate_draft(prompt, llm_config)
+            
+            draft = dm.add_chapter_draft(chapter_id, content, prompt)
+            dm.save()
+            return jsonify({"success": True, "draft": draft})
+        
+        else:
+            return jsonify({"error": "Invalid target_type"}), 400
+            
+    except Exception as e:
+        logging.error(f"Draft generation API error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/draft/list", methods=["GET"])
+def draft_list():
+    """章・シーンの一覧取得"""
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    dm = DraftManager(user_id)
+    return jsonify({"success": True, "manuscript": dm.data["manuscript"]})
+
+@app.route("/api/draft/get", methods=["GET"])
+def draft_get():
+    """詳細取得"""
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    chapter_id = request.args.get("chapter_id")
+    scene_id = request.args.get("scene_id")
+    
+    dm = DraftManager(user_id)
+    if scene_id:
+        scene = dm.find_scene(chapter_id, scene_id)
+        return jsonify({"success": True, "scene": scene})
+    else:
+        chapter = dm.find_chapter(chapter_id)
+        return jsonify({"success": True, "chapter": chapter})
+
+@app.route("/api/draft/update", methods=["POST"])
+def draft_update():
+    """章・シーンの更新または追加"""
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    params = request.get_json()
+    chapter_id = params.get("chapter_id")
+    scene_id = params.get("scene_id")
+    title = params.get("title")
+    order = params.get("order")
+    
+    dm = DraftManager(user_id)
+    if chapter_id and scene_id:
+        scene = dm.find_scene(chapter_id, scene_id)
+        if scene:
+            if title is not None: scene["title"] = title
+            if order is not None: scene["order"] = order
+        else:
+            dm.add_scene(chapter_id, title or "名称未設定シーン", order)
+    elif chapter_id:
+        chapter = dm.find_chapter(chapter_id)
+        if chapter:
+            if title is not None: chapter["title"] = title
+            if order is not None: chapter["order"] = order
+        else:
+            dm.add_chapter(title or "名称未設定章", order)
+    else:
+        # 両方ない場合は新規章
+        dm.add_chapter(title or "新しい章", order)
+            
+    dm.save()
+    return jsonify({"success": True})
+
+@app.route("/api/draft/status", methods=["POST"])
+def draft_status():
+    """生成ステータス確認 (今回は同期的なので常に idle)"""
+    return jsonify({"success": True, "status": "idle"})
 
 if __name__ == "__main__":
     app.run(debug=True)
