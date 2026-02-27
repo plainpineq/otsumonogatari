@@ -1472,10 +1472,14 @@ def start_from_evaluation():
             content = generate_draft(prompt, llm_config)
 
             # 保存処理
+            now_str = datetime.now().isoformat()
             if target_type == "scene":
                 draft = dm.add_scene_draft(chapter_id, scene_id, content, prompt, structure_snapshot)
+                # 追加後に時刻を上書き（DraftManagerの既存仕様を最小限の変更で補完）
+                draft["created_at"] = now_str
             else:
                 draft = dm.add_chapter_draft(chapter_id, content, prompt)
+                draft["created_at"] = now_str
             
             dm.save()
             return jsonify({

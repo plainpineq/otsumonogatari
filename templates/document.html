@@ -1943,13 +1943,31 @@ document.addEventListener('DOMContentLoaded', function() {
     };
 
     const appendDraftRow = (draft, locationName, chapId, sceneId) => {
-        const dateStr = draft.created_at ? draft.created_at.substring(0, 8) : '不明';
+        let dateStr = '不明';
+        if (draft.created_at) {
+            const date = new Date(draft.created_at);
+            // 有効な日付かチェック
+            if (!isNaN(date.getTime())) {
+                dateStr = date.toLocaleString('ja-JP', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            } else if (typeof draft.created_at === 'string' && draft.created_at.length > 10) {
+                // ISO形式っぽいがパースに失敗した場合は先頭10文字(日付分)を試す
+                const shortDate = draft.created_at.substring(0, 10);
+                if (shortDate.includes('-')) dateStr = shortDate;
+            }
+        }
+        
         const preview = draft.content ? draft.content.substring(0, 60) + '...' : '(本文なし)';
         
         const tr = document.createElement('tr');
         tr.className = "border-secondary";
         tr.innerHTML = `
-            <td><span class="text-secondary">${dateStr}</span></td>
+            <td><span class="text-secondary small">${dateStr}</span></td>
             <td><span class="badge bg-secondary opacity-75 p-2">${locationName}</span></td>
             <td class="text-muted" style="max-width: 400px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${preview}</td>
             <td class="text-end">
