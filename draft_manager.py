@@ -23,7 +23,7 @@ class DraftManager:
         if "settings" not in data:
             data["settings"] = {
                 "llm_servers": {
-                    "draft": {
+                    "drafting": {
                         "provider": "openai",
                         "model": "gpt-4o",
                         "api_key": ""
@@ -32,14 +32,14 @@ class DraftManager:
             }
         elif "llm_servers" not in data["settings"]:
             data["settings"]["llm_servers"] = {
-                "draft": {
+                "drafting": {
                     "provider": "openai",
                     "model": "gpt-4o",
                     "api_key": ""
                 }
             }
-        elif "draft" not in data["settings"]["llm_servers"]:
-            data["settings"]["llm_servers"]["draft"] = {
+        elif "drafting" not in data["settings"]["llm_servers"]:
+            data["settings"]["llm_servers"]["drafting"] = {
                 "provider": "openai",
                 "model": "gpt-4o",
                 "api_key": ""

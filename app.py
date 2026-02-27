@@ -134,9 +134,18 @@ def dashboard():
     data = load_user_data(session["user_id"])
     documents = data.get("documents", [])
     
-    # Get server configurations from session
-    llm_servers = session.get("llm_servers", {})
-    quantum_server = session.get("quantum_server", {})
+    # Get server configurations from session or fallback to working.json
+    llm_servers = session.get("llm_servers")
+    quantum_server = session.get("quantum_server")
+    
+    if not llm_servers or not quantum_server:
+        saved_settings = data.get("settings", {})
+        if not llm_servers:
+            llm_servers = saved_settings.get("llm_servers", {})
+            session["llm_servers"] = llm_servers
+        if not quantum_server:
+            quantum_server = saved_settings.get("quantum_server", {})
+            session["quantum_server"] = quantum_server
 
     # Ensure all roles have a default dictionary to prevent template errors
     for role in ["generation", "evaluation", "drafting"]:
@@ -269,6 +278,13 @@ def save_servers_config():
     # --- 保存 ---
     session["llm_servers"] = llm_servers
     session["quantum_server"] = quantum_server
+    
+    # working.json にも永続化 (Draftingタブなどが参照するため)
+    if "settings" not in data:
+        data["settings"] = {}
+    data["settings"]["llm_servers"] = llm_servers
+    data["settings"]["quantum_server"] = quantum_server
+    save_user_data(session["user_id"], data)
     
     flash("サーバー設定を保存しました。", "success")
     return redirect("/dashboard")
@@ -1433,9 +1449,25 @@ def start_from_evaluation():
             })
 
         elif mode == "generate":
-            llm_config = dm.data.get("settings", {}).get("llm_servers", {}).get("draft", {})
-            if not llm_config or not llm_config.get("provider"):
-                llm_config = {"provider": "openai", "model": "gpt-4o", "api_key": os.environ.get("OPENAI_API_KEY", "")}
+            # 1. セッションから設定を取得 (Dashboardで保存されたもの)
+            llm_servers = session.get("llm_servers", {})
+            llm_config = llm_servers.get("drafting", {}) # Dashboardでは 'drafting' というキー名
+            
+            # 2. セッションになければ working.json から取得
+            if not llm_config or not llm_config.get("api_key"):
+                settings = dm.data.get("settings", {}).get("llm_servers", {})
+                llm_config = settings.get("drafting", {}) # 'draft' から 'drafting' に統一
+            
+            # 3. それでもなければ環境変数 (最終手段)
+            if not llm_config or not llm_config.get("api_key"):
+                llm_config = {
+                    "provider": "openai",
+                    "model": "gpt-4o",
+                    "api_key": os.environ.get("OPENAI_API_KEY", "")
+                }
+
+            if not llm_config.get("api_key") and llm_config.get("provider") in ["openai", "chatgpt"]:
+                 return jsonify({"error": "LLMのAPIキーが設定されていません。ダッシュボードで設定してください。"}), 400
 
             content = generate_draft(prompt, llm_config)
 
