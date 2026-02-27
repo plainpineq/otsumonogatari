@@ -312,125 +312,170 @@
         </div>
     </div>
     <div class="tab-pane fade" id="drafting" role="tabpanel" aria-labelledby="drafting-tab">
-        <div class="card p-4 shadow-sm mt-3">
-            <h2 class="h4 mb-3">原稿案の執筆</h2>
-            <p class="text-muted small">物語の構成要素を元に、AIが下書きを執筆します。</p>
+        <div class="card p-4 shadow-lg mt-3" style="background-color: #1a1a1a; color: #e0e0e0; border: 1px solid #333;">
+            <div class="d-flex justify-content-between align-items-center mb-4 border-bottom border-secondary pb-3">
+                <div>
+                    <h2 class="h4 mb-1 text-white">原稿案の執筆</h2>
+                    <p class="text-muted small mb-0">物語の設計図を元に、AIと共同で下書きを構築します。</p>
+                </div>
+                <div class="text-end">
+                    <button id="btn-reflect-evaluation" class="btn btn-primary btn-sm px-3 shadow-sm">
+                        <i class="bi bi-arrow-clockwise"></i> 評価結果を同期
+                    </button>
+                </div>
+            </div>
 
-            <div class="mb-4 p-3 border rounded bg-white">
-                <label class="form-label fw-bold">執筆対象の選択</label>
-                <div class="d-flex gap-4 align-items-center mb-3">
-                    <div class="form-check">
-                        <input class="form-check-input" type="radio" name="draft-target-type" id="target-chapter" value="chapter" checked>
-                        <label class="form-check-label" for="target-chapter">章単位</label>
+            <!-- セレクターセクション -->
+            <div class="mb-4 p-3 rounded-3" style="background-color: #252525; border: 1px solid #3d3d3d;">
+                <div class="row align-items-center">
+                    <div class="col-md-3">
+                        <label class="form-label small fw-bold text-secondary">執筆の単位</label>
+                        <div class="btn-group w-100" role="group">
+                            <input type="radio" class="btn-check" name="draft-target-type" id="target-chapter" value="chapter" checked>
+                            <label class="btn btn-outline-secondary btn-sm" for="target-chapter">章</label>
+                            <input type="radio" class="btn-check" name="draft-target-type" id="target-scene" value="scene">
+                            <label class="btn btn-outline-secondary btn-sm" for="target-scene">シーン</label>
+                        </div>
                     </div>
-                    <div class="form-check">
-                        <input class="form-check-input" type="radio" name="draft-target-type" id="target-scene" value="scene">
-                        <label class="form-check-label" for="target-scene">シーン単位</label>
+                    <div class="col-md-4">
+                        <label for="select-chapter" class="form-label small fw-bold text-secondary">対象の章</label>
+                        <select id="select-chapter" class="form-select form-select-sm bg-dark text-white border-secondary"></select>
+                    </div>
+                    <div id="scene-select-container" class="col-md-3" style="display: none;">
+                        <label for="select-scene" class="form-label small fw-bold text-secondary">対象のシーン</label>
+                        <select id="select-scene" class="form-select form-select-sm bg-dark text-white border-secondary"></select>
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button id="btn-add-structure" class="btn btn-outline-info btn-sm w-100">
+                            <i class="bi bi-plus-lg"></i> 追加
+                        </button>
                     </div>
                 </div>
-                <div class="row">
-                    <div class="col-md-5 mb-2">
-                        <label for="select-chapter" class="form-label small">章の選択</label>
-                        <select id="select-chapter" class="form-select"></select>
-                    </div>
-                    <div id="scene-select-container" class="col-md-5 mb-2" style="display: none;">
-                        <label for="select-scene" class="form-label small">シーンの選択</label>
-                        <select id="select-scene" class="form-select"></select>
-                    </div>
-                    <div class="col-md-2 mb-2 d-flex align-items-end">
-                        <button id="btn-add-structure" class="btn btn-outline-secondary btn-sm w-100">章/シーン追加</button>
+
+                <!-- 画面内追加フォーム (初期は非表示) -->
+                <div id="add-structure-form-container" class="mt-3 p-3 rounded border border-info border-opacity-25" style="display: none; background-color: #1e1e1e;">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="flex-grow-1">
+                            <label id="add-structure-label" class="form-label small fw-bold text-info mb-1">新しい章のタイトル</label>
+                            <input type="text" id="add-structure-title" class="form-control form-control-sm bg-dark text-white border-info border-opacity-50" placeholder="タイトルを入力...">
+                        </div>
+                        <div class="d-flex gap-2 align-items-end pt-4">
+                            <button id="btn-save-new-structure" class="btn btn-info btn-sm px-3">保存</button>
+                            <button id="btn-cancel-add-structure" class="btn btn-outline-secondary btn-sm">中止</button>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div class="row">
-                <!-- 左ペイン: 構成編集 -->
+            <div class="row g-4">
+                <!-- 左ペイン: 構成管理 -->
                 <div class="col-md-6">
-                    <div class="card p-3 mb-3 bg-light">
-                        <h3 class="h6 fw-bold">物語の構成（スナップショット）</h3>
-                        <div class="mb-3">
-                            <label for="draft-structure" class="form-label small">シーン構成・展開</label>
-                            <textarea id="draft-structure" class="form-control" rows="5" placeholder="この章/シーンの主な出来事や流れを入力してください。"></textarea>
+                    <div class="card h-100 border-0 shadow-sm" style="background-color: #252525;">
+                        <div class="card-header bg-transparent border-bottom border-secondary d-flex justify-content-between align-items-center py-3">
+                            <h3 class="h6 fw-bold mb-0 text-info">物語の設計図</h3>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="cb-lock-structure">
+                                <label class="form-check-label small text-muted" for="cb-lock-structure">固定</label>
+                            </div>
                         </div>
-                        <div class="mb-3">
-                            <label for="draft-characters" class="form-label small">登場キャラクター設定</label>
-                            <textarea id="draft-characters" class="form-control" rows="3" placeholder="名前、役割、このシーンでの心情など。"></textarea>
-                        </div>
-                        <div class="mb-3">
-                            <label for="draft-foreshadowing" class="form-label small">伏線・重要要素</label>
-                            <textarea id="draft-foreshadowing" class="form-control" rows="3" placeholder="回収する伏線や、新しく張る伏線など。"></textarea>
+                        <div class="card-body p-3">
+                            <div id="dynamic-draft-elements-container" class="custom-scrollbar" style="max-height: 600px; overflow-y: auto;">
+                                <div class="text-center text-muted my-5">
+                                    <i class="bi bi-layers h1 d-block mb-3"></i>
+                                    <p class="small">「評価結果を同期」すると、<br>選んだ構成案がここに展開されます。</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
-                <!-- 右ペイン: 追加情報 -->
+
+                <!-- 右ペイン: 演出設定 -->
                 <div class="col-md-6">
-                    <div class="card p-3 mb-3 bg-light">
-                        <h3 class="h6 fw-bold">執筆の演出設定</h3>
-                        <div class="row">
-                            <div class="col-md-6 mb-2">
-                                <label for="draft-location" class="form-label small">場所</label>
-                                <input type="text" id="draft-location" class="form-control form-control-sm" placeholder="例：図書室">
-                            </div>
-                            <div class="col-md-6 mb-2">
-                                <label for="draft-time" class="form-label small">時間</label>
-                                <input type="text" id="draft-time" class="form-control form-control-sm" placeholder="例：放課後の夕暮れ">
-                            </div>
-                            <div class="col-md-6 mb-2">
-                                <label for="draft-weather" class="form-label small">天候</label>
-                                <input type="text" id="draft-weather" class="form-control form-control-sm" placeholder="例：霧雨">
-                            </div>
-                            <div class="col-md-6 mb-2">
-                                <label for="draft-viewpoint" class="form-label small">視点</label>
-                                <input type="text" id="draft-viewpoint" class="form-control form-control-sm" placeholder="三人称、特定のキャラ視点など">
-                            </div>
-                            <div class="col-md-6 mb-2">
-                                <label for="draft-style" class="form-label small">文体</label>
-                                <input type="text" id="draft-style" class="form-control form-control-sm" placeholder="叙情的、淡々とした文体など">
-                            </div>
-                            <div class="col-md-6 mb-2">
-                                <label for="draft-length" class="form-label small">文字数目安</label>
-                                <input type="text" id="draft-length" class="form-control form-control-sm" placeholder="2000文字程度">
-                            </div>
+                    <div class="card h-100 border-0 shadow-sm" style="background-color: #252525;">
+                        <div class="card-header bg-transparent border-bottom border-secondary py-3">
+                            <h3 class="h6 fw-bold mb-0 text-info">執筆の演出設定</h3>
                         </div>
-                        <div class="mb-3">
-                            <label for="draft-additional-info" class="form-label small">補足指示</label>
-                            <textarea id="draft-additional-info" class="form-control" rows="4" placeholder="特定のセリフを入れたい、結末を指定したいなどの詳細指示があれば入力してください。"></textarea>
+                        <div class="card-body p-3">
+                            <div class="row g-3">
+                                <div class="col-6">
+                                    <label class="form-label small text-secondary">場所</label>
+                                    <input type="text" id="draft-location" class="form-control form-control-sm bg-dark text-white border-secondary">
+                                </div>
+                                <div class="col-6">
+                                    <label class="small text-secondary">時間</label>
+                                    <input type="text" id="draft-time" class="form-control form-control-sm bg-dark text-white border-secondary">
+                                </div>
+                                <div class="col-6">
+                                    <label class="small text-secondary">天候</label>
+                                    <input type="text" id="draft-weather" class="form-control form-control-sm bg-dark text-white border-secondary">
+                                </div>
+                                <div class="col-6">
+                                    <label class="small text-secondary">視点</label>
+                                    <input type="text" id="draft-viewpoint" class="form-control form-control-sm bg-dark text-white border-secondary">
+                                </div>
+                                <div class="col-6">
+                                    <label class="small text-secondary">文体</label>
+                                    <input type="text" id="draft-style" class="form-control form-control-sm bg-dark text-white border-secondary">
+                                </div>
+                                <div class="col-6">
+                                    <label class="small text-secondary">文字数目安</label>
+                                    <input type="text" id="draft-length" class="form-control form-control-sm bg-dark text-white border-secondary">
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label small text-secondary">補足指示（こだわり条件など）</label>
+                                    <textarea id="draft-additional-info" class="form-control bg-dark text-white border-secondary" rows="5" placeholder="特定のセリフや展開の指定があれば入力"></textarea>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-4 pt-3 border-top border-secondary">
+                                <label class="form-label small fw-bold text-secondary d-block mb-3">執筆モード</label>
+                                <div class="row g-2 mb-4">
+                                    <div class="col-6">
+                                        <input type="radio" class="btn-check" name="draft_mode" id="mode-generate" value="generate" checked>
+                                        <label class="btn btn-outline-success btn-sm w-100 py-2" for="mode-generate">
+                                            <i class="bi bi-cpu"></i> 自動生成
+                                        </label>
+                                    </div>
+                                    <div class="col-6">
+                                        <input type="radio" class="btn-check" name="draft_mode" id="mode-prompt-only" value="prompt_only">
+                                        <label class="btn btn-outline-warning btn-sm w-100 py-2" for="mode-prompt-only">
+                                            <i class="bi bi-terminal"></i> プロンプト出力
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <button id="btn-generate-draft" class="btn btn-success btn-lg w-100 shadow">
+                                    <i class="bi bi-pencil-square"></i> この構成で執筆を開始する
+                                </button>
+                                <div id="draft-gen-loading" class="mt-3" style="display: none;">
+                                    <div class="spinner-grow spinner-grow-sm text-success" role="status"></div>
+                                    <span class="ms-2 small text-success fw-bold">AIが執筆プランを練っています...</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div class="text-center my-4">
-                <button id="btn-generate-draft" class="btn btn-primary btn-lg px-5">この構成で原稿案を生成する</button>
-            </div>
+            <hr class="my-5 border-secondary">
 
-            <div id="draft-gen-loading" class="text-center my-4" style="display: none;">
-                <div class="spinner-border text-primary" role="status">
-                    <span class="visually-hidden">Loading...</span>
+            <div class="section-generated-drafts">
+                <h3 class="h5 mb-4 text-white"><i class="bi bi-archive me-2"></i>生成済みの原稿案</h3>
+                <div class="table-responsive rounded-3 border border-secondary">
+                    <table class="table table-dark table-hover mb-0 align-middle">
+                        <thead class="table-dark">
+                            <tr class="text-secondary small">
+                                <th style="width: 15%">執筆日</th>
+                                <th style="width: 25%">対象</th>
+                                <th style="width: 45%">内容の断片</th>
+                                <th style="width: 15%" class="text-end">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="draft-list-body" class="small">
+                            <!-- JSで動的に追加 -->
+                        </tbody>
+                    </table>
                 </div>
-                <p class="mt-2 text-primary fw-bold">執筆のインスピレーションを集めています。少々お待ちください...</p>
-            </div>
-
-            <hr>
-
-            <h3 class="h5 mt-4">生成済みの原稿案一覧</h3>
-            <div class="table-responsive">
-                <table class="table table-hover align-middle">
-                    <thead class="table-light">
-                        <tr>
-                            <th>ID</th>
-                            <th>作成日時</th>
-                            <th>内容プレビュー</th>
-                            <th class="text-end">操作</th>
-                        </tr>
-                    </thead>
-                    <tbody id="draft-list-body">
-                        <!-- JavaScriptで動的に生成 -->
-                        <tr>
-                            <td colspan="4" class="text-center text-muted py-4">まだ原稿案が生成されていません。</td>
-                        </tr>
-                    </tbody>
-                </table>
             </div>
         </div>
     </div>
@@ -597,11 +642,36 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Delegate radio change events for energy breakdown
+    // Delegate radio change events for energy breakdown AND saving manual selection
     const evaluationResultsSectionsContainer = document.getElementById('evaluation-results-sections-container');
-    evaluationResultsSectionsContainer.addEventListener('change', (e) => {
+    evaluationResultsSectionsContainer.addEventListener('change', async (e) => {
         if (e.target.type === 'radio') {
             updateEnergyBreakdown();
+            
+            // 手動選択の保存
+            if (e.target.classList.contains('evaluation-radio')) {
+                const category = e.target.dataset.category;
+                const element = e.target.dataset.element;
+                const index = parseInt(e.target.dataset.index);
+                
+                try {
+                    const response = await fetch(`/document/${docId}/save_manual_selection`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ category, element, index })
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        // メモリ内のデータを更新して整合性を保つ
+                        if (!documentData.best_selection) documentData.best_selection = {};
+                        if (!documentData.best_selection[category]) documentData.best_selection[category] = {};
+                        documentData.best_selection[category][element] = index;
+                        console.log("Manual selection saved to working.json");
+                    }
+                } catch (err) {
+                    console.error("Failed to save manual selection:", err);
+                }
+            }
         }
     });
 
@@ -1105,16 +1175,24 @@ document.addEventListener('DOMContentLoaded', function() {
         labelsList.forEach((proposalLabels, index) => {
             const radioName = `select_${item.category}_${item.element}`.replace(/\s+/g, '_');
             
-            // Determine if this row is the best selection
-            let isBest = false;
+            // 現在の選択状態 (ラジオボタンのチェック)
+            let isActive = false;
             if (documentData.best_selection && 
                 documentData.best_selection[item.category] && 
                 documentData.best_selection[item.category][item.element] === index) {
-                isBest = true;
+                isActive = true;
             }
             
-            // If best_selection exists in doc, use it. Otherwise, default to index 0 for UI.
-            const isChecked = documentData.best_selection ? (isBest ? 'checked' : '') : (index === 0 ? 'checked' : '');
+            // システムの推奨構成 (★マークの表示)
+            let isOptimized = false;
+            if (documentData.optimized_selection && 
+                documentData.optimized_selection[item.category] && 
+                documentData.optimized_selection[item.category][item.element] === index) {
+                isOptimized = true;
+            }
+            
+            // best_selectionがあればそれを使う。なければ初回はindex 0
+            const isChecked = documentData.best_selection ? (isActive ? 'checked' : '') : (index === 0 ? 'checked' : '');
             
             // ALWAYS use llm_suggestions for text if available, fallback to proposalLabels.text or item.text
             const proposalText = (proposalsList[index] !== undefined) ? proposalsList[index] : (proposalLabels.text || item.text || "");
@@ -1123,6 +1201,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <tr data-qubo-row="${item.category}|${item.element}|${index}">
                     <td class="text-center">
                         <input type="radio" name="${radioName}" ${isChecked} 
+                               class="evaluation-radio"
                                data-category="${item.category}" 
                                data-element="${item.element}" 
                                data-index="${index}">
@@ -1157,7 +1236,7 @@ document.addEventListener('DOMContentLoaded', function() {
             let detailsHtml = '<div class="small mt-1">';
             detailsHtml += `<div class="qubo-energy-val"><strong>構造スコア:</strong> ${proposalLabels.qubo_energy || '-'}</div>`;
             detailsHtml += `<div><strong>構造整合度:</strong> ${proposalLabels.diff_score || '-'}</div>`;
-            detailsHtml += `<div class="qubo-optimal-badge mt-1" style="display:${isBest ? 'block' : 'none'};"><span class="badge bg-warning text-dark">★ 推奨構成</span></div>`;
+            detailsHtml += `<div class="qubo-optimal-badge mt-1" style="display:${isOptimized ? 'block' : 'none'};"><span class="badge bg-warning text-dark">★ 推奨構成</span></div>`;
             detailsHtml += '</div>';
 
             rowHtml += `<td>${detailsHtml}</td>`;
@@ -1659,7 +1738,108 @@ document.addEventListener('DOMContentLoaded', function() {
     const btnFinalizeManuscript = document.getElementById('btn-finalize-manuscript');
     const manuscriptStatus = document.getElementById('manuscript-status');
 
+    const btnReflectEvaluation = document.getElementById('btn-reflect-evaluation');
+    const cbLockStructure = document.getElementById('cb-lock-structure');
+    const dynamicContainer = document.getElementById('dynamic-draft-elements-container');
+
     let manuscriptData = { chapters: [] };
+    let currentStructureSnapshot = null;
+
+    // 評価結果の反映 (動的生成)
+    const loadCurrentStructure = async () => {
+        btnReflectEvaluation.disabled = true;
+        btnReflectEvaluation.textContent = '取得中...';
+
+        try {
+            const response = await fetch(`/api/evaluation/current_structure?doc_id=${docId}`);
+            const data = await response.json();
+
+            if (data.success) {
+                currentStructureSnapshot = data.structure;
+                renderDynamicElements(data.structure);
+                showAlert('評価タブの最新選択内容を反映しました。', 'success');
+            } else {
+                showAlert('反映失敗: ' + (data.error || 'データがありません'), 'warning');
+            }
+        } catch (e) {
+            console.error(e);
+            showAlert('通信エラーが発生しました。', 'danger');
+        } finally {
+            btnReflectEvaluation.disabled = false;
+            btnReflectEvaluation.textContent = '評価結果から最新化';
+        }
+    };
+
+    const renderDynamicElements = (orderedStructure) => {
+        dynamicContainer.innerHTML = '';
+        
+        orderedStructure.forEach(catObj => {
+            const category = catObj.category;
+            const elements = catObj.elements;
+
+            const catCard = document.createElement('div');
+            catCard.className = 'card mb-4 border-0 shadow-sm';
+            catCard.style.backgroundColor = '#2c2c2c';
+            
+            let elementsHtml = '';
+            elements.forEach(elObj => {
+                const element = elObj.label;
+                const text = elObj.text;
+                const elementId = `draft-input-${category}-${element}`.replace(/\s+/g, '_');
+                const checkboxId = `draft-check-${category}-${element}`.replace(/\s+/g, '_');
+                
+                elementsHtml += `
+                    <div class="mb-3 p-3 rounded" style="background-color: #1e1e1e; border: 1px solid #3d3d3d;">
+                        <div class="form-check mb-2">
+                            <input class="form-check-input element-use-check" type="checkbox" id="${checkboxId}" checked data-category="${category}" data-element="${element}">
+                            <label class="form-check-label small fw-bold text-info" for="${checkboxId}">${element}</label>
+                        </div>
+                        <textarea id="${elementId}" class="form-control form-control-sm draft-element-textarea" 
+                                  style="font-size: 0.9rem; color: #fff !important; background-color: #121212 !important; border: 1px solid #444 !important; line-height: 1.6;" 
+                                  rows="3">${text}</textarea>
+                    </div>
+                `;
+            });
+
+            catCard.innerHTML = `
+                <div class="card-header bg-dark text-white-50 border-bottom border-secondary py-2">
+                    <h4 class="h6 mb-0 small uppercase letter-spacing-1">${category}</h4>
+                </div>
+                <div class="card-body p-3">
+                    ${elementsHtml}
+                </div>
+            `;
+            dynamicContainer.appendChild(catCard);
+        });
+
+        // ロック状態を反映
+        applyLockState();
+    };
+
+    const applyLockState = () => {
+        const isLocked = cbLockStructure.checked;
+        const textareas = document.querySelectorAll('.draft-element-textarea');
+        const checkboxes = document.querySelectorAll('.element-use-check');
+        
+        textareas.forEach(el => {
+            el.readOnly = isLocked;
+            if (isLocked) {
+                // 固定時: やや明るい黒背景、文字はグレー白
+                el.style.setProperty('background-color', '#2c2c2c', 'important');
+                el.style.setProperty('color', '#aaa', 'important');
+                el.style.cursor = 'not-allowed';
+            } else {
+                // 通常時: 黒背景、文字は白
+                el.style.setProperty('background-color', '#121212', 'important');
+                el.style.setProperty('color', '#fff', 'important');
+                el.style.cursor = 'auto';
+            }
+        });
+        checkboxes.forEach(el => el.disabled = isLocked);
+    };
+
+    btnReflectEvaluation.addEventListener('click', loadCurrentStructure);
+    cbLockStructure.addEventListener('change', applyLockState);
 
     // 対象切り替え (章 vs シーン)
     const toggleTarget = () => {
@@ -1746,16 +1926,17 @@ document.addEventListener('DOMContentLoaded', function() {
     };
 
     const appendDraftRow = (draft, locationName, chapId, sceneId) => {
-        const dateStr = draft.created_at ? draft.created_at.substring(0, 8) : '不明'; // draft_managerでuuidの一部を使っているため暫定
-        const preview = draft.content ? draft.content.substring(0, 50) + '...' : '(本文なし)';
+        const dateStr = draft.created_at ? draft.created_at.substring(0, 8) : '不明';
+        const preview = draft.content ? draft.content.substring(0, 60) + '...' : '(本文なし)';
         
         const tr = document.createElement('tr');
+        tr.className = "border-secondary";
         tr.innerHTML = `
-            <td><small class="text-muted">${draft.draft_id}</small></td>
-            <td><small>${locationName}</small></td>
-            <td class="small text-truncate" style="max-width: 300px;">${preview}</td>
+            <td><span class="text-secondary">${dateStr}</span></td>
+            <td><span class="badge bg-secondary opacity-75">${locationName}</span></td>
+            <td class="text-muted" style="max-width: 400px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${preview}</td>
             <td class="text-end">
-                <button class="btn btn-sm btn-outline-primary" onclick="openDraft('${chapId}', '${sceneId || ''}', '${draft.draft_id}')">原稿として開く</button>
+                <button class="btn btn-sm btn-outline-info border-secondary-subtle" onclick="openDraft('${chapId}', '${sceneId || ''}', '${draft.draft_id}')">原稿を開く</button>
             </td>
         `;
         draftListBody.appendChild(tr);
@@ -1789,8 +1970,11 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     };
 
-    // ドラフト生成
+    let promptModalObj = null;
+
+    // ドラフト生成 (評価結果からの開始)
     btnGenerateDraft.addEventListener('click', async () => {
+        const mode = document.querySelector('input[name="draft_mode"]:checked').value;
         const targetType = targetChapterRadio.checked ? 'chapter' : 'scene';
         const chapterId = selectChapter.value;
         const sceneId = selectScene.value;
@@ -1800,10 +1984,28 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        const structureOverride = {
-            scene_structure: document.getElementById('draft-structure').value,
-            characters: [{ name: '設定済みキャラ', role: '役職', description: document.getElementById('draft-characters').value }],
-            foreshadowing: [document.getElementById('draft-foreshadowing').value],
+        // チェックされた要素のみを収集
+        const selectedElements = [];
+        document.querySelectorAll('.element-use-check:checked').forEach(cb => {
+            const cat = cb.dataset.category;
+            const el = cb.dataset.element;
+            const elementId = `draft-input-${cat}-${el}`.replace(/\s+/g, '_');
+            const textarea = document.getElementById(elementId);
+            if (textarea) {
+                selectedElements.push({
+                    category: cat,
+                    element: el,
+                    text: textarea.value
+                });
+            }
+        });
+
+        if (selectedElements.length === 0) {
+            showAlert('構成要素が一つも選択されていません。反映後にチェックを入れてください。', 'warning');
+            return;
+        }
+
+        const additionalInfo = {
             location: document.getElementById('draft-location').value,
             time: document.getElementById('draft-time').value,
             weather: document.getElementById('draft-weather').value,
@@ -1817,66 +2019,115 @@ document.addEventListener('DOMContentLoaded', function() {
         draftGenLoading.style.display = 'block';
 
         try {
-            const response = await fetch('/api/draft/generate', {
+            const response = await fetch('/api/draft/start_from_evaluation', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
+                    doc_id: docId,
+                    selected_elements: selectedElements,
+                    additional_info: additionalInfo,
+                    mode: mode,
                     target_type: targetType,
                     chapter_id: chapterId,
-                    scene_id: sceneId,
-                    structure_override: structureOverride
+                    scene_id: sceneId
                 })
             });
             const data = await response.json();
+            
             if (data.success) {
-                showAlert('原稿案の生成が完了しました！一覧から確認できます。', 'success');
-                loadDraftList();
+                if (data.mode === 'prompt_only') {
+                    // プロンプト表示モーダル
+                    document.getElementById('prompt-display-area').value = data.prompt;
+                    if (!promptModalObj) {
+                        promptModalObj = new bootstrap.Modal(document.getElementById('promptModal'));
+                    }
+                    promptModalObj.show();
+                } else if (data.mode === 'generate') {
+                    // 原稿タブへ遷移
+                    manuscriptEditor.value = data.content;
+                    const manuscriptTab = new bootstrap.Tab(document.getElementById('manuscript-tab'));
+                    manuscriptTab.show();
+                    showAlert('原稿案を生成し、エディタに読み込みました。', 'success');
+                    loadDraftList(); // リスト更新
+                }
             } else {
                 throw new Error(data.error);
             }
         } catch (e) {
-            showAlert('生成エラー: ' + e.message, 'danger');
+            showAlert('エラー: ' + e.message, 'danger');
         } finally {
             btnGenerateDraft.disabled = false;
             draftGenLoading.style.display = 'none';
         }
     });
 
-    // 章/シーン追加
+    // プロンプトコピー機能
+    document.getElementById('btn-copy-prompt').addEventListener('click', () => {
+        const area = document.getElementById('prompt-display-area');
+        area.select();
+        document.execCommand('copy');
+        showAlert('プロンプトをクリップボードにコピーしました。', 'success');
+    });
+
+    // 章/シーン追加 (画面内フォーム)
     const btnAddStructure = document.getElementById('btn-add-structure');
-    btnAddStructure.addEventListener('click', async () => {
+    const addStructureForm = document.getElementById('add-structure-form-container');
+    const addStructureTitleInput = document.getElementById('add-structure-title');
+    const addStructureLabel = document.getElementById('add-structure-label');
+    const btnSaveNewStructure = document.getElementById('btn-save-new-structure');
+    const btnCancelAddStructure = document.getElementById('btn-cancel-add-structure');
+
+    btnAddStructure.addEventListener('click', () => {
+        const isScene = targetSceneRadio.checked;
+        const typeStr = isScene ? 'シーン' : '章';
+        addStructureLabel.textContent = `新しい${typeStr}のタイトル`;
+        addStructureTitleInput.value = `新しい${typeStr}`;
+        addStructureForm.style.display = 'block';
+        addStructureTitleInput.focus();
+        addStructureTitleInput.select();
+    });
+
+    btnCancelAddStructure.addEventListener('click', () => {
+        addStructureForm.style.display = 'none';
+    });
+
+    btnSaveNewStructure.addEventListener('click', async () => {
         const isScene = targetSceneRadio.checked;
         const currentChapId = selectChapter.value;
+        const title = addStructureTitleInput.value.trim();
         const typeStr = isScene ? 'シーン' : '章';
-        const title = prompt(`${typeStr}のタイトルを入力してください：`, `新しい${typeStr}`);
         
-        if (title) {
-            try {
-                const body = { title: title };
-                if (isScene) {
-                    if (!currentChapId) {
-                        showAlert('章が選択されていません。先に章を作成してください。', 'warning');
-                        return;
-                    }
-                    body.chapter_id = currentChapId;
-                    body.scene_id = 'new'; // 新規追加を示す
-                } else {
-                    body.chapter_id = 'new';
+        if (!title) {
+            showAlert('タイトルを入力してください。', 'warning');
+            return;
+        }
+
+        try {
+            const body = { title: title };
+            if (isScene) {
+                if (!currentChapId) {
+                    showAlert('章が選択されていません。先に章を作成してください。', 'warning');
+                    return;
                 }
-                
-                const response = await fetch('/api/draft/update', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
-                const data = await response.json();
-                if (data.success) {
-                    showAlert(`${typeStr}を追加しました。`, 'success');
-                    await loadDraftList();
-                }
-            } catch (e) {
-                showAlert('追加に失敗しました。', 'danger');
+                body.chapter_id = currentChapId;
+                body.scene_id = 'new';
+            } else {
+                body.chapter_id = 'new';
             }
+            
+            const response = await fetch('/api/draft/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await response.json();
+            if (data.success) {
+                showAlert(`${typeStr}を追加しました。`, 'success');
+                addStructureForm.style.display = 'none';
+                await loadDraftList();
+            }
+        } catch (e) {
+            showAlert('追加に失敗しました。', 'danger');
         }
     });
 
@@ -1916,7 +2167,97 @@ document.addEventListener('DOMContentLoaded', function() {
     // 初期化時にリスト読み込み
     loadDraftList();
 
-    initializeView();
+        initializeView();
+});
+</script>
+
+<style>
+/* 根本解決: モーダル表示中は背景のカードが動かないようにする */
+body.modal-open .card {
+    transform: none !important;
+    transition: none !important;
+}
+
+/* モーダル自体の安定化 */
+#promptModal .modal-content {
+    border: 1px solid #555;
+    box-shadow: 0 0 40px rgba(0,0,0,1) !important;
+    transform: none !important;
+}
+
+/* テキストエリアの微調整 */
+#prompt-display-area {
+    background-color: #000 !important;
+    color: #00ff00 !important; /* 端末風の緑色 */
+    border: 1px solid #333 !important;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+</style>
+
+<!-- プロンプト表示用モーダル (カードの外に配置) -->
+<div class="modal fade" id="promptModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content bg-dark text-white border-secondary shadow-lg">
+            <div class="modal-header border-secondary bg-black">
+                <h5 class="modal-title text-warning"><i class="bi bi-terminal me-2"></i>生成された執筆プロンプト</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4" style="background-color: #1a1a1a;">
+                <p class="small text-secondary mb-3">
+                    <i class="bi bi-info-circle me-1"></i> 以下の内容をコピーして、AIに貼り付けてください。
+                </p>
+                <textarea id="prompt-display-area" class="form-control mb-3" rows="15" readonly 
+                          style="resize: none;"></textarea>
+                <div class="d-flex justify-content-between align-items-center">
+                    <div id="copy-status-msg" class="text-success small fw-bold" style="display: none;">
+                        <i class="bi bi-check-lg"></i> クリップボードに保存しました
+                    </div>
+                    <button id="btn-copy-prompt" class="btn btn-warning px-5 fw-bold shadow">
+                        <i class="bi bi-clipboard me-1"></i> プロンプトをコピー
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// コピー機能の再定義
+document.addEventListener('DOMContentLoaded', function() {
+    const copyBtn = document.getElementById('btn-copy-prompt');
+    const displayArea = document.getElementById('prompt-display-area');
+    const statusMsg = document.getElementById('copy-status-msg');
+
+    if (copyBtn) {
+        copyBtn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            const text = displayArea.value;
+            
+            try {
+                // モダンなコピーAPI
+                await navigator.clipboard.writeText(text);
+                
+                // フィードバック
+                statusMsg.style.display = 'block';
+                copyBtn.classList.replace('btn-warning', 'btn-success');
+                copyBtn.innerHTML = '<i class="bi bi-check-lg"></i> コピー完了';
+                
+                setTimeout(() => {
+                    statusMsg.style.display = 'none';
+                    copyBtn.classList.replace('btn-success', 'btn-warning');
+                    copyBtn.innerHTML = '<i class="bi bi-clipboard me-1"></i> プロンプトをコピー';
+                }, 2000);
+                
+            } catch (err) {
+                displayArea.select();
+                document.execCommand('copy');
+                alert('コピーしました');
+            }
+        });
+    }
 });
 </script>
 {% endblock %}
+    

@@ -887,6 +887,37 @@ def calculate_energy(doc_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/document/<doc_id>/save_manual_selection", methods=["POST"])
+def save_manual_selection(doc_id):
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = load_user_data(session["user_id"])
+    document = find_document(data, doc_id)
+    if not document:
+        return jsonify({"error": "Document not found"}), 404
+
+    try:
+        req_data = request.get_json()
+        category = req_data.get("category")
+        element = req_data.get("element")
+        index = req_data.get("index")
+
+        if "best_selection" not in document:
+            document["best_selection"] = {}
+        
+        if category not in document["best_selection"]:
+            document["best_selection"][category] = {}
+        
+        document["best_selection"][category][element] = index
+        
+        save_user_data(session["user_id"], data)
+        return jsonify({"success": True})
+    except Exception as e:
+        logging.error(f"Manual selection save failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/document/<doc_id>/evaluate", methods=["POST"])
 def evaluate_document(doc_id):
     """
@@ -1254,6 +1285,7 @@ def quantum_optimize(doc_id):
 
         # 6. ドキュメントに保存 (永続化)
         document["best_selection"] = best_selection_map
+        document["optimized_selection"] = best_selection_map # 推奨構成として記録
         document["best_selection_energy"] = {
             "total": result["total_energy"],
             "e1": result["e1"],
@@ -1291,6 +1323,142 @@ def quantum_optimize(doc_id):
         return jsonify({"error": str(e)}), 500
 
 # ---------- 下書き管理 (Draft Management) API ----------
+
+@app.route("/api/evaluation/current_structure", methods=["GET"])
+def get_current_structure():
+    """評価タブで選択された現在の構成テキストセットを取得する（順序維持リスト形式）"""
+    user_id = session.get("user_id")
+    doc_id = request.args.get("doc_id")
+    if not user_id or not doc_id:
+        return jsonify({"error": "Unauthorized or missing doc_id"}), 401
+
+    data = load_user_data(user_id)
+    document = find_document(data, doc_id)
+    if not document:
+        return jsonify({"error": "Document not found"}), 404
+
+    best_selection = document.get("best_selection", {})
+    suggestions = document.get("llm_suggestions", [])
+    
+    if not best_selection:
+        return jsonify({"error": "評価タブで構成が選択されていません。"}), 400
+
+    # 順序を維持するためのリスト形式: [ { category: "...", elements: [ { label: "...", text: "..." }, ... ] } ]
+    ordered_structure = []
+    try:
+        # llm_suggestions の並び順（評価タブの表示順）でループ
+        for cat_sug in suggestions:
+            category_name = cat_sug["category"]
+            if category_name not in best_selection:
+                continue
+            
+            category_elements = []
+            # そのカテゴリ内の要素を取得（llm_suggestions内での並び順を維持）
+            selected_indices = best_selection[category_name]
+            
+            for element_name, proposals in cat_sug.get("elements", {}).items():
+                if element_name in selected_indices:
+                    idx = selected_indices[element_name]
+                    if 0 <= idx < len(proposals):
+                        category_elements.append({
+                            "label": element_name,
+                            "text": proposals[idx]
+                        })
+            
+            if category_elements:
+                ordered_structure.append({
+                    "category": category_name,
+                    "elements": category_elements
+                })
+
+        return jsonify({
+            "success": True,
+            "structure": ordered_structure
+        })
+    except Exception as e:
+        logging.error(f"Failed to restore ordered structure: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/draft/start_from_evaluation", methods=["POST"])
+def start_from_evaluation():
+    """評価結果の選択を基に執筆プロセスを開始する"""
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    params = request.get_json()
+    doc_id = params.get("doc_id")
+    # selected_elements: [{"category": "...", "element": "...", "text": "..."}, ...]
+    selected_elements = params.get("selected_elements", [])
+    additional_info = params.get("additional_info", {})
+    mode = params.get("mode", "generate") # "generate" or "prompt_only"
+    
+    target_type = params.get("target_type")
+    chapter_id = params.get("chapter_id")
+    scene_id = params.get("scene_id")
+
+    if not selected_elements:
+        return jsonify({"error": "構成要素が選択されていません。"}), 400
+
+    dm = DraftManager(user_id)
+    document = find_document(dm.data, doc_id)
+    if not document:
+        return jsonify({"error": "Document not found"}), 404
+
+    try:
+        # 1. structure_snapshotの構築
+        scene_structure = "\n\n".join([f"【{e['category']} > {e['element']}】\n{e['text']}" for e in selected_elements])
+        
+        structure_snapshot = {
+            "scene_structure": scene_structure,
+            "location": additional_info.get("location"),
+            "time": additional_info.get("time"),
+            "weather": additional_info.get("weather"),
+            "viewpoint": additional_info.get("viewpoint"),
+            "style": additional_info.get("style"),
+            "length": additional_info.get("length"),
+            "instructions": additional_info.get("instructions")
+        }
+
+        # 2. プロンプト生成
+        prompt = build_draft_prompt(structure_snapshot)
+
+        # 3. モード別処理
+        if mode == "prompt_only":
+            return jsonify({
+                "success": True,
+                "mode": "prompt_only",
+                "prompt": prompt
+            })
+
+        elif mode == "generate":
+            llm_config = dm.data.get("settings", {}).get("llm_servers", {}).get("draft", {})
+            if not llm_config or not llm_config.get("provider"):
+                llm_config = {"provider": "openai", "model": "gpt-4o", "api_key": os.environ.get("OPENAI_API_KEY", "")}
+
+            content = generate_draft(prompt, llm_config)
+
+            # 保存処理
+            if target_type == "scene":
+                draft = dm.add_scene_draft(chapter_id, scene_id, content, prompt, structure_snapshot)
+            else:
+                draft = dm.add_chapter_draft(chapter_id, content, prompt)
+            
+            dm.save()
+            return jsonify({
+                "success": True,
+                "mode": "generate",
+                "draft_id": draft["draft_id"],
+                "content": content
+            })
+
+        return jsonify({"error": "Invalid mode"}), 400
+
+    except Exception as e:
+        logging.error(f"Start from evaluation error: {e}")
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/api/draft/generate", methods=["POST"])
 def draft_generate():
