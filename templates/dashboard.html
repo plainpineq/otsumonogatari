@@ -104,6 +104,14 @@
 
 
 <form action="/save_servers_config" method="post">
+<div class="row mb-3">
+    <div class="col-12 text-end">
+        <button type="button" id="upload-settings-btn" class="btn btn-outline-secondary me-2">設定をアップロード</button>
+        <button type="button" id="download-settings-btn" class="btn btn-outline-secondary me-2">設定をダウンロード</button>
+        <button type="submit" class="btn btn-primary">全サーバー設定を保存</button>
+    </div>
+</div>
+
 <div class="row">
     <div class="col-lg-8 mb-4">
         <div class="card p-4">
@@ -141,13 +149,6 @@
                 <input type="password" class="form-control" id="quantum_server_api_key" name="quantum_server[api_key]" value="{{ user_config.quantum_server.api_key }}" placeholder="解析サーバーのAPIキー" autocomplete="off">
             </div>
         </div>
-    </div>
-</div>
-<div class="row">
-    <div class="col-12 text-end">
-        <button type="button" id="upload-settings-btn" class="btn btn-outline-secondary me-2">設定をアップロード</button>
-        <button type="button" id="download-settings-btn" class="btn btn-outline-secondary me-2">設定をダウンロード</button>
-        <button type="submit" class="btn btn-primary">全サーバー設定を保存</button>
     </div>
 </div>
 </form>
