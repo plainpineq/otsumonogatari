@@ -217,7 +217,7 @@ def upload():
 
     # Save the updated user data
     save_user_data(session["user_id"], existing_data)
-    flash("ファイルをアップロードしました。")
+    flash("ファイルをアップロードしました。", "success")
     return redirect("/dashboard")
 
 @app.route("/update_suggestion_count", methods=["POST"])
@@ -1240,14 +1240,17 @@ def save_server_settings_from_ui():
 @app.route("/load_server_settings", methods=["POST"])
 def load_server_settings():
     if "user_id" not in session:
-        return jsonify({"success": False, "message": "Unauthorized"}), 401
+        flash("ログインしてください。", "error")
+        return redirect("/login")
 
     if 'file' not in request.files:
-        return jsonify({"success": False, "message": "ファイルがありません"}), 400
+        flash("ファイルがありません", "error")
+        return redirect("/dashboard")
 
     file = request.files['file']
     if file.filename == '':
-        return jsonify({"success": False, "message": "ファイルが選択されていません"}), 400
+        flash("ファイルが選択されていません", "error")
+        return redirect("/dashboard")
 
     try:
         file_content = file.read().decode('utf-8')
@@ -1258,17 +1261,13 @@ def load_server_settings():
         if "quantum_server" in settings:
             session["quantum_server"] = settings["quantum_server"]
         
-        # UIに反映させるため、現在の設定も返す
-        return jsonify({
-            "success": True, 
-            "message": "サーバー設定をロードしました。",
-            "llm_servers": session.get("llm_servers", {}),
-            "quantum_server": session.get("quantum_server", {})
-        })
+        flash("サーバー設定をロードしました。", "success")
     except json.JSONDecodeError:
-        return jsonify({"success": False, "message": "無効なJSONファイルです"}), 400
+        flash("無効なJSONファイルです", "error")
     except Exception as e:
-        return jsonify({"success": False, "message": f"設定のロード中にエラーが発生しました: {str(e)}"}), 500
+        flash(f"設定のロード中にエラーが発生しました: {str(e)}", "error")
+    
+    return redirect("/dashboard")
 
 
 from services.candidate_qubo import generate_candidate_selection_qubo
