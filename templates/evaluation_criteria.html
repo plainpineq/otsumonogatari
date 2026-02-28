@@ -387,14 +387,12 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             const data = await response.json();
             if (response.ok) {
-                alert('評価基準を保存しました。');
-                // ページ全体にデータを反映させるためリロード(オプション)
-                // location.reload();
+                showAlert('評価基準を保存しました。', 'success');
             } else {
                 throw new Error(data.error || '保存に失敗しました。');
             }
         } catch (error) {
-            alert('エラー: ' + error.message);
+            showAlert('エラー: ' + error.message, 'danger');
         } finally {
             saveBtn.disabled = false;
             saveBtn.textContent = '評価基準を保存';
