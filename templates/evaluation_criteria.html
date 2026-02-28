@@ -165,6 +165,21 @@ document.addEventListener('DOMContentLoaded', function() {
     const addInteractionBtn = document.getElementById('add-interaction-btn');
     const autoGenBtn = document.getElementById('auto-generate-interactions-btn');
     const interactionsList = document.getElementById('interactions-list');
+
+    // base.html の showJsFlash を利用するためのラッパー（showAlertが期待されているため）
+    function showAlert(message, type = 'danger') {
+        if (typeof showJsFlash === 'function') {
+            showJsFlash(message, type === 'danger' ? 'error' : type);
+        } else {
+            // 万が一定義されていない場合のフォールバック
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+            alertDiv.role = 'alert';
+            alertDiv.innerHTML = `${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>`;
+            const container = document.querySelector('.card.p-4.shadow-sm.mt-3') || document.body;
+            container.prepend(alertDiv);
+        }
+    }
     
     // 現在の相互作用リスト (初期データ投入)
     let currentInteractions = {{ interactions | tojson | safe }};
@@ -181,10 +196,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 自動生成関数
     async function runAutoGenerate(silent = false) {
-        if (!silent && currentInteractions.length > 0) {
-            if (!confirm('ジャンル設定に基づいて評価基準（目標値・重み・相互作用）を自動適用しますか？\n※目標値と重みは上書きされます。相互作用は不足分が補完されます。')) {
-                return;
-            }
+        if (!silent) {
+            autoGenBtn.disabled = true;
+            autoGenBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 設定中...';
         }
 
         try {
@@ -199,7 +213,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const applyData = await applyResponse.json();
             
             if (!applyData.success) {
-                if (!silent) alert('目標値の更新に失敗しました: ' + applyData.error);
+                if (!silent) showAlert('目標値の更新に失敗しました: ' + applyData.error, 'danger');
                 return;
             }
 
@@ -215,14 +229,26 @@ document.addEventListener('DOMContentLoaded', function() {
                     const subGenresStr = (applyData.genre_applied.sub && applyData.genre_applied.sub.length > 0) 
                         ? applyData.genre_applied.sub.join('・') 
                         : 'なし';
-                    alert('ジャンル設定（' + applyData.genre_applied.main + ' × ' + subGenresStr + '）に基づき、目標値・重み・相乗効果をすべて更新しました。');
-                    location.reload(); 
+                    
+                    // 完了メッセージを表示
+                    showAlert('ジャンル設定（' + applyData.genre_applied.main + ' × ' + subGenresStr + '）を適用しました。設定を反映するため5秒後にリロードします。', 'success');
+                    
+                    // リロード時に「評価基準」タブが維持されるようにハッシュを付与
+                    setTimeout(() => {
+                        window.location.href = window.location.pathname + window.location.search + '#evaluation-criteria';
+                        window.location.reload();
+                    }, 5000);
                 }
             } else {
-                if (!silent) alert('相乗効果の生成に失敗しました: ' + data.error);
+                if (!silent) showAlert('相乗効果の生成に失敗しました: ' + data.error, 'danger');
             }
         } catch (error) {
-            if (!silent) alert('自動適用中にエラーが発生しました: ' + error.message);
+            if (!silent) showAlert('自動適用中にエラーが発生しました: ' + error.message, 'danger');
+        } finally {
+            if (!silent && autoGenBtn) {
+                autoGenBtn.disabled = false;
+                autoGenBtn.innerHTML = '<i class="bi bi-magic me-1"></i> ジャンルから自動設定';
+            }
         }
     }
 
