@@ -114,7 +114,7 @@
                         <div class="col-md-3">
                             <label class="form-label small text-muted">効果 (-3.0 〜 +3.0)</label>
                             <div class="d-flex align-items-center">
-                                <input type="range" class="form-range flex-grow-1 me-2" id="interaction-strength" min="-3" max="3" step="0.5" value="0"
+                                <input type="range" class="form-range flex-grow-1 me-2" id="interaction-strength" min="-3" max="3" step="0.1" value="0"
                                        oninput="document.getElementById('interaction-strength-val').innerText = parseFloat(this.value).toFixed(1)">
                                 <span class="badge bg-secondary" style="width: 40px; font-size: 0.75rem;" id="interaction-strength-val">0.0</span>
                             </div>
@@ -132,7 +132,7 @@
 
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <h6 class="small fw-bold text-secondary mb-0">登録済み効果一覧</h6>
-                        <button type="button" id="auto-generate-interactions-btn" class="btn btn-outline-info btn-sm">ジャンルから自動生成</button>
+                        <!-- 重複ボタンを削除しました -->
                     </div>
                     <div class="table-responsive">
                         <table class="table table-sm table-hover mb-0" id="interactions-table">
@@ -198,25 +198,28 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             const applyData = await applyResponse.json();
             
-            if (applyData.success) {
-                if (!silent) {
-                    alert('ジャンル設定（' + applyData.genre_applied.main + ' × ' + (applyData.genre_applied.sub || 'なし') + '）に基づき評価基準を更新しました。');
-                    location.reload(); 
-                    return;
-                }
-            } else {
-                if (!silent) alert('エラー: ' + applyData.error);
+            if (!applyData.success) {
+                if (!silent) alert('目標値の更新に失敗しました: ' + applyData.error);
+                return;
             }
 
-            // 2. 相互作用の自動生成 (既存API - fallback)
+            // 2. 相互作用の自動生成 (既存API)
             const response = await fetch(`/document/{{ document.id }}/auto_generate_interactions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             });
             const data = await response.json();
+            
             if (data.success) {
-                currentInteractions = data.interactions;
-                renderInteractions();
+                if (!silent) {
+                    const subGenresStr = (applyData.genre_applied.sub && applyData.genre_applied.sub.length > 0) 
+                        ? applyData.genre_applied.sub.join('・') 
+                        : 'なし';
+                    alert('ジャンル設定（' + applyData.genre_applied.main + ' × ' + subGenresStr + '）に基づき、目標値・重み・相乗効果をすべて更新しました。');
+                    location.reload(); 
+                }
+            } else {
+                if (!silent) alert('相乗効果の生成に失敗しました: ' + data.error);
             }
         } catch (error) {
             if (!silent) alert('自動適用中にエラーが発生しました: ' + error.message);
@@ -325,10 +328,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 保存処理
     saveBtn.addEventListener('click', async () => {
+        // 保存前に相互作用の強度を0.1単位で丸める
+        const sanitizedInteractions = currentInteractions.map(inter => ({
+            ...inter,
+            strength: Math.round(inter.strength * 10) / 10
+        }));
+
         const config = {
             targets: {},
             category_weights: {},
-            interactions: currentInteractions
+            interactions: sanitizedInteractions
         };
 
         // 目標値の取得

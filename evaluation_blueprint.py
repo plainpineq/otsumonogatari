@@ -108,7 +108,7 @@ def _synthesize_interactions(document: dict):
         new_interactions.append({
             "key_a": ka,
             "key_b": kb,
-            "strength": round(strength, 2)
+            "strength": round(strength, 1)
         })
 
     config["interactions"] = new_interactions
@@ -153,9 +153,14 @@ def save_criteria(doc_id):
         return jsonify({"error": "No criteria data provided"}), 400
 
     if "evaluation_config" in payload:
-        document["evaluation_config"] = payload["evaluation_config"]
+        # 保存前に全ての相互作用の強度を0.1単位で丸める
+        config = payload["evaluation_config"]
+        if "interactions" in config:
+            for inter in config["interactions"]:
+                if "strength" in inter:
+                    inter["strength"] = round(float(inter["strength"]), 1)
+        document["evaluation_config"] = config
     else:
-        # 以前のUIや互換性のための処理
         document["evaluation_criteria"] = payload
         
     save_user_data(session["user_id"], data)
@@ -192,8 +197,7 @@ def apply_genre_presets():
     # 4. ジャンル設定の取得 (保存されている最新値を優先)
     genre_cfg = document.get("genre_config", {})
     main_genre = genre_cfg.get("main")
-    sub_genres = genre_cfg.get("sub", [])
-    sub_genre = sub_genres[0] if sub_genres else main_genre
+    sub_genres = genre_cfg.get("sub", []) # リスト全体を取得
 
     # 5. プリセットファイルの読み込み
     preset_path = "genre_targets_presets.json"
@@ -209,27 +213,27 @@ def apply_genre_presets():
     if not main_genre or main_genre not in presets:
         return jsonify({"success": False, "error": f"Valid main genre not set in document"}), 400
 
-    # 6. 補正ロジックの適用
-    ALPHA = 0.5 # 影響度を少し強めて変化を出しやすくする
+    # 6. 補正ロジックの適用 (複数副ジャンル対応)
+    ALPHA = 0.5
     m_p = presets[main_genre]
-    s_p = presets.get(sub_genre, m_p)
+    
+    # 有効な副ジャンルのプリセットのみを抽出
+    valid_sub_presets = [presets[s] for s in sub_genres if s in presets and s != main_genre]
 
-    def blend_and_clamp(m_val, s_val):
-        """主ジャンルと副ジャンルの値をブレンドし、0-4の整数に収める"""
-        diff = s_val - m_val
-        # 差がある場合は、ALPHA倍した上で適切に丸める
+    def blend_and_clamp(key, m_val, preset_type="targets"):
+        """主ジャンルと、全副ジャンルの平均値をブレンドする"""
+        if not valid_sub_presets:
+            return int(max(0, min(4, round(m_val))))
+
+        # 全副ジャンルの値を合計して平均を出す
+        sub_sum = 0
+        for s_p in valid_sub_presets:
+            sub_sum += s_p.get(preset_type, {}).get(key, m_val)
+        s_val_avg = sub_sum / len(valid_sub_presets)
+
+        diff = s_val_avg - m_val
         res = m_val + (ALPHA * diff)
-        
-        # 0.1 以上の差があれば、四捨五入で確実に動くように調整
-        # (2.0 + 0.5 = 2.5 -> 3, 2.0 - 0.5 = 1.5 -> 2)
         return int(max(0, min(4, round(res + (0.001 if diff > 0 else -0.001)))))
-
-    # カテゴリ名の揺らぎ吸収（プリセットキー -> UI表示用キー）
-    cat_map = {
-        "伏線案": "伏線案",
-        "キャラ案": "キャラ案",
-        "シーン案": "シーン案"
-    }
 
     # 既存の interactions をバックアップ
     eval_cfg = document.setdefault("evaluation_config", {})
@@ -238,25 +242,21 @@ def apply_genre_presets():
     # targets の生成
     new_targets = {}
     m_targets = m_p.get("targets", {})
-    s_targets = s_p.get("targets", {})
     
-    # 全てのターゲットキーを走査
-    all_keys = set(m_targets.keys()) | set(s_targets.keys())
-    for full_key in all_keys:
-        m_v = m_targets.get(full_key, 2)
-        s_v = s_targets.get(full_key, m_v)
-        new_targets[full_key] = blend_and_clamp(m_v, s_v)
+    # 全てのターゲットキー（主ジャンルにあるもの全て）を走査
+    for full_key, m_v in m_targets.items():
+        new_targets[full_key] = blend_and_clamp(full_key, m_v, "targets")
 
     # category_weights の生成
     new_weights = {}
     m_weights = m_p.get("category_weights", {})
-    s_weights = s_p.get("category_weights", {})
-    
-    # プリセットにあるカテゴリ重みをブレンド
+    cat_map = {"伏線案": "伏線案", "キャラ案": "キャラ案", "シーン案": "シーン案"}
+
     for p_cat, m_v in m_weights.items():
         ui_cat = cat_map.get(p_cat, p_cat)
-        s_v = s_weights.get(p_cat, m_v)
-        new_weights[ui_cat] = blend_and_clamp(m_v, s_v)
+        # 重み（0-5）もブレンド（blend_and_clampは0-4用だが、重みも同様のロジックで適用）
+        # 便宜上 blend_and_clamp を流用（round結果は整数になる）
+        new_weights[ui_cat] = blend_and_clamp(p_cat, m_v, "category_weights")
     
     # 7. 保存データの更新
     document["evaluation_config"] = {
@@ -269,7 +269,7 @@ def apply_genre_presets():
 
     return jsonify({
         "success": True,
-        "genre_applied": {"main": main_genre, "sub": sub_genre},
+        "genre_applied": {"main": main_genre, "sub": sub_genres},
         "evaluation_config": document["evaluation_config"]
     })
 
