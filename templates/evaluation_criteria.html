@@ -1,6 +1,13 @@
 <div class="card p-4 shadow-sm mt-3">
-    <h2 class="h4 mb-3">評価基準の再設計</h2>
-    <p class="text-muted">各ラベルの目標値、分類の重み、および要素間の相乗効果を設定します。</p>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h2 class="h4 mb-1">評価基準の再設計</h2>
+            <p class="text-muted mb-0">各ラベルの目標値、分類の重み、および要素間の相乗効果を設定します。</p>
+        </div>
+        <button type="button" id="auto-generate-interactions-btn" class="btn btn-outline-info">
+            <i class="bi bi-magic me-1"></i> ジャンルから自動設定
+        </button>
+    </div>
 
     {% set config = document.get('evaluation_config', {}) %}
     {% set targets = config.get('targets', {}) %}
@@ -172,15 +179,36 @@ document.addEventListener('DOMContentLoaded', function() {
         return fullEnKey;
     }
 
-    // 自動生成関数 (silent=true の場合は確認ダイアログを出さない)
+    // 自動生成関数
     async function runAutoGenerate(silent = false) {
         if (!silent && currentInteractions.length > 0) {
-            if (!confirm('既存の相互作用がありますが、不足分を自動生成（合成）しますか？\n※既に同一ペアがある場合は上書きされません。')) {
+            if (!confirm('ジャンル設定に基づいて評価基準（目標値・重み・相互作用）を自動適用しますか？\n※目標値と重みは上書きされます。相互作用は不足分が補完されます。')) {
                 return;
             }
         }
 
         try {
+            // 1. 目標値と重みの適用 (新API: サーバー側の最新 genre_config を使用)
+            const applyResponse = await fetch('/api/evaluation/apply-genre', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    doc_id: "{{ document.id }}"
+                })
+            });
+            const applyData = await applyResponse.json();
+            
+            if (applyData.success) {
+                if (!silent) {
+                    alert('ジャンル設定（' + applyData.genre_applied.main + ' × ' + (applyData.genre_applied.sub || 'なし') + '）に基づき評価基準を更新しました。');
+                    location.reload(); 
+                    return;
+                }
+            } else {
+                if (!silent) alert('エラー: ' + applyData.error);
+            }
+
+            // 2. 相互作用の自動生成 (既存API - fallback)
             const response = await fetch(`/document/{{ document.id }}/auto_generate_interactions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
@@ -189,14 +217,9 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data.success) {
                 currentInteractions = data.interactions;
                 renderInteractions();
-                if (silent) {
-                    console.log('Interactions auto-generated from genre settings.');
-                }
-            } else {
-                if (!silent) alert('自動生成に失敗しました: ' + data.error);
             }
         } catch (error) {
-            if (!silent) alert('エラー: ' + error.message);
+            if (!silent) alert('自動適用中にエラーが発生しました: ' + error.message);
         }
     }
 
