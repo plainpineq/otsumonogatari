@@ -10,9 +10,7 @@
              data-ordered-keys='{{ semantic_label_schema.keys() | list | tojson | default([], true) }}'></div> {# schemaとキーの順序を埋め込む #}
         <div>
             <a href="/dashboard" class="btn btn-outline-secondary me-2">ダッシュボード</a>
-            <form action="/document/{{ document.id }}/download" method="GET" style="display:inline-block;">
-                <button type="submit" class="btn btn-info">ダウンロード</button>
-            </form>
+            <button type="button" id="download-document-btn" class="btn btn-info">ダウンロード</button>
         </div>
     </div>
 
@@ -303,7 +301,7 @@
             <hr>
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h3 class="h5 mb-0" id="current-evaluation-results-title">評価結果</h3>
-                <a id="download-evaluation-csv-btn" href="{{ url_for('download_evaluation', doc_id=document.id) }}" class="btn btn-secondary btn-sm" style="display: {% if document.semantic_labels %}block{% else %}none{% endif %};">全評価結果をCSVでダウンロード</a>
+                <button type="button" id="download-evaluation-csv-btn" class="btn btn-secondary btn-sm" style="display: {% if document.semantic_labels %}block{% else %}none{% endif %};">全評価結果をCSVでダウンロード</button>
             </div>
 
             <div id="evaluation-results-sections-container">
@@ -542,8 +540,119 @@ document.addEventListener('DOMContentLoaded', function() {
     const evaluationProgressBar = document.getElementById('evaluation-progress-bar');
     const evaluationResultsBody = document.getElementById('evaluation-results-body');
     const evaluationResultsThead = document.getElementById('evaluation-results-thead');
+    // --- CSV Download Logic ---
     const downloadEvaluationCsvBtn = document.getElementById('download-evaluation-csv-btn');
+    if (downloadEvaluationCsvBtn) {
+        downloadEvaluationCsvBtn.addEventListener('click', async () => {
+            const originalText = downloadEvaluationCsvBtn.textContent;
+            downloadEvaluationCsvBtn.disabled = true;
+            downloadEvaluationCsvBtn.textContent = 'ダウンロード中...';
+
+            try {
+                const response = await fetch(`/document/${docId}/evaluation/download`);
+                if (!response.ok) throw new Error('ダウンロードに失敗しました。');
+                
+                const blob = await response.blob();
+                const filename = `evaluation_${documentData.title || 'document'}.csv`;
+
+                // 保存先を選択するダイアログを表示（対応ブラウザのみ）
+                if ('showSaveFilePicker' in window) {
+                    try {
+                        const handle = await window.showSaveFilePicker({
+                            suggestedName: filename,
+                            types: [{
+                                description: 'CSVファイル',
+                                accept: {'text/csv': ['.csv']},
+                            }],
+                        });
+                        const writable = await handle.createWritable();
+                        await writable.write(blob);
+                        await writable.close();
+                        showAlert('CSVを保存しました。', 'success');
+                        return;
+                    } catch (err) {
+                        if (err.name === 'AbortError') return;
+                        // フォールバックへ
+                    }
+                }
+
+                // 従来の方式
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                showAlert('CSVをダウンロードしました。', 'success');
+            } catch (error) {
+                console.error('Download error:', error);
+                showAlert(`ダウンロード中にエラーが発生しました: ${error.message}`);
+            } finally {
+                downloadEvaluationCsvBtn.disabled = false;
+                downloadEvaluationCsvBtn.textContent = originalText;
+            }
+        });
+    }
+
     const currentEvaluationResultsTitle = document.getElementById('current-evaluation-results-title');
+
+    // --- Document Download Logic ---
+    const downloadDocumentBtn = document.getElementById('download-document-btn');
+    if (downloadDocumentBtn) {
+        downloadDocumentBtn.addEventListener('click', async () => {
+            const originalText = downloadDocumentBtn.textContent;
+            downloadDocumentBtn.disabled = true;
+            downloadDocumentBtn.textContent = 'ダウンロード中...';
+
+            try {
+                const response = await fetch(`/document/${docId}/download`);
+                if (!response.ok) throw new Error('ダウンロードに失敗しました。');
+                
+                const blob = await response.blob();
+                const filename = `${documentData.title || 'document'}.json`;
+
+                // 保存先を選択するダイアログを表示（対応ブラウザのみ）
+                if ('showSaveFilePicker' in window) {
+                    try {
+                        const handle = await window.showSaveFilePicker({
+                            suggestedName: filename,
+                            types: [{
+                                description: 'JSONファイル',
+                                accept: {'application/json': ['.json']},
+                            }],
+                        });
+                        const writable = await handle.createWritable();
+                        await writable.write(blob);
+                        await writable.close();
+                        showAlert('ドキュメントを保存しました。', 'success');
+                        return;
+                    } catch (err) {
+                        if (err.name === 'AbortError') return;
+                        // フォールバックへ
+                    }
+                }
+
+                // 従来の方式
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                showAlert('ドキュメントをダウンロードしました。', 'success');
+            } catch (error) {
+                console.error('Download error:', error);
+                showAlert(`ダウンロード中にエラーが発生しました: ${error.message}`);
+            } finally {
+                downloadDocumentBtn.disabled = false;
+                downloadDocumentBtn.textContent = originalText;
+            }
+        });
+    }
 
     // --- Energy Breakdown UI Elements ---
     const energyBreakdownContainer = document.getElementById('energy-breakdown-container');

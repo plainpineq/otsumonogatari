@@ -69,6 +69,21 @@
 
 {% block scripts %}
     <script>
+    // 画面上部にメッセージを表示するヘルパー関数
+    function showJsFlash(message, category) {
+        const container = document.querySelector('main.container');
+        if (!container) return;
+        const alertDiv = document.createElement('div');
+        const colorClass = category === 'success' ? 'primary' : (category === 'error' ? 'danger' : category);
+        alertDiv.className = `alert alert-${colorClass} alert-dismissible fade show`;
+        alertDiv.setAttribute('role', 'alert');
+        alertDiv.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        container.insertBefore(alertDiv, container.firstChild);
+    }
+
     // This script is for activating tabs from the URL hash, which was a previous user request.
     // It is kept here to maintain functionality.
     document.addEventListener('DOMContentLoaded', function() {
