@@ -567,7 +567,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         const writable = await handle.createWritable();
                         await writable.write(blob);
                         await writable.close();
-                        showAlert('ドキュメントを保存しました。', 'success');
+                        showAlert('ファイルを保存しました。', 'success');
                         return;
                     } catch (err) {
                         if (err.name === 'AbortError') return;
@@ -584,7 +584,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.body.appendChild(a);
                 a.click();
                 window.URL.revokeObjectURL(url);
-                showAlert('ドキュメントをダウンロードしました。', 'success');
+                showAlert('ファイルを保存しました。', 'success');
             } catch (error) {
                 console.error('Download error:', error);
                 showAlert(`ダウンロード中にエラーが発生しました: ${error.message}`);
