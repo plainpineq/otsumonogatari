@@ -444,6 +444,10 @@ def view_document(doc_id):
         normalize_composition_elements(document) # Re-normalize composition elements after any potential changes
 
         save_user_data(session["user_id"], data)
+        if request.form.get("update_composition_elements"):
+            flash("構成要素を保存しました。", "success")
+        else:
+            flash("原稿を保存しました。", "success")
         return redirect(f"/document/{doc_id}#composition") # 常に構成要素タブにリダイレクト
 
     # GETリクエストの場合も、テンプレートに渡す前にcomposition_elementsを正規化
@@ -523,7 +527,8 @@ def edit_intent(doc_id):
     update_intent(document, request.form)
 
     save_user_data(session["user_id"], data)
-    return redirect(f"/document/{doc_id}")
+    flash("基本設定を保存しました。", "success")
+    return redirect(f"/document/{doc_id}#intent")
 
 
 from services.llm_client import call_llm # Import the generic LLM client

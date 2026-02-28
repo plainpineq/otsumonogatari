@@ -55,6 +55,22 @@ body {
     box-shadow: 0 4px 8px rgba(var(--bs-primary-rgb), 0.3);
 }
 
+.btn-purple {
+    background-color: #6f42c1;
+    border-color: #6f42c1;
+    color: #fff;
+    font-weight: bold;
+    transition: all 0.2s ease;
+}
+
+.btn-purple:hover {
+    background-color: #59359a;
+    border-color: #4e2e88;
+    color: #fff;
+    opacity: 0.9;
+    box-shadow: 0 4px 8px rgba(111, 66, 193, 0.3);
+}
+
 .form-control {
     background-color: #495057;
     color: #fff;

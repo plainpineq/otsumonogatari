@@ -165,16 +165,15 @@
                         class="form-control me-2"
                         style="width:55%;"
                     >
-                    <button type="submit" name="add_intent" value="1" class="btn btn-success">
+                    <button type="submit" name="add_intent" value="1" class="btn btn-purple">
                         ＋ 追加
                     </button>
                 </div>
 
-                <div class="d-flex justify-content-between">
-                    <button type="submit" name="save_intent" value="1" class="btn btn-primary">
-                        Intentを保存
+                <div class="d-flex">
+                    <button type="submit" name="save_intent" value="1" class="btn btn-success">
+                        基本設定を保存
                     </button>
-                    <a href="/dashboard" class="btn btn-secondary">← ダッシュボードへ</a>
                 </div>
             </form>
         </div>
@@ -247,7 +246,7 @@
                 {% endfor %}
 
                 <hr class="my-4">
-                <button type="submit" class="btn btn-primary mt-3 me-2">構成要素の構造を保存</button>
+                <button type="submit" class="btn btn-success mt-3 me-2">構成要素の保存</button>
                 <a href="/dashboard" class="btn btn-secondary mt-3">← ダッシュボードへ</a>
             </form>
         </div>

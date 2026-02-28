@@ -47,6 +47,7 @@
 <main class="container mt-4">
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
+            <script>console.log("Flash messages found:", {{ messages | tojson }});</script>
             {% for category, message in messages %}
                 <div class="alert alert-{{ 'primary' if category == 'success' else category }} alert-dismissible fade show" role="alert">
                     {{ message }}
