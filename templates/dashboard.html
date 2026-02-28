@@ -159,6 +159,20 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // 画面上部にメッセージを表示するヘルパー関数
+    function showJsFlash(message, category) {
+        const container = document.querySelector('main.container');
+        const alertDiv = document.createElement('div');
+        const colorClass = category === 'success' ? 'primary' : (category === 'error' ? 'danger' : category);
+        alertDiv.className = `alert alert-${colorClass} alert-dismissible fade show`;
+        alertDiv.setAttribute('role', 'alert');
+        alertDiv.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        container.insertBefore(alertDiv, container.firstChild);
+    }
+
     function toggleLlmFields(role) {
         const providerSelect = document.getElementById(`llm_provider_${role}`);
         const modelNameGroup = document.getElementById(`llm_model_name_group_${role}`);
@@ -254,6 +268,29 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (response.ok) {
                 const blob = await response.blob();
+
+                // 保存先を選択するダイアログを表示（対応ブラウザのみ）
+                if ('showSaveFilePicker' in window) {
+                    try {
+                        const handle = await window.showSaveFilePicker({
+                            suggestedName: 'server_settings.json',
+                            types: [{
+                                description: 'JSONファイル',
+                                accept: {'application/json': ['.json']},
+                            }],
+                        });
+                        const writable = await handle.createWritable();
+                        await writable.write(blob);
+                        await writable.close();
+                        showJsFlash('設定ファイルを保存しました。', 'success');
+                        return; // 正常終了
+                    } catch (err) {
+                        if (err.name === 'AbortError') return; // キャンセル時は何もしない
+                        // エラー時や未対応ブラウザ時は従来のダウンロード方式へフォールバック
+                    }
+                }
+
+                // 従来のダウンロード方式（フォールバック）
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.style.display = 'none';
@@ -262,7 +299,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.body.appendChild(a);
                 a.click();
                 window.URL.revokeObjectURL(url);
-                alert('設定ファイルをダウンロードしました。\n\nダウンロード先のフォルダ選択画面が表示されない場合、お使いのブラウザのダウンロード設定で「ダウンロードのたびに保存場所を尋ねる」オプションを有効にしてください。');
+                showJsFlash('設定ファイルをダウンロードしました。', 'success');
             } else {
                 const errorData = await response.json(); // エラー時はJSONを期待
                 alert(`設定のダウンロードに失敗しました: ${errorData.message}`);
