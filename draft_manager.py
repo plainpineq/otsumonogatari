@@ -5,47 +5,55 @@ from typing import Dict, Any, List, Optional
 from user_files import get_user_data_path, load_user_data, save_user_data
 
 class DraftManager:
-    def __init__(self, user_id: str):
+    def __init__(self, user_id: str, doc_id: Optional[str] = None):
         self.user_id = user_id
-        self.data = self._load_and_init()
+        self.doc_id = doc_id
+        self.data = load_user_data(user_id)
+        self.document = self._get_document(doc_id) if doc_id else None
+        self._init_structures()
 
-    def _load_and_init(self) -> Dict[str, Any]:
-        """データを読み込み、manuscript構造がない場合は初期化する"""
-        data = load_user_data(self.user_id)
+    def _get_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
+        for doc in self.data.get("documents", []):
+            if doc.get("id") == doc_id:
+                return doc
+        return None
+
+    def _init_structures(self):
+        """データを初期化し、必要に応じて移行を行う"""
+        # グローバルなmanuscriptが存在し、かつ特定のドキュメントが指定されている場合の移行
+        if "manuscript" in self.data and self.document:
+            if "manuscript" not in self.document:
+                self.document["manuscript"] = self.data.pop("manuscript")
         
-        # manuscriptの初期化
-        if "manuscript" not in data:
-            data["manuscript"] = {
-                "chapters": []
-            }
+        # ドキュメント固有のmanuscript初期化
+        if self.document:
+            if "manuscript" not in self.document:
+                self.document["manuscript"] = {"chapters": []}
+            if "drafting_configs" not in self.document:
+                self.document["drafting_configs"] = {
+                    "story_blueprint": [],
+                    "directing_settings": {}
+                }
+        else:
+            # フォールバック: 指定がない場合はトップレベル（旧仕様互換）
+            if "manuscript" not in self.data:
+                self.data["manuscript"] = {"chapters": []}
+
+        # settingsの初期化
+        if "settings" not in self.data:
+            self.data["settings"] = {"llm_servers": {}}
         
-        # settingsの初期化（要件にある設定パスを確保）
-        if "settings" not in data:
-            data["settings"] = {
-                "llm_servers": {
-                    "drafting": {
-                        "provider": "openai",
-                        "model": "gpt-4o",
-                        "api_key": ""
-                    }
-                }
-            }
-        elif "llm_servers" not in data["settings"]:
-            data["settings"]["llm_servers"] = {
-                "drafting": {
-                    "provider": "openai",
-                    "model": "gpt-4o",
-                    "api_key": ""
-                }
-            }
-        elif "drafting" not in data["settings"]["llm_servers"]:
-            data["settings"]["llm_servers"]["drafting"] = {
-                "provider": "openai",
-                "model": "gpt-4o",
-                "api_key": ""
-            }
-            
-        return data
+        draft_cfg = self.data["settings"]["llm_servers"].setdefault("drafting", {
+            "provider": "openai",
+            "model": "gpt-4o",
+            "api_key": ""
+        })
+
+    @property
+    def manuscript(self):
+        if self.document:
+            return self.document["manuscript"]
+        return self.data["manuscript"]
 
     def save(self):
         """現在のデータを保存する"""
@@ -57,7 +65,7 @@ class DraftManager:
 
     def find_chapter(self, chapter_id: str) -> Optional[Dict[str, Any]]:
         """指定されたIDの章を探す"""
-        for chap in self.data["manuscript"]["chapters"]:
+        for chap in self.manuscript.get("chapters", []):
             if chap["chapter_id"] == chapter_id:
                 return chap
         return None
@@ -74,7 +82,7 @@ class DraftManager:
 
     def add_chapter(self, title: str, order: Optional[int] = None) -> Dict[str, Any]:
         """新しい章を追加する"""
-        chapters = self.data["manuscript"]["chapters"]
+        chapters = self.manuscript.setdefault("chapters", [])
         if order is None:
             order = len(chapters) + 1
         
@@ -86,7 +94,6 @@ class DraftManager:
             "scenes": []
         }
         chapters.append(new_chapter)
-        # orderでソート
         chapters.sort(key=lambda x: x["order"])
         return new_chapter
 
@@ -96,7 +103,7 @@ class DraftManager:
         if not chapter:
             return None
         
-        scenes = chapter.get("scenes", [])
+        scenes = chapter.setdefault("scenes", [])
         if order is None:
             order = len(scenes) + 1
             
@@ -109,7 +116,6 @@ class DraftManager:
         }
         scenes.append(new_scene)
         scenes.sort(key=lambda x: x["order"])
-        chapter["scenes"] = scenes
         return new_scene
 
     def add_chapter_draft(self, chapter_id: str, content: str, prompt_used: str):
@@ -122,9 +128,9 @@ class DraftManager:
             "draft_id": self.generate_id("drft_"),
             "content": content,
             "prompt_used": prompt_used,
-            "created_at": uuid.uuid4().hex # 簡易的なタイムスタンプ代わり
+            "created_at": uuid.uuid4().hex
         }
-        chapter["chapter_level_drafts"].append(draft)
+        chapter.setdefault("chapter_level_drafts", []).append(draft)
         return draft
 
     def add_scene_draft(self, chapter_id: str, scene_id: str, content: str, prompt_used: str, structure_snapshot: Dict[str, Any]):
@@ -140,7 +146,34 @@ class DraftManager:
             "structure_snapshot": structure_snapshot,
             "created_at": uuid.uuid4().hex
         }
-        scene["drafts"].append(draft)
-        # スナップショットをシーン本体にも保存（最新状態として）
+        scene.setdefault("drafts", []).append(draft)
         scene["structure_snapshot"] = structure_snapshot
         return draft
+
+    def delete_chapter(self, chapter_id: str) -> bool:
+        """章を削除する"""
+        chapters = self.manuscript.get("chapters", [])
+        initial_count = len(chapters)
+        self.manuscript["chapters"] = [c for c in chapters if c["chapter_id"] != chapter_id]
+        return len(self.manuscript["chapters"]) < initial_count
+
+    def delete_scene(self, chapter_id: str, scene_id: str) -> bool:
+        """シーンを削除する"""
+        chapter = self.find_chapter(chapter_id)
+        if not chapter:
+            return False
+        
+        scenes = chapter.get("scenes", [])
+        initial_count = len(scenes)
+        chapter["scenes"] = [s for s in scenes if s["scene_id"] != scene_id]
+        return len(chapter["scenes"]) < initial_count
+
+    def save_drafting_configs(self, story_blueprint: List[Dict[str, Any]], directing_settings: Dict[str, Any]):
+        """下書きタブの設定（設計図と演出設定）を保存する"""
+        if not self.document:
+            return False
+        self.document["drafting_configs"] = {
+            "story_blueprint": story_blueprint,
+            "directing_settings": directing_settings
+        }
+        return True

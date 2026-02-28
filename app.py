@@ -1459,8 +1459,8 @@ def start_from_evaluation():
     if not selected_elements:
         return jsonify({"error": "構成要素が選択されていません。"}), 400
 
-    dm = DraftManager(user_id)
-    document = find_document(dm.data, doc_id)
+    dm = DraftManager(user_id, doc_id)
+    document = dm.document
     if not document:
         return jsonify({"error": "Document not found"}), 404
 
@@ -1552,10 +1552,10 @@ def draft_generate():
     structure_override = params.get("structure_override")
     additional_info = params.get("additional_info")
     
-    dm = DraftManager(user_id)
+    dm = DraftManager(user_id, params.get("doc_id"))
     
-    # LLM設定の取得 (working.json の settings.llm_servers.draft を参照)
-    llm_config = dm.data.get("settings", {}).get("llm_servers", {}).get("draft", {})
+    # LLM設定の取得 (working.json の settings.llm_servers.drafting を参照)
+    llm_config = dm.data.get("settings", {}).get("llm_servers", {}).get("drafting", {})
     if not llm_config or not llm_config.get("provider"):
         # デフォルト設定がなければ作成
         llm_config = {
@@ -1599,26 +1599,60 @@ def draft_generate():
         logging.error(f"Draft generation API error: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/draft/save_configs", methods=["POST"])
+def draft_save_configs():
+    """下書きタブの設定（設計図と演出設定）を保存するAPI"""
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    params = request.get_json()
+    doc_id = params.get("doc_id")
+    story_blueprint = params.get("story_blueprint")
+    directing_settings = params.get("directing_settings")
+
+    if not doc_id:
+        return jsonify({"error": "Missing doc_id"}), 400
+
+    dm = DraftManager(user_id, doc_id)
+    if dm.save_drafting_configs(story_blueprint, directing_settings):
+        dm.save()
+        return jsonify({"success": True})
+    else:
+        return jsonify({"error": "Document not found"}), 404
+
 @app.route("/api/draft/list", methods=["GET"])
 def draft_list():
     """章・シーンの一覧取得"""
     user_id = session.get("user_id")
+    doc_id = request.args.get("doc_id")
     if not user_id:
         return jsonify({"error": "Unauthorized"}), 401
-    dm = DraftManager(user_id)
-    return jsonify({"success": True, "manuscript": dm.data["manuscript"]})
+    
+    dm = DraftManager(user_id, doc_id)
+    
+    response_data = {
+        "success": True, 
+        "manuscript": dm.manuscript,
+    }
+    # drafting_configsがあれば含める
+    if dm.document and "drafting_configs" in dm.document:
+        response_data["drafting_configs"] = dm.document["drafting_configs"]
+        
+    return jsonify(response_data)
 
 @app.route("/api/draft/get", methods=["GET"])
 def draft_get():
     """詳細取得"""
     user_id = session.get("user_id")
+    doc_id = request.args.get("doc_id")
     if not user_id:
         return jsonify({"error": "Unauthorized"}), 401
     
     chapter_id = request.args.get("chapter_id")
     scene_id = request.args.get("scene_id")
     
-    dm = DraftManager(user_id)
+    dm = DraftManager(user_id, doc_id)
     if scene_id:
         scene = dm.find_scene(chapter_id, scene_id)
         return jsonify({"success": True, "scene": scene})
@@ -1634,25 +1668,24 @@ def draft_update():
         return jsonify({"error": "Unauthorized"}), 401
     
     params = request.get_json()
+    doc_id = params.get("doc_id")
     chapter_id = params.get("chapter_id")
     scene_id = params.get("scene_id")
     title = params.get("title")
     order = params.get("order")
     manuscript_content = params.get("manuscript_content")
     
-    dm = DraftManager(user_id)
+    dm = DraftManager(user_id, doc_id)
 
     # 全文保存の場合
     if manuscript_content is not None:
-        if "manuscript" not in dm.data:
-            dm.data["manuscript"] = {}
-        dm.data["manuscript"]["full_text"] = manuscript_content
+        dm.manuscript["full_text"] = manuscript_content
         # バージョン更新
-        current_version = dm.data["manuscript"].get("version", 0)
-        dm.data["manuscript"]["version"] = current_version + 1
-        dm.data["manuscript"]["last_saved"] = datetime.now().isoformat()
+        current_version = dm.manuscript.get("version", 0)
+        dm.manuscript["version"] = current_version + 1
+        dm.manuscript["last_saved"] = datetime.now().isoformat()
         dm.save()
-        return jsonify({"success": True, "version": dm.data["manuscript"]["version"]})
+        return jsonify({"success": True, "version": dm.manuscript["version"]})
 
     if chapter_id and scene_id:
         if scene_id == 'new':
@@ -1684,41 +1717,51 @@ def draft_status():
 
 @app.route("/api/draft/delete", methods=["POST"])
 def draft_delete():
-    """原稿案の削除API"""
+    """原稿案または章・シーンの削除API"""
     user_id = session.get("user_id")
     if not user_id:
         return jsonify({"error": "Unauthorized"}), 401
     
     params = request.get_json()
+    doc_id = params.get("doc_id")
     draft_id = params.get("draft_id")
+    chapter_id = params.get("chapter_id")
+    scene_id = params.get("scene_id")
     
-    dm = DraftManager(user_id)
+    dm = DraftManager(user_id, doc_id)
     deleted = False
-    
-    # 章レベルのドラフトから探す
-    for chap in dm.data["manuscript"]["chapters"]:
-        drafts = chap.get("chapter_level_drafts", [])
-        new_drafts = [d for d in drafts if d["draft_id"] != draft_id]
-        if len(new_drafts) < len(drafts):
-            chap["chapter_level_drafts"] = new_drafts
-            deleted = True
-            break
-        
-        # シーンレベルのドラフトから探す
-        for scene in chap.get("scenes", []):
-            s_drafts = scene.get("drafts", [])
-            new_s_drafts = [d for d in s_drafts if d["draft_id"] != draft_id]
-            if len(new_s_drafts) < len(s_drafts):
-                scene["drafts"] = new_s_drafts
+
+    # 章またはシーンの削除
+    if chapter_id and scene_id:
+        deleted = dm.delete_scene(chapter_id, scene_id)
+    elif chapter_id:
+        deleted = dm.delete_chapter(chapter_id)
+    # 原稿案（ドラフト）の削除
+    elif draft_id:
+        # 章レベルのドラフトから探す
+        for chap in dm.manuscript.get("chapters", []):
+            drafts = chap.get("chapter_level_drafts", [])
+            new_drafts = [d for d in drafts if d["draft_id"] != draft_id]
+            if len(new_drafts) < len(drafts):
+                chap["chapter_level_drafts"] = new_drafts
                 deleted = True
                 break
-        if deleted: break
+            
+            # シーンレベルのドラフトから探す
+            for scene in chap.get("scenes", []):
+                s_drafts = scene.get("drafts", [])
+                new_s_drafts = [d for d in s_drafts if d["draft_id"] != draft_id]
+                if len(new_s_drafts) < len(s_drafts):
+                    scene["drafts"] = new_s_drafts
+                    deleted = True
+                    break
+            if deleted: break
 
     if deleted:
         dm.save()
         return jsonify({"success": True})
     else:
-        return jsonify({"error": "Draft not found"}), 404
+        return jsonify({"error": "Item not found"}), 404
 
 if __name__ == "__main__":
     app.run(debug=True)

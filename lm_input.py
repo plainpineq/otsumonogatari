@@ -232,7 +232,8 @@ def build_title_plot_proposals_prompt(document: dict, composition_meta: dict, us
     
     formatted_additional_instruction = ""
     if additional_instruction:
-        formatted_additional_instruction = f"- {additional_instruction}\n"
+        lines = [line.strip() for line in additional_instruction.split('\n') if line.strip()]
+        formatted_additional_instruction = "\n".join([f"- {line}" for line in lines]) + "\n"
     
     # --- Extract "base" category elements from document["composition_elements"] for the prompt ---
     elements_text = ""
@@ -341,7 +342,8 @@ def build_category_composition_prompt(document: dict, composition_meta: dict, us
     
     formatted_additional_instruction = ""
     if additional_instruction:
-        formatted_additional_instruction = f"- {additional_instruction}\n"
+        lines = [line.strip() for line in additional_instruction.split('\n') if line.strip()]
+        formatted_additional_instruction = "\n".join([f"- {line}" for line in lines]) + "\n"
 
     for category_obj in all_document_categories:
         if category_obj.get("id") == base_category_label_id or category_obj.get("label") == "基本設定":
