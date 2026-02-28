@@ -191,7 +191,7 @@
                     {% if doc_type_meta_data.editable %}
                         <div class="mb-3 d-flex">
                             <input type="text" name="new_doc_type_category_label" placeholder="新しい分類のラベル" class="form-control me-2">
-                            <button type="submit" name="add_doc_type_category" value="1" class="btn btn-primary">分類追加</button>
+                            <button type="submit" name="add_doc_type_category" value="1" class="btn btn-purple">分類追加</button>
                         </div>
                     {% endif %}
                 {% endif %}
@@ -240,14 +240,13 @@
                         {% endif %}
 
                         {% if category.editable %}
-                            <button type="submit" name="add_element_{{ category_id }}" value="1" class="btn btn-success btn-sm mt-2">＋ {{ category.label }}を追加</button>
+                            <button type="submit" name="add_element_{{ category_id }}" value="1" class="btn btn-purple btn-sm mt-2">＋ {{ category.label }}を追加</button>
                         {% endif %}
                     </div>
                 {% endfor %}
 
                 <hr class="my-4">
                 <button type="submit" class="btn btn-success mt-3 me-2">構成要素の保存</button>
-                <a href="/dashboard" class="btn btn-secondary mt-3">← ダッシュボードへ</a>
             </form>
         </div>
     </div>

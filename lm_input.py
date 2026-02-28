@@ -224,7 +224,7 @@ def build_title_plot_proposals_prompt(document: dict, composition_meta: dict, us
 
     # Additional Instruction for the "基本設定" category
     additional_instruction = ""
-    base_category_label = "基本設定"
+    base_category_label = "基本項目"
     for category_obj in all_document_categories:
         if category_obj.get("label") == base_category_label:
             additional_instruction = category_obj.get("additional_instruction", "").strip()
@@ -237,7 +237,7 @@ def build_title_plot_proposals_prompt(document: dict, composition_meta: dict, us
     # --- Extract "base" category elements from document["composition_elements"] for the prompt ---
     elements_text = ""
     dynamic_json_example_for_base = {}
-    base_category_label = "基本設定" # composition_meta.json で定義されているラベル (変更なし)
+    base_category_label = "基本項目" # composition_meta.json で定義されているラベル (変更なし)
 
     # document["composition_elements"]["categories"] から "base" カテゴリを探す
     base_category_data = None
