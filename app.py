@@ -57,6 +57,8 @@ def _cleanup_old_generated_files(user_id: str):
 
 from services.services import (
     create_document,
+    delete_document,
+    rename_document,
     find_document,
     update_units_content,
     update_intent,
@@ -307,6 +309,42 @@ def document_create():
 
     save_user_data(session["user_id"], data)
     return redirect(f"/document/{document['id']}")
+
+
+@app.route("/document/<doc_id>/delete", methods=["POST"])
+def document_delete_route(doc_id):
+    if "user_id" not in session:
+        return redirect("/login")
+
+    data = load_user_data(session["user_id"])
+    if delete_document(data, doc_id):
+        save_user_data(session["user_id"], data)
+        flash("作品を削除しました。")
+    else:
+        flash("作品の削除に失敗しました。", "error")
+    
+    return redirect("/dashboard")
+
+
+@app.route("/document/<doc_id>/rename", methods=["POST"])
+def document_rename_route(doc_id):
+    if "user_id" not in session:
+        return redirect("/login")
+
+    new_title = request.form.get("title")
+    if not new_title:
+        flash("タイトルを入力してください。", "error")
+        return redirect("/dashboard")
+
+    data = load_user_data(session["user_id"])
+    if rename_document(data, doc_id, new_title):
+        save_user_data(session["user_id"], data)
+        flash("作品名を変更しました。")
+    else:
+        flash("作品名の変更に失敗しました。", "error")
+    
+    return redirect("/dashboard")
+
 
 from services.scoring import compute_qubo_energy, to_onehot
 

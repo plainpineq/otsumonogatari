@@ -82,6 +82,27 @@ def create_document(
     return document
 
 
+def delete_document(data: Dict, doc_id: str) -> bool:
+    """
+    data["documents"] から指定された doc_id のドキュメントを削除する。
+    """
+    documents = data.get("documents", [])
+    initial_count = len(documents)
+    data["documents"] = [d for d in documents if d["id"] != doc_id]
+    return len(data["documents"]) < initial_count
+
+
+def rename_document(data: Dict, doc_id: str, new_title: str) -> bool:
+    """
+    指定された doc_id のドキュメントのタイトルを更新する。
+    """
+    document = find_document(data, doc_id)
+    if document:
+        document["title"] = new_title
+        return True
+    return False
+
+
 # =========================
 # Composition Elements Service
 # =========================
