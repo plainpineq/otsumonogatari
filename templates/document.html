@@ -138,8 +138,9 @@
                             <button type="submit"
                                     name="remove_intent"
                                     value="{{ key }}"
-                                    class="btn btn-danger btn-sm">
-                                削除
+                                    class="btn btn-outline-danger btn-sm"
+                                    title="削除">
+                                <i class="bi bi-trash"></i>
                             </button>
                         </div>
                     {% endfor %}
@@ -208,7 +209,7 @@
                             {% endif %}
 
                             {% if doc_type_meta_data and doc_type_meta_data.editable and category.editable %}
-                                <button type="submit" name="remove_doc_type_category" value="{{ category.id }}" class="btn btn-danger btn-sm ms-2">分類削除</button>
+                                <button type="submit" name="remove_doc_type_category" value="{{ category.id }}" class="btn btn-outline-danger btn-sm ms-2" title="分類削除"><i class="bi bi-trash"></i></button>
                             {% endif %}
                         </h4>
                         <div class="mb-3">
@@ -234,7 +235,9 @@
                                         class="form-control me-2"
                                         placeholder="{{ category.label }} #{{ loop.index + 1 }}"
                                     >
-                                    <button type="submit" name="remove_element_{{ category_id }}_{{ element.id }}" value="{{ element.id }}" class="btn btn-danger btn-sm">削除</button>
+                                    <button type="submit" name="remove_element_{{ category_id }}_{{ element.id }}" value="{{ element.id }}" class="btn btn-outline-danger btn-sm" title="削除">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
                                 </div>
                             {% endfor %}
                         {% endif %}
