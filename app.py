@@ -1015,6 +1015,8 @@ def evaluate_stream(doc_id):
     """
     from flask import Response # Keep local import for Response, as it's used only here.
     # logging is imported at module level, no need here
+    
+    logger = logging.getLogger(__name__)
 
     if "user_id" not in session:
         return Response("Unauthorized", status=401)
@@ -1167,13 +1169,15 @@ def evaluate_stream(doc_id):
             # Client disconnected, just stop the generator
             return
         except Exception as e:
-            logging.error(f"Error during streaming semantic labels: {e}")
-            yield f"data: {json.dumps({'error': f"ストリーミング中にエラーが発生しました: {str(e)}"})}\n\n"
+            logger_to_cleanup.error(f"Error during streaming semantic labels: {e}")
+            yield f"data: {json.dumps({'error': f'評価処理中にサーバーエラーが発生しました: {str(e)}'}, ensure_ascii=False)}\n\n"
+            return
         finally:
+            # Ensure handlers are closed to prevent PermissionError (Errno 13) on subsequent calls
             for handler in logger_to_cleanup.handlers[:]:
                 if isinstance(handler, logging.FileHandler):
                     handler.close()
-                logger_to_cleanup.removeHandler(handler)
+                    logger_to_cleanup.removeHandler(handler)
 
     return Response(generate_labels_stream(session["user_id"], llm_config, classification_filter), mimetype='text/event-stream')
 

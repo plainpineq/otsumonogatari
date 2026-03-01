@@ -150,12 +150,12 @@
 
                 <hr class="my-4">
 
-                <h4 class="h5 mb-3">Intent項目を追加</h4>
+                <h4 class="h5 mb-3">基本設定項目を追加</h4>
                 <div class="mb-3 d-flex">
                     <input
                         type="text"
                         name="new_intent_label"
-                        placeholder="項目名（例：世界観）"
+                        placeholder="項目名（例：テーマ、執筆方針）"
                         class="form-control me-2"
                         style="width:30%;"
                     >
@@ -257,8 +257,8 @@
     </div>
     <div class="tab-pane fade" id="evaluation" role="tabpanel" aria-labelledby="evaluation-tab">
         <div class="card p-4 shadow-sm mt-3">
-            <h2 class="h4 mb-3">意味ラベル評価</h2>
-            <p>提案された候補群を、分類ごとの評価基準に基づいて意味ラベル付けします。</p>
+            <h2 class="h4 mb-3">構成要素候補案の評価</h2>
+            <p>提案された候補案を、分類ごとの評価基準に基づいて評価します。</p>
             <div class="d-flex gap-2 flex-wrap" id="evaluation-buttons-container">
                 <!-- Dynamically generated evaluation buttons will go here -->
             </div>
@@ -275,11 +275,6 @@
 
             <!-- Placeholders for real-time updates -->
             <div id="evaluation-status" class="mt-3"></div>
-            <div id="evaluation-progress-container" class="mt-3" style="display: none;">
-                <div class="progress">
-                    <div id="evaluation-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
-                </div>
-            </div>
 
             <!-- Energy Breakdown Section -->
             <div id="energy-breakdown-container" class="mt-4 card p-3 shadow-sm" style="display: none;">
@@ -547,8 +542,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- UI Elements (Evaluation Tab) ---
     const evaluationButtonsContainer = document.getElementById('evaluation-buttons-container');
     const evaluationStatusDiv = document.getElementById('evaluation-status');
-    const evaluationProgressBarContainer = document.getElementById('evaluation-progress-container');
-    const evaluationProgressBar = document.getElementById('evaluation-progress-bar');
     const evaluationResultsBody = document.getElementById('evaluation-results-body');
     const evaluationResultsThead = document.getElementById('evaluation-results-thead');
     const currentEvaluationResultsTitle = document.getElementById('current-evaluation-results-title');
@@ -1307,9 +1300,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Extra details block
             let detailsHtml = '<div class="small mt-1">';
-            detailsHtml += `<div class="qubo-energy-val"><strong>構造スコア:</strong> ${proposalLabels.qubo_energy || '-'}</div>`;
-            detailsHtml += `<div><strong>構造整合度:</strong> ${proposalLabels.diff_score || '-'}</div>`;
-            detailsHtml += `<div class="qubo-optimal-badge mt-1" style="display:${isOptimized ? 'block' : 'none'};"><span class="badge bg-warning text-dark">★ 推奨構成</span></div>`;
+            detailsHtml += `<div class="qubo-energy-val"><strong>適合ロス:</strong> ${proposalLabels.qubo_energy || '-'}</div>`;
+            detailsHtml += `<div><strong>構造整合度:</strong> ${proposalLabels.diff_score || '-'}</div>`;            detailsHtml += `<div class="qubo-optimal-badge mt-1" style="display:${isOptimized ? 'block' : 'none'};"><span class="badge bg-warning text-dark">★ 推奨構成</span></div>`;
             detailsHtml += '</div>';
 
             rowHtml += `<td>${detailsHtml}</td>`;
@@ -1330,11 +1322,12 @@ document.addEventListener('DOMContentLoaded', function() {
     async function runClassificationEvaluation(classificationFilter) {
         // Disable all evaluation buttons
         document.querySelectorAll('.evaluation-btn').forEach(btn => btn.disabled = true);
-        evaluationStatusDiv.innerHTML = '<div class="alert alert-info">評価前処理を実行中...</div>';
-        evaluationProgressBarContainer.style.display = 'block';
-        evaluationProgressBar.style.width = '0%';
-        evaluationProgressBar.setAttribute('aria-valuenow', '0');
-        evaluationProgressBar.textContent = '0%';
+        evaluationStatusDiv.innerHTML = `
+            <div class="alert alert-info d-flex align-items-center">
+                <div class="spinner-border spinner-border-sm me-3" role="status"></div>
+                <span>評価前処理を実行中...</span>
+            </div>
+        `;
         
         // If specific category, clear ONLY that category's results
         if (classificationFilter) {
@@ -1365,34 +1358,46 @@ document.addEventListener('DOMContentLoaded', function() {
             if (result.status === 'error') {
                 showAlert(result.message, 'danger');
                 evaluationStatusDiv.innerHTML = '';
-                evaluationProgressBarContainer.style.display = 'none';
-                document.querySelectorAll('.evaluation-btn').forEach(btn => btn.disabled = false); // Re-enable
+                document.querySelectorAll('.evaluation-btn').forEach(btn => btn.disabled = false);
                 return;
             } else {
-                showAlert(result.message, 'info');
-                evaluationStatusDiv.innerHTML = '<div class="alert alert-info">評価処理を開始中。結果をストリーミング中...</div>';
+                evaluationStatusDiv.innerHTML = `
+                    <div class="alert alert-info d-flex align-items-center">
+                        <div class="spinner-border spinner-border-sm me-3" role="status"></div>
+                        <span>評価処理を開始中。結果を待機しています...</span>
+                    </div>
+                `;
             }
 
-            const eventSource = new EventSource(streamUrl.replace('POST', 'GET')); // SSE must be GET
+            const eventSource = new EventSource(streamUrl.replace('POST', 'GET'));
             
             eventSource.onopen = () => {
                 console.log('SSE connection opened.');
-                evaluationStatusDiv.innerHTML = '<div class="alert alert-info">SSE接続確立。評価データを待機中...</div>';
             };
 
             eventSource.onmessage = (event) => {
                 const data = JSON.parse(event.data);
                 if (data.error) {
-                    showAlert(data.error, 'danger');
+                    evaluationStatusDiv.innerHTML = `
+                        <div class="alert alert-danger d-flex align-items-center">
+                            <i class="bi bi-exclamation-triangle-fill me-3"></i>
+                            <span>エラーが発生しました: ${data.error}</span>
+                        </div>
+                    `;
                     eventSource.close();
+                    document.querySelectorAll('.evaluation-btn').forEach(btn => btn.disabled = false);
                     return;
                 }
-                if (data.progress_total) {
-                    const progress = Math.round((data.progress_current / data.progress_total) * 100);
-                    evaluationProgressBar.style.width = `${progress}%`;
-                    evaluationProgressBar.setAttribute('aria-valuenow', progress);
-                    evaluationProgressBar.textContent = `${progress}%`;
-                    evaluationStatusDiv.innerHTML = `<div class="alert alert-info">評価中: ${data.category_label} - ${data.current_element} (${data.progress_current}/${data.progress_total})</div>`;
+                
+                if (data.progress_current !== undefined && data.progress_total !== undefined) {
+                    const category = data.category_label || '処理中';
+                    const element = data.current_element || '...';
+                    evaluationStatusDiv.innerHTML = `
+                        <div class="alert alert-info d-flex align-items-center">
+                            <div class="spinner-border spinner-border-sm me-3" role="status"></div>
+                            <span>評価中: <strong>${category}</strong> - ${element} (${data.progress_current}/${data.progress_total})</span>
+                        </div>
+                    `;
                 } else if (data.semantic_label) {
                     renderSemanticLabelItem(data.semantic_label);
                 }
@@ -1400,29 +1405,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
             eventSource.onerror = (error) => {
                 console.error('SSE error:', error);
-                evaluationStatusDiv.innerHTML = '<div class="alert alert-danger">評価中にエラーが発生しました。</div>';
-                showAlert('評価中にエラーが発生しました。詳細はコンソールを確認してください。', 'danger');
+                evaluationStatusDiv.innerHTML = '<div class="alert alert-danger">評価中に通信エラーが発生しました。</div>';
                 eventSource.close();
-                document.querySelectorAll('.evaluation-btn').forEach(btn => btn.disabled = false); // Re-enable
+                document.querySelectorAll('.evaluation-btn').forEach(btn => btn.disabled = false);
             };
 
             eventSource.addEventListener('end_stream', () => {
-                evaluationStatusDiv.innerHTML = '<div class="alert alert-success">評価が完了しました。</div>';
-                showAlert('評価が正常に完了しました。', 'success');
-                evaluationProgressBar.style.width = '100%';
-                evaluationProgressBar.setAttribute('aria-valuenow', '100');
-                evaluationProgressBar.textContent = '100%';
+                evaluationStatusDiv.innerHTML = '<div class="alert alert-success">評価が全て完了しました。</div>';
                 eventSource.close();
-                document.querySelectorAll('.evaluation-btn').forEach(btn => btn.disabled = false); // Re-enable
-                downloadEvaluationCsvBtn.style.display = 'block'; // Show download button
-                updateEnergyBreakdown(); // NEW: Update energy breakdown after all evaluations
+                document.querySelectorAll('.evaluation-btn').forEach(btn => btn.disabled = false);
+                updateEnergyBreakdown(); 
             });
 
         } catch (error) {
             showAlert(`評価の開始に失敗しました: ${error.message}`, 'danger');
             evaluationStatusDiv.innerHTML = '';
-            evaluationProgressBarContainer.style.display = 'none';
-            document.querySelectorAll('.evaluation-btn').forEach(btn => btn.disabled = false); // Re-enable
+            document.querySelectorAll('.evaluation-btn').forEach(btn => btn.disabled = false);
         }
     }
 
