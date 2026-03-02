@@ -276,23 +276,35 @@
             <!-- Placeholders for real-time updates -->
             <div id="evaluation-status" class="mt-3"></div>
 
-            <!-- Energy Breakdown Section -->
-            <div id="energy-breakdown-container" class="mt-4 card p-3 shadow-sm" style="display: none;">
-                <h3 class="h5 mb-3">【現在の構造分析】</h3>
-                <div id="energy-summary" class="mb-3">
-                    <!-- Summary will be populated here -->
-                </div>
-                
-                <hr>
-                <h4 class="h6 fw-bold">【個別要素の適合度（ラベル別）】</h4>
-                <div id="e1-details-list" class="list-group list-group-flush mb-3">
-                    <!-- E1 details will be populated here -->
-                </div>
+            <!-- Energy Breakdown Section (Accordion) -->
+            <div id="energy-breakdown-container" class="mt-4" style="display: none;">
+                <div class="accordion" id="energyAccordion">
+                    <div class="accordion-item border-0 shadow-sm">
+                        <h3 class="accordion-header" id="headingEnergy">
+                            <button class="accordion-button collapsed bg-light fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapseEnergy" aria-expanded="false" aria-controls="collapseEnergy">
+                                <i class="bi bi-graph-up-arrow me-2"></i> 【現在の構造分析】
+                            </button>
+                        </h3>
+                        <div id="collapseEnergy" class="accordion-collapse collapse" aria-labelledby="headingEnergy" data-bs-parent="#energyAccordion">
+                            <div class="accordion-body bg-white">
+                                <div id="energy-summary" class="mb-3">
+                                    <!-- Summary will be populated here -->
+                                </div>
+                                
+                                <hr>
+                                <h4 class="h6 fw-bold">【個別要素の適合度（ラベル別）】</h4>
+                                <div id="e1-details-list" class="list-group list-group-flush mb-3">
+                                    <!-- E1 details will be populated here -->
+                                </div>
 
-                <hr>
-                <h4 class="h6 fw-bold">【要素間の相乗効果（相互作用ペア別）】</h4>
-                <div id="e2-details-list" class="list-group list-group-flush">
-                    <!-- E2 details will be populated here -->
+                                <hr>
+                                <h4 class="h6 fw-bold">【要素間の相乗効果（相互作用ペア別）】</h4>
+                                <div id="e2-details-list" class="list-group list-group-flush">
+                                    <!-- E2 details will be populated here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -614,28 +626,27 @@ document.addEventListener('DOMContentLoaded', function() {
         // Collect selected radio buttons
         const sections = document.querySelectorAll('.evaluation-results-section');
         sections.forEach(section => {
-            const h4 = section.querySelector('h4');
-            if (!h4) return;
-            const categoryName = h4.textContent.replace(' 評価結果', '');
+            const categoryName = section.dataset.category; // データ属性から確実に取得
+            if (!categoryName) return;
+
             const selectedRadio = section.querySelector('input[type="radio"]:checked');
             
             if (selectedRadio) {
                 const row = selectedRadio.closest('tr');
-                const cells = row.querySelectorAll('td');
-                const thead = section.querySelector('thead');
-                const orderedKeys = JSON.parse(thead.dataset.orderedKeys || '[]');
-                
                 if (!selectedLabels[categoryName]) {
                     selectedLabels[categoryName] = {};
                 }
                 
-                const labelsForClassification = semanticLabelSchema[categoryName];
-                orderedKeys.forEach((enKey, idx) => {
-                    const labelSpec = labelsForClassification[enKey];
-                    if (labelSpec) {
-                        // Skip radio, element, text cells (indices 0, 1, 2)
-                        const val = parseInt(cells[idx + 3].textContent);
-                        if (!isNaN(val)) {
+                // data-label-en を持つセルから値を収集
+                const valueCells = row.querySelectorAll('td[data-label-en]');
+                valueCells.forEach(cell => {
+                    const enKey = cell.dataset.labelEn;
+                    const val = parseInt(cell.textContent);
+                    if (!isNaN(val)) {
+                        // サーバー側を英語・日本語両対応にしたため、
+                        // ここでは最も確実な「スキーマ上の日本語名」をそのまま送る
+                        const labelSpec = semanticLabelSchema[categoryName][enKey];
+                        if (labelSpec && labelSpec.ja_label) {
                             selectedLabels[categoryName][labelSpec.ja_label] = val;
                         }
                     }
@@ -644,8 +655,8 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
         if (Object.keys(selectedLabels).length === 0) {
-        energyBreakdownContainer.style.display = 'none';
-           return;
+            energyBreakdownContainer.style.display = 'none';
+            return;
         }
 
         try {
@@ -662,7 +673,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             // Update UI
-//            energyBreakdownContainer.style.display = 'block';
+            energyBreakdownContainer.style.display = 'block';
             
             energySummary.innerHTML = `
                 <div class="row text-center">
@@ -1149,6 +1160,7 @@ document.addEventListener('DOMContentLoaded', function() {
             section = document.createElement('div');
             section.id = sectionId;
             section.className = 'evaluation-results-section mb-4 card p-3 shadow-sm';
+            section.dataset.category = categoryName; // 追加：カテゴリ名をデータ属性に保持
             
             const title = document.createElement('h4');
             title.className = 'h6 border-bottom pb-2 mb-3 fw-bold';
@@ -1287,11 +1299,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (labelSpec.type === 'scalar') {
                         const val = (labelValue !== undefined && labelValue !== null) ? labelValue : 0;
                         currentValues.push(val);
-                        rowHtml += `<td>${val}</td>`;
+                        rowHtml += `<td data-label-en="${enKey}">${val}</td>`; // data-label-en を追加
                     } else if (labelSpec.type === 'vector') {
-                        rowHtml += `<td><code>${(labelValue && labelValue.join(', ')) || '-'}</code></td>`;
+                        rowHtml += `<td data-label-en="${enKey}"><code>${(labelValue && labelValue.join(', ')) || '-'}</code></td>`;
                     } else {
-                        rowHtml += `<td>${(labelValue !== undefined && labelValue !== null) ? labelValue : '-'}</td>`;
+                        rowHtml += `<td data-label-en="${enKey}">${(labelValue !== undefined && labelValue !== null) ? labelValue : '-'}</td>`;
                     }
                 } else {
                     rowHtml += `<td>-</td>`;
@@ -1677,7 +1689,6 @@ document.addEventListener('DOMContentLoaded', function() {
             quantumOptimizeBtn.addEventListener('click', async () => {
                 // 評価ステータスとプログレスバーを非表示にする
                 evaluationStatusDiv.innerHTML = '';
-                evaluationProgressBarContainer.style.display = 'none';
 
                 quantumOptimizeBtn.disabled = true;
                 quantumOptimizeBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 最適化中...';

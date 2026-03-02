@@ -44,17 +44,36 @@ def evaluate(candidate_vec: List[int], target_vec: List[int], category_weights: 
     }
 
 
-def calculate_energy_detail(semantic_labels: Dict[str, Dict[str, int]], evaluation_config: Dict[str, Any]) -> Dict[str, Any]:
+def calculate_energy_detail(semantic_labels: Dict[str, Dict[str, int]], evaluation_config: Dict[str, Any], schema: Dict[str, Any] = None) -> Dict[str, Any]:
     """
     一次項（E1）と二次項（E2）を分解したエネルギー計算。
     """
-    # 1. ラベルのフラット化
+    # 0. スキーマを用いた日本語ラベル -> 英語キーの逆引きマップ作成
+    reverse_schema = {}
+    if schema:
+        for cat_name, labels_spec in schema.items():
+            if cat_name == "scale": continue
+            reverse_schema[cat_name] = {}
+            for en_key, spec in labels_spec.items():
+                ja_label = spec.get("ja_label")
+                if ja_label:
+                    reverse_schema[cat_name][ja_label] = en_key
+
+    # 1. ラベルのフラット化 (ターゲット値に合わせて英語キーに変換)
     flat_labels = {}
     for category, labels in semantic_labels.items():
         for label, value in labels.items():
-            flat_labels[f"{category}::{label}"] = value
+            # スキーマがあれば英語キーに変換
+            en_key = label
+            if category in reverse_schema and label in reverse_schema[category]:
+                en_key = reverse_schema[category][label]
+            
+            # 両方の形式で保持してマッチング率を上げる
+            flat_labels[f"{category}::{en_key}"] = value
+            if label != en_key:
+                flat_labels[f"{category}::{label}"] = value
 
-    # 柔軟なキー取得 (Prompt定義 vs 既存実装)
+    # 柔軟なキー取得
     target_values = evaluation_config.get("target_values", evaluation_config.get("targets", {}))
     weights = evaluation_config.get("weights", {})
     category_weights = evaluation_config.get("category_weights", {})
@@ -64,16 +83,17 @@ def calculate_energy_detail(semantic_labels: Dict[str, Dict[str, int]], evaluati
     E1 = 0.0
     E1_details = []
 
-    for key, value in flat_labels.items():
-        if key not in target_values:
+    # target_values 側をループの基準にする
+    for full_key, target in target_values.items():
+        if full_key not in flat_labels:
             continue
+            
+        value = flat_labels[full_key]
         
-        target = target_values[key]
-        
-        # 重みの決定: 個別重み優先、なければカテゴリ重み、それもなければ1.0
-        weight = weights.get(key)
+        # 重みの決定
+        weight = weights.get(full_key)
         if weight is None:
-            category = key.split("::")[0]
+            category = full_key.split("::")[0]
             weight = category_weights.get(category, 1.0)
         
         # 正規化
@@ -84,13 +104,15 @@ def calculate_energy_detail(semantic_labels: Dict[str, Dict[str, int]], evaluati
         E1 += contribution
         
         E1_details.append({
-            "key": key,
+            "key": full_key,
             "value": round(contribution, 4)
         })
 
     # 4. 二次項計算 (E2)
     E2 = 0.0
     E2_details = []
+    
+    INTERACTION_WEIGHT = 0.1 # バランス補正係数 (案C)
 
     for inter in interactions:
         key_a = inter.get("key_a")
@@ -106,12 +128,14 @@ def calculate_energy_detail(semantic_labels: Dict[str, Dict[str, int]], evaluati
             x_norm_b = val_b / 4.0
             
             contribution = strength * x_norm_a * x_norm_b
-            E2 += contribution
+            # 補正係数を適用
+            final_contribution = contribution * INTERACTION_WEIGHT
+            E2 += final_contribution
             
             E2_details.append({
                 "key_a": key_a,
                 "key_b": key_b,
-                "value": round(contribution, 4)
+                "value": round(final_contribution, 4)
             })
 
     # 5. 総エネルギー

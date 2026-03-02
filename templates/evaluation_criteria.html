@@ -388,6 +388,10 @@ document.addEventListener('DOMContentLoaded', function() {
             const data = await response.json();
             if (response.ok) {
                 showAlert('評価基準を保存しました。', 'success');
+                // 評価タブのスコア表示も連動して更新する
+                if (typeof updateEnergyBreakdown === 'function') {
+                    updateEnergyBreakdown();
+                }
             } else {
                 throw new Error(data.error || '保存に失敗しました。');
             }

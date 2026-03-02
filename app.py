@@ -939,7 +939,15 @@ def calculate_energy(doc_id):
         
         evaluation_config = document.get("evaluation_config", {})
         
-        results = evaluation_engine.calculate_energy_detail(selected_labels, evaluation_config)
+        # Load schema for label mapping
+        semantic_label_schema = {}
+        try:
+            with open("prompt_templates/semantic_label_schema.json", "r", encoding="utf-8") as f:
+                semantic_label_schema = json.load(f)
+        except Exception as e:
+            logging.warning(f"Failed to load semantic_label_schema for energy calculation: {e}")
+
+        results = evaluation_engine.calculate_energy_detail(selected_labels, evaluation_config, semantic_label_schema)
         return jsonify(results)
     except Exception as e:
         logging.error(f"Energy calculation failed: {e}")
