@@ -16,15 +16,13 @@ def login():
             ).fetchone()
 
         if user and verify_password(password, user["password_hash"]):
-            # Remove old user data
-            user_data_path = get_user_data_path(email) # Changed to email as per file content
-            if os.path.exists(user_data_path):
-                shutil.rmtree(user_data_path)
-
             session["user_id"] = email
-
-            # Create a new empty working file
-            save_user_data(email, {"documents": []}) # Changed to email as per file content
+            
+            # 既にデータがあれば削除しない。なければ空のデータを作成する。
+            user_data_path = get_user_data_path(email)
+            working_file = os.path.join(user_data_path, "working.json")
+            if not os.path.exists(working_file):
+                save_user_data(email, {"documents": []})
 
             return redirect("/dashboard")
 

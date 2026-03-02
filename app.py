@@ -130,8 +130,8 @@ def logout():
 
 @app.route("/dashboard")
 def dashboard():
-    if "user_id" not in session: # Removed data_loaded check
-        return redirect("/dashboard")
+    if "user_id" not in session:
+        return redirect("/login")
 
     data = load_user_data(session["user_id"])
     documents = data.get("documents", [])
