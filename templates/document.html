@@ -262,13 +262,13 @@
             <div class="d-flex gap-2 flex-wrap" id="evaluation-buttons-container">
                 <!-- Dynamically generated evaluation buttons will go here -->
             </div>
-            <div class="mt-2 d-flex align-items-center gap-3">
-                <button type="button" id="quantum-optimize-btn" class="btn btn-primary btn-sm">組み合わせ最適化</button>
-                <div id="quantum-energy-display" class="text-muted small" style="display: none;">
-                    <span id="q-solver-badge" class="badge bg-dark">方式: <span id="q-solver-name">-</span></span>
-                    <span class="badge bg-secondary ms-1">構造スコア: <span id="q-total-e">-</span></span>
-                    <span class="ms-1">要素適合: <span id="q-e1">-</span></span>
-                    <span class="ms-1">相互作用: <span id="q-e2">-</span></span>
+            <div class="mt-2 d-flex align-items-center gap-3 flex-wrap">
+                <button type="button" id="quantum-optimize-btn" class="btn btn-primary">組み合わせ最適化</button>
+                <div id="quantum-energy-display" class="d-flex align-items-center gap-3" style="display: none;">
+                    <span id="q-solver-badge" class="badge bg-secondary py-2 px-3 fs-6 fw-normal">方式: <span id="q-solver-name" class="fw-bold text-white">-</span></span>
+                    <span class="badge bg-secondary py-2 px-3 fs-6 fw-normal">構造スコア: <span id="q-total-e" class="fw-bold text-white">-</span></span>
+                    <span class="text-white-50 fs-6">要素適合: <span id="q-e1" class="text-white fw-bold">-</span></span>
+                    <span class="text-white-50 fs-6">相互作用: <span id="q-e2" class="text-white fw-bold">-</span></span>
                 </div>
             </div>
             <!-- Optimized candidates list removed as per request -->
@@ -1688,7 +1688,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 qSolverName.textContent = bse.solver === 'fixstars' ? 'Fixstars Amplify' : 'Heuristic (Local)';
             }
             if (qSolverBadge) {
-                qSolverBadge.className = bse.solver === 'fixstars' ? 'badge bg-primary' : 'badge bg-dark';
+                qSolverBadge.className = 'badge bg-secondary py-2 px-3 fs-6 fw-normal';
             }
         }
 
