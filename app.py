@@ -166,6 +166,14 @@ def dashboard():
         user_config=user_config
     )
 
+@app.route("/help/gemini-api")
+def help_gemini_api():
+    return render_template("help_gemini_api.html")
+
+@app.route("/help/amplify-api")
+def help_amplify_api():
+    return render_template("help_amplify_api.html")
+
 @app.route("/upload", methods=["POST"])
 def upload():
     if "user_id" not in session: # Removed data_loaded check

@@ -72,7 +72,12 @@
 </div>
 
 <div class="mb-3">
-    <label for="llm_api_key_{{ role }}" class="form-label">API キー</label>
+    <label for="llm_api_key_{{ role }}" class="form-label">
+        API キー 
+        <a href="/help/gemini-api" target="_blank" class="text-info ms-1" title="Gemini APIキーの取得方法">
+            <i class="bi bi-asterisk" style="font-size: 0.75rem; vertical-align: super;"></i>
+        </a>
+    </label>
     <input type="password" class="form-control" id="llm_api_key_{{ role }}" name="llm_servers[{{ role }}][api_key]" value="{{ config.api_key }}" placeholder="sk-..." autocomplete="off">
 </div>
 
@@ -146,7 +151,12 @@
             <h3 class="card-title">解析サーバー</h3>
             <p class="text-muted small">Fixstars Amplify 社 Annealing Engine</p>
             <div class="mb-3">
-                <label for="quantum_server_api_key" class="form-label">API キー</label>
+                <label for="quantum_server_api_key" class="form-label">
+                    API キー
+                    <a href="/help/amplify-api" target="_blank" class="text-info ms-1" title="Amplify APIキーの取得方法">
+                        <i class="bi bi-asterisk" style="font-size: 0.75rem; vertical-align: super;"></i>
+                    </a>
+                </label>
                 <input type="password" class="form-control" id="quantum_server_api_key" name="quantum_server[api_key]" value="{{ user_config.quantum_server.api_key }}" placeholder="解析サーバーのAPIキー" autocomplete="off">
             </div>
         </div>
