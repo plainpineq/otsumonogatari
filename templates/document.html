@@ -492,7 +492,7 @@
                             <tr class="text-secondary small">
                                 <th style="width: 15%">執筆日</th>
                                 <th style="width: 25%">対象</th>
-                                <th style="width: 45%">内容の断片</th>
+                                <th style="width: 45%">内容</th>
                                 <th style="width: 15%" class="text-end">操作</th>
                             </tr>
                         </thead>
@@ -509,7 +509,12 @@
         <div class="card p-4 shadow-sm mt-3">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h2 class="h4 mb-0">原稿の推敲・執筆</h2>
-                <div class="badge bg-info" id="manuscript-status">執筆中</div>
+                <div class="d-flex align-items-center gap-2">
+                    <button id="btn-download-manuscript" class="btn btn-outline-info btn-sm px-3">
+                        <i class="bi bi-download me-1"></i> 原稿をダウンロード
+                    </button>
+                    <div class="badge bg-info" id="manuscript-status">執筆中</div>
+                </div>
             </div>
             <p class="text-muted small">AIが生成した原稿案を元に、ここで物語を仕上げていきます。</p>
             <div class="mb-3">
@@ -2457,6 +2462,56 @@ document.addEventListener('DOMContentLoaded', function() {
             showAlert('保存に失敗しました。', 'danger');
         }
     });
+
+    // 原稿ダウンロード
+    const btnDownloadManuscript = document.getElementById('btn-download-manuscript');
+    if (btnDownloadManuscript) {
+        btnDownloadManuscript.addEventListener('click', async () => {
+            const content = manuscriptEditor.value;
+            if (!content) {
+                showAlert('ダウンロードする原稿がありません。', 'warning');
+                return;
+            }
+
+            const title = documentData.title || 'manuscript';
+            const dateStr = new Date().toISOString().split('T')[0];
+            const filename = `${title}_${dateStr}.txt`;
+
+            // 保存先を選択するダイアログを表示（対応ブラウザのみ）
+            if ('showSaveFilePicker' in window) {
+                try {
+                    const handle = await window.showSaveFilePicker({
+                        suggestedName: filename,
+                        types: [{
+                            description: 'テキストファイル',
+                            accept: {'text/plain': ['.txt']},
+                        }],
+                    });
+                    const writable = await handle.createWritable();
+                    await writable.write(content);
+                    await writable.close();
+                    showAlert('原稿を保存しました。', 'success');
+                    return;
+                } catch (err) {
+                    if (err.name === 'AbortError') return;
+                    console.error('File Picker Error:', err);
+                    // エラー時はフォールバックへ
+                }
+            }
+
+            // 従来のダウンロード方式（フォールバック）
+            const blob = new Blob([content], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            showAlert('原稿をダウンロードしました（ブラウザの既定フォルダ）。', 'success');
+        });
+    }
 
     btnFinalizeManuscript.addEventListener('click', () => {
         manuscriptStatus.textContent = '完成';
