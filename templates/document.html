@@ -340,7 +340,7 @@
             <!-- セレクターセクション -->
             <div class="mb-4 p-3 rounded-3" style="background-color: #252525; border: 1px solid #3d3d3d;">
                 <div class="row align-items-center">
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <label class="form-label small fw-bold text-secondary">執筆の単位</label>
                         <div class="btn-group w-100" role="group">
                             <input type="radio" class="btn-check" name="draft-target-type" id="target-chapter" value="chapter" checked>
@@ -349,7 +349,7 @@
                             <label class="btn btn-outline-secondary btn-sm" for="target-scene">シーン</label>
                         </div>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <label for="select-chapter" class="form-label small fw-bold text-secondary">対象の章</label>
                         <select id="select-chapter" class="form-select form-select-sm bg-dark text-white border-secondary"></select>
                     </div>
@@ -357,14 +357,14 @@
                         <label for="select-scene" class="form-label small fw-bold text-secondary">対象のシーン</label>
                         <select id="select-scene" class="form-select form-select-sm bg-dark text-white border-secondary"></select>
                     </div>
-                    <div class="col-md-3 d-flex align-items-end gap-2">
-                        <button id="btn-add-structure" class="btn btn-purple btn-sm flex-grow-1">
-                            <i class="bi bi-plus-lg"></i> 追加
+                    <div class="col-md-4 d-flex align-items-end gap-2">
+                        <button id="btn-add-structure" class="btn btn-outline-purple btn-sm btn-icon-square" title="追加">
+                            <i class="bi bi-plus-lg"></i>
                         </button>
-                        <button id="btn-edit-structure" class="btn btn-outline-info btn-sm">
+                        <button id="btn-edit-structure" class="btn btn-outline-info btn-sm btn-icon-square" title="編集">
                             <i class="bi bi-pencil"></i>
                         </button>
-                        <button id="btn-delete-structure" class="btn btn-outline-danger btn-sm">
+                        <button id="btn-delete-structure" class="btn btn-outline-danger btn-sm btn-icon-square" title="削除">
                             <i class="bi bi-trash"></i>
                         </button>
                     </div>
