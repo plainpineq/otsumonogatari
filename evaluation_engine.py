@@ -44,68 +44,83 @@ def evaluate(candidate_vec: List[int], target_vec: List[int], category_weights: 
     }
 
 
-def calculate_energy_detail(semantic_labels: Dict[str, Dict[str, int]], evaluation_config: Dict[str, Any], schema: Dict[str, Any] = None) -> Dict[str, Any]:
+def calculate_energy_detail(selected_items: List[Dict[str, Any]], evaluation_config: Dict[str, Any], schema: Dict[str, Any] = None) -> Dict[str, Any]:
     """
     一次項（E1）と二次項（E2）を分解したエネルギー計算。
+    selected_items: [ {category, element, labels: {ja_label: val}}, ... ]
     """
-    # 0. スキーマを用いた日本語ラベル -> 英語キーの逆引きマップ作成
+    # 0. スキーマを用いた日本語ラベル <-> 英語キーの相互変換マップ作成
     reverse_schema = {}
+    forward_schema = {} # 英語 -> 日本語用
     if schema:
         for cat_name, labels_spec in schema.items():
             if cat_name == "scale": continue
             reverse_schema[cat_name] = {}
+            forward_schema[cat_name] = {}
             for en_key, spec in labels_spec.items():
                 ja_label = spec.get("ja_label")
                 if ja_label:
                     reverse_schema[cat_name][ja_label] = en_key
+                    forward_schema[cat_name][en_key] = ja_label
 
-    # 1. ラベルのフラット化 (ターゲット値に合わせて英語キーに変換)
-    flat_labels = {}
-    for category, labels in semantic_labels.items():
+    # 1. 相互作用計算用のフラットラベル作成 (最新の選択状態を反映)
+    # E2計算では「どの要素が選ばれているか」の全体像が必要
+    flat_labels_for_e2 = {}
+    for item in selected_items:
+        category = item["category"]
+        labels = item["labels"]
         for label, value in labels.items():
-            # スキーマがあれば英語キーに変換
             en_key = label
             if category in reverse_schema and label in reverse_schema[category]:
                 en_key = reverse_schema[category][label]
             
-            # 両方の形式で保持してマッチング率を上げる
-            flat_labels[f"{category}::{en_key}"] = value
-            if label != en_key:
-                flat_labels[f"{category}::{label}"] = value
+            # E2用のキー: category::en_key
+            flat_labels_for_e2[f"{category}::{en_key}"] = value
 
-    # 柔軟なキー取得
+    # 設定の取得
     target_values = evaluation_config.get("target_values", evaluation_config.get("targets", {}))
     weights = evaluation_config.get("weights", {})
     category_weights = evaluation_config.get("category_weights", {})
     interactions = evaluation_config.get("interactions", [])
 
-    # 2. & 3. 一次項計算 (E1)
+    # 2. & 3. 一次項計算 (E1) - 渡されたアイテムの順序を維持
     E1 = 0.0
     E1_details = []
 
-    # target_values 側をループの基準にする
-    for full_key, target in target_values.items():
-        if full_key not in flat_labels:
-            continue
+    for item in selected_items:
+        category = item["category"]
+        element = item["element"]
+        labels = item["labels"]
+        
+        item_e1 = 0.0
+        for ja_label, value in labels.items():
+            # 英語キーに変換してターゲットを探す
+            en_key = ja_label
+            if category in reverse_schema and ja_label in reverse_schema[category]:
+                en_key = reverse_schema[category][ja_label]
             
-        value = flat_labels[full_key]
-        
-        # 重みの決定
-        weight = weights.get(full_key)
-        if weight is None:
-            category = full_key.split("::")[0]
-            weight = category_weights.get(category, 1.0)
-        
-        # 正規化
-        x_norm = value / 4.0
-        t_norm = target / 4.0
-        
-        contribution = weight * ((x_norm - t_norm) ** 2)
-        E1 += contribution
-        
+            full_key = f"{category}::{en_key}"
+            if full_key not in target_values:
+                continue
+                
+            target = target_values[full_key]
+            
+            # 重みの決定
+            weight = weights.get(full_key)
+            if weight is None:
+                weight = category_weights.get(category, 1.0)
+            
+            # 正規化
+            x_norm = value / 4.0
+            t_norm = target / 4.0
+            
+            contribution = weight * ((x_norm - t_norm) ** 2)
+            item_e1 += contribution
+
+        E1 += item_e1
         E1_details.append({
-            "key": full_key,
-            "value": round(contribution, 4)
+            "key": f"{category} > {element}",
+            "value": round(item_e1, 4)
         })
 
     # 4. 二次項計算 (E2)
@@ -119,9 +134,9 @@ def calculate_energy_detail(semantic_labels: Dict[str, Dict[str, int]], evaluati
         key_b = inter.get("key_b")
         strength = inter.get("strength", 0.0)
         
-        if key_a in flat_labels and key_b in flat_labels:
-            val_a = flat_labels[key_a]
-            val_b = flat_labels[key_b]
+        if key_a in flat_labels_for_e2 and key_b in flat_labels_for_e2:
+            val_a = flat_labels_for_e2[key_a]
+            val_b = flat_labels_for_e2[key_b]
             
             # 正規化
             x_norm_a = val_a / 4.0
@@ -132,9 +147,23 @@ def calculate_energy_detail(semantic_labels: Dict[str, Dict[str, int]], evaluati
             final_contribution = contribution * INTERACTION_WEIGHT
             E2 += final_contribution
             
+            # キーを日本語ラベルに変換 (表示用)
+            display_a = key_a
+            display_b = key_b
+            
+            if "::" in key_a:
+                cat_a, en_a = key_a.split("::", 1)
+                if cat_a in forward_schema and en_a in forward_schema[cat_a]:
+                    display_a = f"{cat_a}::{forward_schema[cat_a][en_a]}"
+            
+            if "::" in key_b:
+                cat_b, en_b = key_b.split("::", 1)
+                if cat_b in forward_schema and en_b in forward_schema[cat_b]:
+                    display_b = f"{cat_b}::{forward_schema[cat_b][en_b]}"
+            
             E2_details.append({
-                "key_a": key_a,
-                "key_b": key_b,
+                "key_a": display_a,
+                "key_b": display_b,
                 "value": round(final_contribution, 4)
             })
 
@@ -165,9 +194,9 @@ def calculate_energy_detail(semantic_labels: Dict[str, Dict[str, int]], evaluati
         else:
             item["ratio"] = 0.0
 
-    # 9. ソート
-    E1_details.sort(key=lambda x: x["value"], reverse=True)
-    E2_details.sort(key=lambda x: abs(x["value"]), reverse=True)
+    # 9. ソート (E1, E2 ともに入力順・定義順を維持するためソートしない)
+    # E1_details.sort(key=lambda x: x["value"], reverse=True) 
+    # E2_details.sort(key=lambda x: abs(x["value"]), reverse=True) # 削除：定義順を維持する
 
     # 10. 戻り値
     return {

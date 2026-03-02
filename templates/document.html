@@ -279,26 +279,28 @@
             <!-- Energy Breakdown Section (Accordion) -->
             <div id="energy-breakdown-container" class="mt-4" style="display: none;">
                 <div class="accordion" id="energyAccordion">
-                    <div class="accordion-item border-0 shadow-sm">
+                    <div class="accordion-item border-0 shadow-sm" style="background-color: #2d2d2d; border-radius: 8px; overflow: hidden;">
                         <h3 class="accordion-header" id="headingEnergy">
-                            <button class="accordion-button collapsed bg-light fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapseEnergy" aria-expanded="false" aria-controls="collapseEnergy">
-                                <i class="bi bi-graph-up-arrow me-2"></i> 【現在の構造分析】
+                            <button class="accordion-button collapsed fw-bold" type="button" 
+                                    data-bs-toggle="collapse" data-bs-target="#collapseEnergy" aria-expanded="false" aria-controls="collapseEnergy"
+                                    style="background-color: #3a3a3a; color: #ffffff; box-shadow: none;">
+                                <i class="bi bi-graph-up-arrow me-2 text-info"></i> 【現在の構造分析】
                             </button>
                         </h3>
                         <div id="collapseEnergy" class="accordion-collapse collapse" aria-labelledby="headingEnergy" data-bs-parent="#energyAccordion">
-                            <div class="accordion-body bg-white">
+                            <div class="accordion-body" style="background-color: #252525; color: #e0e0e0; border-top: 1px solid #444;">
                                 <div id="energy-summary" class="mb-3">
                                     <!-- Summary will be populated here -->
                                 </div>
                                 
-                                <hr>
-                                <h4 class="h6 fw-bold">【個別要素の適合度（ラベル別）】</h4>
+                                <hr class="border-secondary">
+                                <h4 class="h6 fw-bold text-info" style="border-left: 3px solid #0dcaf0; padding-left: 8px;">【個別要素の適合度（ラベル別）】</h4>
                                 <div id="e1-details-list" class="list-group list-group-flush mb-3">
                                     <!-- E1 details will be populated here -->
                                 </div>
 
-                                <hr>
-                                <h4 class="h6 fw-bold">【要素間の相乗効果（相互作用ペア別）】</h4>
+                                <hr class="border-secondary">
+                                <h4 class="h6 fw-bold text-info" style="border-left: 3px solid #0dcaf0; padding-left: 8px;">【要素間の相乗効果（相互作用ペア別）】</h4>
                                 <div id="e2-details-list" class="list-group list-group-flush">
                                     <!-- E2 details will be populated here -->
                                 </div>
@@ -621,40 +623,40 @@ document.addEventListener('DOMContentLoaded', function() {
     const e2DetailsList = document.getElementById('e2-details-list');
 
     async function updateEnergyBreakdown() {
-        const selectedLabels = {};
+        const selectedItems = []; // List of {category, element, labels}
         
-        // Collect selected radio buttons
-        const sections = document.querySelectorAll('.evaluation-results-section');
-        sections.forEach(section => {
-            const categoryName = section.dataset.category; // データ属性から確実に取得
-            if (!categoryName) return;
-
-            const selectedRadio = section.querySelector('input[type="radio"]:checked');
+        // Collect ALL selected radio buttons from all sections
+        const allSelectedRadios = document.querySelectorAll('.evaluation-radio:checked');
+        
+        allSelectedRadios.forEach(radio => {
+            const row = radio.closest('tr');
+            const categoryName = radio.dataset.category;
+            const elementName = radio.dataset.element;
             
-            if (selectedRadio) {
-                const row = selectedRadio.closest('tr');
-                if (!selectedLabels[categoryName]) {
-                    selectedLabels[categoryName] = {};
-                }
-                
-                // data-label-en を持つセルから値を収集
-                const valueCells = row.querySelectorAll('td[data-label-en]');
-                valueCells.forEach(cell => {
-                    const enKey = cell.dataset.labelEn;
-                    const val = parseInt(cell.textContent);
-                    if (!isNaN(val)) {
-                        // サーバー側を英語・日本語両対応にしたため、
-                        // ここでは最も確実な「スキーマ上の日本語名」をそのまま送る
-                        const labelSpec = semanticLabelSchema[categoryName][enKey];
-                        if (labelSpec && labelSpec.ja_label) {
-                            selectedLabels[categoryName][labelSpec.ja_label] = val;
-                        }
+            const itemLabels = {};
+            
+            // data-label-en を持つセルから値を収集
+            const valueCells = row.querySelectorAll('td[data-label-en]');
+            valueCells.forEach(cell => {
+                const enKey = cell.dataset.labelEn;
+                const val = parseInt(cell.textContent);
+                if (!isNaN(val)) {
+                    // サーバー側で逆引きできるように日本語ラベル名を取得して送る
+                    const labelSpec = semanticLabelSchema[categoryName][enKey];
+                    if (labelSpec && labelSpec.ja_label) {
+                        itemLabels[labelSpec.ja_label] = val;
                     }
-                });
-            }
+                }
+            });
+
+            selectedItems.push({
+                category: categoryName,
+                element: elementName,
+                labels: itemLabels
+            });
         });
 
-        if (Object.keys(selectedLabels).length === 0) {
+        if (selectedItems.length === 0) {
             energyBreakdownContainer.style.display = 'none';
             return;
         }
@@ -663,7 +665,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const response = await fetch(`/document/${docId}/calculate_energy`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ selected_labels: selectedLabels })
+                body: JSON.stringify({ selected_items: selectedItems })
             });
             const data = await response.json();
 
@@ -678,39 +680,39 @@ document.addEventListener('DOMContentLoaded', function() {
             energySummary.innerHTML = `
                 <div class="row text-center">
                     <div class="col-md-4">
-                        <div class="small text-muted">総構造スコア</div>
-                        <div class="h4 mb-0 fw-bold font-monospace">${data.total.toFixed(4)}</div>
+                        <div class="small" style="color: #aaa;">総構造スコア</div>
+                        <div class="h4 mb-0 fw-bold font-monospace text-white">${data.total.toFixed(4)}</div>
                     </div>
                     <div class="col-md-4">
-                        <div class="small text-muted">個別要素の適合度</div>
-                        <div class="h4 mb-0 font-monospace">${data.E1.toFixed(4)} <small class="text-muted fs-6">(${data.ratio1.toFixed(2)}%)</small></div>
+                        <div class="small" style="color: #aaa;">個別要素の適合度</div>
+                        <div class="h4 mb-0 font-monospace text-light">${data.E1.toFixed(4)} <small style="color: #888;" class="fs-6">(${data.ratio1.toFixed(2)}%)</small></div>
                     </div>
                     <div class="col-md-4">
-                        <div class="small text-muted">要素間の相乗効果</div>
-                        <div class="h4 mb-0 font-monospace">${data.E2.toFixed(4)} <small class="text-muted fs-6">(${data.ratio2.toFixed(2)}%)</small></div>
+                        <div class="small" style="color: #aaa;">要素間の相乗効果</div>
+                        <div class="h4 mb-0 font-monospace text-light">${data.E2.toFixed(4)} <small style="color: #888;" class="fs-6">(${data.ratio2.toFixed(2)}%)</small></div>
                     </div>
                 </div>
             `;
 
             e1DetailsList.innerHTML = data.E1_details.map(detail => `
-                <div class="list-group-item d-flex justify-content-between align-items-center py-1 bg-transparent">
-                    <span class="small">${detail.key}</span>
-                    <span class="small font-monospace">${detail.value.toFixed(4)} (${detail.ratio.toFixed(2)}%)</span>
+                <div class="list-group-item d-flex justify-content-between align-items-center py-1 bg-transparent border-0">
+                    <span class="small" style="color: #ccc;">${detail.key}</span>
+                    <span class="small font-monospace" style="color: #0dcaf0;">${detail.value.toFixed(4)} <small style="color: #777;">(${detail.ratio.toFixed(2)}%)</small></span>
                 </div>
             `).join('');
 
             e2DetailsList.innerHTML = data.E2_details.map(detail => `
-                <div class="list-group-item py-1 bg-transparent">
+                <div class="list-group-item py-1 bg-transparent border-0">
                     <div class="d-flex justify-content-between align-items-center">
-                        <span class="small text-truncate" title="${detail.key_a} × ${detail.key_b}">
-                            ${detail.key_a} <span class="text-muted">×</span> ${detail.key_b}
+                        <span class="small text-truncate" title="${detail.key_a} × ${detail.key_b}" style="color: #ccc;">
+                            ${detail.key_a} <span style="color: #666;">×</span> ${detail.key_b}
                         </span>
-                        <span class="small font-monospace ${detail.value < 0 ? 'text-primary' : 'text-danger'}">
-                            ${detail.value.toFixed(4)} (${detail.ratio.toFixed(2)}%)
+                        <span class="small font-monospace ${detail.value < 0 ? 'text-info' : 'text-warning'}">
+                            ${detail.value.toFixed(4)} <small style="color: #777;">(${detail.ratio.toFixed(2)}%)</small>
                         </span>
                     </div>
                 </div>
-            `).join('') || '<div class="list-group-item text-muted small py-1 bg-transparent">相互作用なし</div>';
+            `).join('') || '<div class="list-group-item text-muted small py-1 bg-transparent border-0">相互作用なし</div>';
 
         } catch (error) {
             console.error("Failed to update energy breakdown:", error);

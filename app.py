@@ -935,7 +935,7 @@ def calculate_energy(doc_id):
 
     try:
         req_data = request.get_json()
-        selected_labels = req_data.get("selected_labels", {})
+        selected_items = req_data.get("selected_items", []) # リスト形式で受け取る (順序保持のため)
         
         evaluation_config = document.get("evaluation_config", {})
         
@@ -947,7 +947,7 @@ def calculate_energy(doc_id):
         except Exception as e:
             logging.warning(f"Failed to load semantic_label_schema for energy calculation: {e}")
 
-        results = evaluation_engine.calculate_energy_detail(selected_labels, evaluation_config, semantic_label_schema)
+        results = evaluation_engine.calculate_energy_detail(selected_items, evaluation_config, semantic_label_schema)
         return jsonify(results)
     except Exception as e:
         logging.error(f"Energy calculation failed: {e}")
