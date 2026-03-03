@@ -190,19 +190,17 @@ def _normalize_categories(current_categories: list, meta_categories: list):
 
 def normalize_composition_elements(document: dict) -> None:
     """
-document["composition_elements"] を初期化・正規化する (新しい構造に対応)
+    document["composition_elements"] を初期化・正規化する (新しい構造に対応)
     """
     # composition_elements がなければ初期化
     if "composition_elements" not in document:
         document["composition_elements"] = {"categories": []} # 新しい構造
 
-    # composition_meta がなければデフォルトをコピー
-    if "composition_meta" not in document:
-        document["composition_meta"] = copy.deepcopy(DEFAULT_COMPOSITION_META)
+    # ALWAYS update composition_meta from DEFAULT_COMPOSITION_META to reflect JSON changes
+    document["composition_meta"] = copy.deepcopy(DEFAULT_COMPOSITION_META)
 
     elements_data = document["composition_elements"]
     composition_meta = document["composition_meta"]
-
     # doc_type に対応するメタ定義を取得
     doc_type_mapping = {meta["label"]: doc_id for doc_id, meta in composition_meta["doc_types"].items()}
     mapped_doc_type = doc_type_mapping.get(document["doc_type"])
@@ -239,15 +237,6 @@ document["composition_elements"] を初期化・正規化する (新しい構造
 
     document["units"] = new_units
 
-
-def update_composition_elements(document: dict, form_data) -> None:
-
-    elements_data = document["composition_elements"]
-    composition_meta = document["composition_meta"] # documentからcomposition_metaを取得
-
-    # 日本語の doc_type を英語のキーにマッピング
-    doc_type_mapping = {meta["label"]: doc_id for doc_id, meta in composition_meta["doc_types"].items()}
-    mapped_doc_type = doc_type_mapping.get(document["doc_type"])
 
 def update_composition_elements(document: dict, form_data) -> None:
 

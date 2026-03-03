@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+<div id="llm-models-config" data-config='{{ llm_models_config | tojson | safe }}'></div>
 
 <h2 class="mb-4">ダッシュボード</h2>
 
@@ -81,9 +82,12 @@
     <input type="password" class="form-control" id="llm_api_key_{{ role }}" name="llm_servers[{{ role }}][api_key]" value="{{ config.api_key }}" placeholder="sk-..." autocomplete="off">
 </div>
 
-<div class="mb-3 llm-model-name-group" id="llm_model_name_group_{{ role }}">
+<div class="mb-3">
     <label for="llm_model_name_{{ role }}" class="form-label">モデル名</label>
-    <input type="text" class="form-control" id="llm_model_name_{{ role }}" name="llm_servers[{{ role }}][model_name]" value="{{ config.model_name }}" placeholder="例: gemini-pro, gpt-4o-mini">
+    <div class="llm-model-name-container" id="llm_model_name_container_{{ role }}">
+        <input type="text" class="form-control llm-model-name-input" id="llm_model_name_input_{{ role }}" name="llm_servers[{{ role }}][model_name]" value="{{ config.model_name }}" placeholder="例: gemini-pro, gpt-4o-mini">
+        <select class="form-select llm-model-name-select" id="llm_model_name_select_{{ role }}" name="llm_servers[{{ role }}][model_name]" style="display: none;"></select>
+    </div>
 </div>
 
 <div class="mb-3 llm-base-url-group" id="llm_base_url_group_{{ role }}">
@@ -187,7 +191,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function toggleLlmFields(role) {
         const providerSelect = document.getElementById(`llm_provider_${role}`);
-        const modelNameGroup = document.getElementById(`llm_model_name_group_${role}`);
+        const modelNameContainer = document.getElementById(`llm_model_name_container_${role}`); // Updated ID
+        const modelNameInput = document.getElementById(`llm_model_name_input_${role}`); // New ID
+        const modelNameSelect = document.getElementById(`llm_model_name_select_${role}`); // New ID
         const baseUrlGroup = document.getElementById(`llm_base_url_group_${role}`);
         const llmApiKeyField = document.getElementById(`llm_api_key_${role}`);
 
@@ -198,28 +204,66 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!providerSelect) return;
 
         const selectedProvider = providerSelect.value;
+        const llmModelsConfig = JSON.parse(document.getElementById('llm-models-config').dataset.config);
+        const availableModels = llmModelsConfig[selectedProvider];
 
-        // Hide all fields by default
-        modelNameGroup.style.display = 'none';
+        // Hide all fields by default and disable them
+        modelNameInput.style.display = 'none';
+        modelNameInput.disabled = true; 
+        modelNameSelect.style.display = 'none';
+        modelNameSelect.disabled = true;
         baseUrlGroup.style.display = 'none';
-        llmApiKeyField.parentElement.style.display = 'none'; // Hide parent div of general API key
-        if (huggingfaceApiKeyField) huggingfaceApiKeyField.parentElement.style.display = 'none';
-        if (huggingfaceModelBaseEndpointField) huggingfaceModelBaseEndpointField.parentElement.style.display = 'none';
-        if (huggingfaceModelIdField) huggingfaceModelIdField.parentElement.style.display = 'none';
+        llmApiKeyField.parentElement.style.display = 'none';
+        
+        // Hugging Face specific fields
+        const huggingfaceFields = document.querySelectorAll(`.llm-provider-fields[data-provider="huggingface"]`);
+        huggingfaceFields.forEach(field => field.style.display = 'none');
 
         // Show fields based on selected provider
         if (selectedProvider === 'other') {
-            modelNameGroup.style.display = 'block';
+            modelNameInput.style.display = 'block'; // Text input for 'other'
+            modelNameInput.disabled = false; // Enable text input
             baseUrlGroup.style.display = 'block';
             llmApiKeyField.parentElement.style.display = 'block'; // General API key might be used for 'other'
-        } else if (selectedProvider === 'gemini' || selectedProvider === 'chatgpt') {
-            modelNameGroup.style.display = 'block';
-            baseUrlGroup.style.display = 'none';
-            llmApiKeyField.parentElement.style.display = 'block'; // General API key used for Gemini/ChatGPT
         } else if (selectedProvider === 'huggingface') {
-            if (huggingfaceApiKeyField) huggingfaceApiKeyField.parentElement.style.display = 'block';
-            if (huggingfaceModelBaseEndpointField) huggingfaceModelBaseEndpointField.parentElement.style.display = 'block';
-            if (huggingfaceModelIdField) huggingfaceModelIdField.parentElement.style.display = 'block';
+            huggingfaceFields.forEach(field => field.style.display = 'block');
+        } else if (availableModels && availableModels.length > 0) {
+            // If models are defined in config, show select dropdown
+            modelNameSelect.innerHTML = ''; // Clear previous options
+            const currentModelName = modelNameInput.value; // Preserve current value from hidden input
+
+            let foundCurrentModel = false;
+            availableModels.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                if (model === currentModelName) {
+                    option.selected = true;
+                    foundCurrentModel = true;
+                }
+                modelNameSelect.appendChild(option);
+            });
+
+            // If the current model name is not in the list, add it as a selected option
+            if (currentModelName && !foundCurrentModel) {
+                const option = document.createElement('option');
+                option.value = currentModelName;
+                option.textContent = currentModelName;
+                option.selected = true;
+                modelNameSelect.appendChild(option);
+            } else if (!currentModelName && availableModels.length > 0) {
+                // If no current model and models are available, select the first one
+                modelNameSelect.selectedIndex = 0;
+            }
+
+            modelNameSelect.style.display = 'block';
+            modelNameSelect.disabled = false; // Enable select dropdown
+            llmApiKeyField.parentElement.style.display = 'block'; // General API key used for Gemini/ChatGPT
+        } else {
+            // If no specific models defined or other providers, show text input
+            modelNameInput.style.display = 'block';
+            modelNameInput.disabled = false; // Enable text input
+            llmApiKeyField.parentElement.style.display = 'block'; // General API key used for Gemini/ChatGPT (and potentially others)
         }
     }
 

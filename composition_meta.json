@@ -4,12 +4,12 @@
   "doc_types": {
     "novel": {
       "label": "小説",
-      "editable": true,
+      "editable": false,
       "categories": [
         {
           "id": "base",
           "label": "基本項目",
-          "editable": true,
+          "editable": false,
           "elements": [
             {
               "id": "title",

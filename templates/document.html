@@ -186,13 +186,23 @@
 
                 <h2 class="h4 mb-3">構成要素の定義</h2>
 
-                {% set doc_type_meta_data = document.composition_meta.doc_types.get(mapped_doc_type_id) %}
-                {% if doc_type_meta_data %}
+                {% set doc_type_meta_data = global_composition_meta.doc_types.get(mapped_doc_type_id) %}                {% if doc_type_meta_data %}
                     <h3 class="h5 mt-4">{{ doc_type_meta_data.label }}の構成要素</h3>
                     {% if doc_type_meta_data.editable %}
                         <div class="mb-3 d-flex">
-                            <input type="text" name="new_doc_type_category_label" placeholder="新しい分類のラベル（例：登場人物、場所）" class="form-control me-2" style="width: 85%;">
-                            <button type="submit" name="add_doc_type_category" value="1" class="btn btn-purple text-nowrap">
+                            <input 
+                                type="text" 
+                                name="new_doc_type_category_label" 
+                                placeholder="新しい分類のラベル（例：登場人物、場所）" 
+                                class="form-control me-2" 
+                                style="width: 85%;"
+                            >
+                            <button 
+                                type="submit" 
+                                name="add_doc_type_category" 
+                                value="1" 
+                                class="btn btn-purple text-nowrap"
+                            >
                                 ＋ 追加
                             </button>
                         </div>
@@ -210,7 +220,7 @@
                                 <span>{{ category.label }}</span>
                             {% endif %}
 
-                            {% if doc_type_meta_data and doc_type_meta_data.editable and category.editable %}
+                            {% if doc_type_meta_data and doc_type_meta_data.editable and category.editable and category.label != '基本項目' %}
                                 <button type="submit" name="remove_doc_type_category" value="{{ category.id }}" class="btn btn-outline-danger btn-sm ms-2" title="分類削除"><i class="bi bi-trash"></i></button>
                             {% endif %}
                         </h4>

@@ -159,11 +159,20 @@ def dashboard():
         "suggestion_count": session.get("suggestion_count", 3)
     }
 
+    # Load LLM models config
+    llm_models_config = {}
+    try:
+        with open("llm_models_config.json", "r", encoding="utf-8") as f:
+            llm_models_config = json.load(f)
+    except Exception as e:
+        logging.warning(f"Failed to load llm_models_config.json: {e}")
+
     return render_template(
         "dashboard.html",
         documents=documents,
         doc_types=DOC_TYPE_INTENTS.keys(),
-        user_config=user_config
+        user_config=user_config,
+        llm_models_config=llm_models_config
     )
 
 @app.route("/help/gemini-api")
@@ -499,6 +508,7 @@ def view_document(doc_id):
         document=document,
         labels=labels,
         mapped_doc_type_id=mapped_doc_type_id,
+        global_composition_meta=DEFAULT_COMPOSITION_META, # NEW: Pass current global meta
         semantic_label_schema=semantic_label_schema, # NEW: Pass full schema to template
         available_genres=available_genres # NEW: Pass genre list
     ))
