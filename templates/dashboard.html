@@ -295,6 +295,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // ダウンロード機能
     downloadSettingsBtn.addEventListener('click', async () => {
+        console.log('Download settings button clicked.');
         const settings = {
             llm_servers: {},
             quantum_server: {
@@ -303,17 +304,39 @@ document.addEventListener('DOMContentLoaded', function() {
         };
 
         roles.forEach(role => {
+            const providerSelect = document.getElementById(`llm_provider_${role}`);
+            const llmApiKeyField = document.getElementById(`llm_api_key_${role}`);
+            const llmBaseUrlField = document.getElementById(`llm_base_url_${role}`);
+            const llmTemperatureField = document.getElementById(`llm_temperature_${role}`);
+            const llmMaxTokensField = document.getElementById(`llm_max_tokens_${role}`);
+            const huggingfaceApiKeyField = document.getElementById(`llm_huggingface_api_key_${role}`);
+            const huggingfaceModelBaseEndpointField = document.getElementById(`llm_huggingface_model_base_endpoint_${role}`);
+            const huggingfaceModelIdField = document.getElementById(`llm_huggingface_model_id_${role}`);
+
+            let modelNameValue = '';
+            const modelNameInput = document.getElementById(`llm_model_name_input_${role}`);
+            const modelNameSelect = document.getElementById(`llm_model_name_select_${role}`);
+            if (modelNameSelect && !modelNameSelect.disabled) {
+                modelNameValue = modelNameSelect.value;
+            } else if (modelNameInput && !modelNameInput.disabled) {
+                modelNameValue = modelNameInput.value;
+            }
+
             settings.llm_servers[role] = {
-                provider: document.getElementById(`llm_provider_${role}`).value,
-                api_key: document.getElementById(`llm_api_key_${role}`).value,
-                model_name: document.getElementById(`llm_model_name_${role}`).value,
-                base_url: document.getElementById(`llm_base_url_${role}`).value,
-                temperature: document.getElementById(`llm_temperature_${role}`).value,
-                max_tokens: document.getElementById(`llm_max_tokens_${role}`).value
+                provider: providerSelect ? providerSelect.value : '',
+                api_key: llmApiKeyField ? llmApiKeyField.value : '',
+                model_name: modelNameValue,
+                base_url: llmBaseUrlField ? llmBaseUrlField.value : '',
+                temperature: llmTemperatureField ? llmTemperatureField.value : '0.7',
+                max_tokens: llmMaxTokensField ? llmMaxTokensField.value : '2048',
+                huggingface_api_key: huggingfaceApiKeyField ? huggingfaceApiKeyField.value : '',
+                huggingface_model_base_endpoint: huggingfaceModelBaseEndpointField ? huggingfaceModelBaseEndpointField.value : '',
+                huggingface_model_id: huggingfaceModelIdField ? huggingfaceModelIdField.value : '',
             };
         });
 
         try {
+            console.log('Sending fetch request to /save_server_settings_from_ui');
             const response = await fetch('/save_server_settings_from_ui', {
                 method: 'POST',
                 headers: {
@@ -321,12 +344,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 },
                 body: JSON.stringify(settings)
             });
+            console.log('Received response:', response);
 
             if (response.ok) {
+                console.log('Response is OK. Attempting to get blob.');
                 const blob = await response.blob();
+                console.log('Blob received. Size:', blob.size);
 
                 // 保存先を選択するダイアログを表示（対応ブラウザのみ）
                 if ('showSaveFilePicker' in window) {
+                    console.log('Browser supports showSaveFilePicker.');
                     try {
                         const handle = await window.showSaveFilePicker({
                             suggestedName: 'server_settings.json',
@@ -335,17 +362,23 @@ document.addEventListener('DOMContentLoaded', function() {
                                 accept: {'application/json': ['.json']},
                             }],
                         });
+                        console.log('showSaveFilePicker returned handle.');
                         const writable = await handle.createWritable();
                         await writable.write(blob);
                         await writable.close();
                         showJsFlash('設定ファイルを保存しました。', 'success');
                         return; // 正常終了
                     } catch (err) {
-                        if (err.name === 'AbortError') return; // キャンセル時は何もしない
+                        if (err.name === 'AbortError') {
+                            console.log('showSaveFilePicker was cancelled by user.');
+                            return; // キャンセル時は何もしない
+                        }
+                        console.error('showSaveFilePicker failed, falling back to traditional download:', err);
                         // エラー時や未対応ブラウザ時は従来のダウンロード方式へフォールバック
                     }
                 }
 
+                console.log('Attempting traditional download method.');
                 // 従来のダウンロード方式（フォールバック）
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -357,12 +390,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 window.URL.revokeObjectURL(url);
                 showJsFlash('設定ファイルをダウンロードしました。', 'success');
             } else {
+                console.error('Response not OK:', response.status, response.statusText);
                 const errorData = await response.json(); // エラー時はJSONを期待
                 alert(`設定のダウンロードに失敗しました: ${errorData.message}`);
+                showJsFlash(`設定のダウンロードに失敗しました: ${errorData.message}`, 'error');
             }
         } catch (error) {
-            console.error('Download error:', error);
+            console.error('Download error in catch block:', error);
             alert('設定のダウンロード中にエラーが発生しました。');
+            showJsFlash(`設定のダウンロード中にエラーが発生しました: ${error.message}`, 'error');
         }
     });
 

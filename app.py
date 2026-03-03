@@ -1238,20 +1238,20 @@ def download_evaluation(doc_id):
         return redirect(f"/document/{doc_id}#evaluation")
 
 
-@app.route("/save_server_settings_from_ui", methods=["POST"]) # POSTに変更
+@app.route("/save_server_settings_from_ui", methods=["POST"])
 def save_server_settings_from_ui():
     if "user_id" not in session:
         return jsonify({"success": False, "message": "Unauthorized"}), 401
 
     try:
-        # セッションから直接設定情報を取得
-        llm_servers = session.get("llm_servers", {})
-        quantum_server = session.get("quantum_server", {})
-        
-        settings_to_save = {
-            "llm_servers": llm_servers,
-            "quantum_server": quantum_server
-        }
+        # JavaScriptから送信されたJSONデータを受け取る
+        settings_to_save = request.get_json()
+        if not settings_to_save:
+            return jsonify({"success": False, "message": "Invalid JSON data received"}), 400
+
+        # 受け取った設定をセッションにも反映させる（次回アクセス時の初期表示のため）
+        session["llm_servers"] = settings_to_save.get("llm_servers", {})
+        session["quantum_server"] = settings_to_save.get("quantum_server", {})
 
         settings_json = json.dumps(settings_to_save, ensure_ascii=False, indent=2)
         
