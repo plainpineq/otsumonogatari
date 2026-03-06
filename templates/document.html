@@ -2230,6 +2230,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // ドラフト生成 (評価結果からの開始)
     btnGenerateDraft.addEventListener('click', async () => {
+        // 現在の入力を保存
+        await saveDraftingConfigs(true);
+
         const mode = document.querySelector('input[name="draft_mode"]:checked').value;
         const targetType = targetChapterRadio.checked ? 'chapter' : 'scene';
         const chapterId = selectChapter.value;

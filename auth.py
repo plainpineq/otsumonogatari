@@ -16,6 +16,7 @@ def login():
             ).fetchone()
 
         if user and verify_password(password, user["password_hash"]):
+            session.permanent = True
             session["user_id"] = email
             
             # 既にデータがあれば削除しない。なければ空のデータを作成する。
