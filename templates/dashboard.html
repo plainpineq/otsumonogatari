@@ -52,10 +52,10 @@
 <div class="mb-3">
     <label for="llm_provider_{{ role }}" class="form-label">LLM プロバイダー</label>
     <select class="form-select llm-provider-select" id="llm_provider_{{ role }}" name="llm_servers[{{ role }}][provider]" data-role="{{ role }}">
-        <option value="gemini" {% if config.provider == 'gemini' %}selected{% endif %}>Gemini</option>
-        <option value="huggingface" {% if config.provider == 'huggingface' %}selected{% endif %}>Hugging Face</option>
-        <option value="chatgpt" {% if config.provider == 'chatgpt' %}selected{% endif %}>ChatGPT</option>
-        <option value="other" {% if config.provider == 'other' %}selected{% endif %}>その他 (OpenAI互換)</option>
+        <option value="gemini" {% if config.provider == 'gemini' %}selected{% endif %} {% if llm_models_config.gemini and not llm_models_config.gemini.enabled %}disabled{% endif %}>Gemini</option>
+        <option value="huggingface" {% if config.provider == 'huggingface' %}selected{% endif %} {% if llm_models_config.huggingface and not llm_models_config.huggingface.enabled %}disabled{% endif %}>Hugging Face</option>
+        <option value="chatgpt" {% if config.provider == 'chatgpt' %}selected{% endif %} {% if llm_models_config.chatgpt and not llm_models_config.chatgpt.enabled %}disabled{% endif %}>ChatGPT</option>
+        <option value="other" {% if config.provider == 'other' %}selected{% endif %} {% if llm_models_config.other and not llm_models_config.other.enabled %}disabled{% endif %}>その他 (OpenAI互換)</option>
     </select>
 </div>
 
@@ -205,7 +205,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const selectedProvider = providerSelect.value;
         const llmModelsConfig = JSON.parse(document.getElementById('llm-models-config').dataset.config);
-        const availableModels = llmModelsConfig[selectedProvider];
+        const providerConfig = llmModelsConfig[selectedProvider];
+        const availableModels = providerConfig ? providerConfig.models : null;
 
         // Hide all fields by default and disable them
         modelNameInput.style.display = 'none';
