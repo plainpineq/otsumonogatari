@@ -9,6 +9,7 @@ import glob
 import pandas as pd
 import logging
 
+import shutil
 from db import init_user_db, get_user_conn
 from auth import login
 from security import hash_password
@@ -123,6 +124,16 @@ def register():
 
 @app.route("/logout")
 def logout():
+    user_id = session.get("user_id")
+    if user_id:
+        user_data_dir = get_user_data_path(user_id)
+        if os.path.exists(user_data_dir):
+            try:
+                shutil.rmtree(user_data_dir)
+                print(f"Deleted user data directory for user: {user_id}")
+            except Exception as e:
+                print(f"Error deleting user data directory: {e}")
+    
     session.clear()
     return redirect("/login")
 
