@@ -613,11 +613,12 @@ def generate_proposals(doc_id):
             is_config_incomplete = True
 
     if is_config_incomplete:
-        return jsonify({"suggestions": [{"category": "基本設定", "elements": {"題名": [f"模擬タイトル案{i+1}" for i in range(suggestion_count)]}}, {"category": "基本設定", "elements": {"あらすじ": [f"模擬プロット案{i+1}: これはモックデータです。" for i in range(suggestion_count)]}}], "message": "LLM設定が不完全なため、モックデータを使用しました。"}), 200
-    
+        mock_titles = [document.get("title", "無題")] + [f"模擬タイトル案{i+1}" for i in range(suggestion_count - 1)]
+        return jsonify({"suggestions": [{"category": "基本項目", "elements": {"題名": mock_titles}}, {"category": "基本項目", "elements": {"あらすじ": [f"模擬プロット案{i+1}: これはモックデータです。" for i in range(suggestion_count)]}}], "message": "LLM設定が不完全なため、モックデータを使用しました。"}), 200
+
     try:
         prompt = build_title_plot_proposals_prompt(document, DEFAULT_COMPOSITION_META, session["user_id"], suffix=suffix, suggestion_count=suggestion_count)
-        
+
         # Save the prompt to a file
         user_data_dir = get_user_data_path(session["user_id"])
         prompt_file_path = os.path.join(user_data_dir, f"generated_prompt{suffix}.md")
@@ -636,8 +637,17 @@ def generate_proposals(doc_id):
             huggingface_model_id=llm_huggingface_model_id
         )
 
-        # Save responses
-        user_data_dir = get_user_data_path(session["user_id"])
+        # Ensure one of the title suggestions is exactly the document title
+        doc_title = document.get("title", "無題")
+        for sug in suggestions_dict.get("suggestions", []):
+            if sug.get("category") in ["基本項目", "基本設定"]:
+                elements = sug.get("elements", {})
+                if "題名" in elements and isinstance(elements["題名"], list):
+                    # Check if the title is already there, if not replace the first one
+                    if doc_title not in elements["題名"]:
+                        elements["題名"][0] = doc_title
+
+        # Save responses        user_data_dir = get_user_data_path(session["user_id"])
         with open(os.path.join(user_data_dir, f"generated_llm{suffix}.txt"), "w", encoding="utf-8") as f:
             f.write(raw_text)
         with open(os.path.join(user_data_dir, f"generated_llm{suffix}.json"), "w", encoding="utf-8") as f:

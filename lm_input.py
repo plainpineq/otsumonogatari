@@ -271,6 +271,7 @@ def build_title_plot_proposals_prompt(document: dict, composition_meta: dict, us
 
     # Fill template placeholders
     prompt = template_content.format(
+        document_title=document.get("title", "無題"),
         intent=formatted_intent_json,
         suggestion_count=str(suggestion_count),
         elements_text=elements_text,
