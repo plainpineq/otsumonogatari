@@ -2230,18 +2230,25 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // ドラフト生成 (評価結果からの開始)
     btnGenerateDraft.addEventListener('click', async () => {
-        // 現在の入力を保存
-        await saveDraftingConfigs(true);
+        if (btnGenerateDraft.disabled) return;
 
         const mode = document.querySelector('input[name="draft_mode"]:checked').value;
         const targetType = targetChapterRadio.checked ? 'chapter' : 'scene';
         const chapterId = selectChapter.value;
         const sceneId = selectScene.value;
 
-        if (!chapterId && targetType === 'chapter') {
+        if (!chapterId) {
             showAlert('章を選択してください。構成がない場合は「構成要素」タブで作成してください。', 'warning');
             return;
         }
+
+        if (targetType === 'scene' && !sceneId) {
+            showAlert('シーンを選択してください。', 'warning');
+            return;
+        }
+
+        // 現在の入力を保存 (サーバーとの同期)
+        await saveDraftingConfigs(true);
 
         // チェックされた要素のみを収集
         const selectedElements = [];
@@ -2275,6 +2282,7 @@ document.addEventListener('DOMContentLoaded', function() {
         };
 
         btnGenerateDraft.disabled = true;
+        btnGenerateDraft.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 生成中...';
         draftGenLoading.style.display = 'block';
 
         try {
@@ -2310,12 +2318,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     loadDraftList(); // リスト更新
                 }
             } else {
-                throw new Error(data.error);
+                throw new Error(data.error || '不明なエラーが発生しました。');
             }
         } catch (e) {
+            console.error(e);
             showAlert('エラー: ' + e.message, 'danger');
         } finally {
             btnGenerateDraft.disabled = false;
+            btnGenerateDraft.innerHTML = '<i class="bi bi-pencil-square"></i> 下書きを作成する';
             draftGenLoading.style.display = 'none';
         }
     });

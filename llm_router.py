@@ -25,12 +25,15 @@ def generate_draft(prompt: str, llm_config: Dict[str, Any]) -> str:
                 raise ValueError("Gemini API Key is not configured.")
             genai.configure(api_key=api_key)
             model = genai.GenerativeModel(model_name)
+            # Gemini has its own internal timeout, but we can wrap it if needed.
+            # For now, we rely on the library's default.
             response = model.generate_content(prompt)
             return response.text
 
         elif provider == "chatgpt" or provider == "other":
             # OpenAI互換機（Ollama含む）の処理
-            client = openai.OpenAI(api_key=api_key, base_url=base_url)
+            # タイムアウトを設定 (600秒 = 10分)
+            client = openai.OpenAI(api_key=api_key, base_url=base_url, timeout=600.0)
             response = client.chat.completions.create(
                 model=model_name,
                 messages=[{"role": "user", "content": prompt}]

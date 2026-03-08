@@ -1568,10 +1568,14 @@ def start_from_evaluation():
             now_str = datetime.now().isoformat()
             if target_type == "scene":
                 draft = dm.add_scene_draft(chapter_id, scene_id, content, prompt, structure_snapshot)
+                if not draft:
+                    return jsonify({"error": "指定されたシーンが見つかりませんでした。"}), 404
                 # 追加後に時刻を上書き（DraftManagerの既存仕様を最小限の変更で補完）
                 draft["created_at"] = now_str
             else:
                 draft = dm.add_chapter_draft(chapter_id, content, prompt)
+                if not draft:
+                    return jsonify({"error": "指定された章が見つかりませんでした。"}), 404
                 draft["created_at"] = now_str
             
             dm.save()
