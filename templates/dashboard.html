@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <div id="llm-models-config" data-config='{{ llm_models_config | tojson | safe }}'></div>
+<div id="api-keys-config" data-config='{{ api_keys_config | tojson | safe }}'></div>
 
 <h2 class="mb-4">ダッシュボード</h2>
 
@@ -79,7 +80,12 @@
             <i class="bi bi-asterisk" style="font-size: 0.75rem; vertical-align: super;"></i>
         </a>
     </label>
-    <input type="password" class="form-control" id="llm_api_key_{{ role }}" name="llm_servers[{{ role }}][api_key]" value="{{ config.api_key }}" placeholder="sk-..." autocomplete="off">
+    <div class="llm-preset-api-key-container mb-2" id="llm_preset_api_key_container_{{ role }}" style="display: none;">
+        <select class="form-select llm-preset-api-key-select" id="llm_preset_api_key_select_{{ role }}" data-role="{{ role }}">
+            <!-- Populated by JS -->
+        </select>
+    </div>
+    <input type="password" class="form-control llm-api-key-input" id="llm_api_key_{{ role }}" name="llm_servers[{{ role }}][api_key]" value="{{ config.api_key }}" placeholder="sk-..." autocomplete="off">
 </div>
 
 <div class="mb-3">
@@ -154,6 +160,17 @@
         <div class="card p-4 h-100">
             <h3 class="card-title">解析サーバー</h3>
             <p class="text-muted small">Fixstars Amplify 社 Annealing Engine</p>
+            {% if api_keys_config.api_keys_enabled and api_keys_config.analysis_servers %}
+            <div class="mb-3">
+                <label for="quantum_server_api_key_select" class="form-label">プリセット API キー</label>
+                <select class="form-select" id="quantum_server_api_key_select">
+                    <option value="">-- 手入力 --</option>
+                    {% for server in api_keys_config.analysis_servers %}
+                    <option value="{{ server.api_key }}">{{ server.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
             <div class="mb-3">
                 <label for="quantum_server_api_key" class="form-label">
                     API キー
@@ -196,6 +213,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const modelNameSelect = document.getElementById(`llm_model_name_select_${role}`); // New ID
         const baseUrlGroup = document.getElementById(`llm_base_url_group_${role}`);
         const llmApiKeyField = document.getElementById(`llm_api_key_${role}`);
+        const presetContainer = document.getElementById(`llm_preset_api_key_container_${role}`);
+        const presetSelect = document.getElementById(`llm_preset_api_key_select_${role}`);
 
         const huggingfaceApiKeyField = document.getElementById(`llm_huggingface_api_key_${role}`);
         const huggingfaceModelBaseEndpointField = document.getElementById(`llm_huggingface_model_base_endpoint_${role}`);
@@ -205,6 +224,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const selectedProvider = providerSelect.value;
         const llmModelsConfig = JSON.parse(document.getElementById('llm-models-config').dataset.config);
+        const apiKeysConfig = JSON.parse(document.getElementById('api-keys-config').dataset.config);
         const providerConfig = llmModelsConfig[selectedProvider];
         const availableModels = providerConfig ? providerConfig.models : null;
 
@@ -215,10 +235,44 @@ document.addEventListener('DOMContentLoaded', function() {
         modelNameSelect.disabled = true;
         baseUrlGroup.style.display = 'none';
         llmApiKeyField.parentElement.style.display = 'none';
+        presetContainer.style.display = 'none';
         
         // Hugging Face specific fields
         const huggingfaceFields = document.querySelectorAll(`.llm-provider-fields[data-provider="huggingface"]`);
         huggingfaceFields.forEach(field => field.style.display = 'none');
+
+        // Check for demo mode pre-configured keys
+        let demoConfig = null;
+        if (apiKeysConfig.api_keys_enabled && apiKeysConfig.llm_providers) {
+            demoConfig = apiKeysConfig.llm_providers.find(p => p.provider === selectedProvider);
+        }
+
+        if (demoConfig) {
+            if (demoConfig.keys && demoConfig.keys.length > 0) {
+                // Multiple keys: Show dropdown
+                presetSelect.innerHTML = '<option value="">-- プリセットを選択 --</option>';
+                demoConfig.keys.forEach(k => {
+                    const opt = document.createElement('option');
+                    opt.value = k.api_key;
+                    opt.textContent = k.label;
+                    presetSelect.appendChild(opt);
+                });
+                presetContainer.style.display = 'block';
+                llmApiKeyField.readOnly = false; // Allow override if needed, or keep readonly? 
+                // Let's keep it editable so user can see what's selected or put their own
+                llmApiKeyField.classList.remove('bg-light');
+            } else if (demoConfig.api_key) {
+                // Single key: Auto-fill and disable
+                llmApiKeyField.value = demoConfig.api_key;
+                llmApiKeyField.readOnly = true;
+                llmApiKeyField.classList.add('bg-light');
+                llmApiKeyField.title = "デモ用APIキーが自動設定されています";
+            }
+        } else {
+            llmApiKeyField.readOnly = false;
+            llmApiKeyField.classList.remove('bg-light');
+            llmApiKeyField.title = "";
+        }
 
         // Show fields based on selected provider
         if (selectedProvider === 'other') {
@@ -276,7 +330,28 @@ document.addEventListener('DOMContentLoaded', function() {
             // Initial call to set correct state
             toggleLlmFields(role);
         }
+
+        const presetSelect = document.getElementById(`llm_preset_api_key_select_${role}`);
+        const llmApiKeyField = document.getElementById(`llm_api_key_${role}`);
+        if (presetSelect && llmApiKeyField) {
+            presetSelect.addEventListener('change', function() {
+                if (this.value) {
+                    llmApiKeyField.value = this.value;
+                }
+            });
+        }
     });
+
+    // --- 解析サーバーのプリセット選択 ---
+    const quantumServerApiKeySelect = document.getElementById('quantum_server_api_key_select');
+    const quantumServerApiKeyInput = document.getElementById('quantum_server_api_key');
+    if (quantumServerApiKeySelect && quantumServerApiKeyInput) {
+        quantumServerApiKeySelect.addEventListener('change', function() {
+            if (this.value) {
+                quantumServerApiKeyInput.value = this.value;
+            }
+        });
+    }
 
     // --- 作業データの自動アップロード機能 ---
     const workDataUploadForm = document.getElementById('work-data-upload-form');

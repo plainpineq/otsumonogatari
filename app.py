@@ -178,12 +178,22 @@ def dashboard():
     except Exception as e:
         logging.warning(f"Failed to load llm_models_config.json: {e}")
 
+    # Load API keys config for demo
+    api_keys_config = {"api_keys_enabled": False, "llm_providers": [], "analysis_servers": []}
+    try:
+        if os.path.exists("api_keys_config.json"):
+            with open("api_keys_config.json", "r", encoding="utf-8") as f:
+                api_keys_config = json.load(f)
+    except Exception as e:
+        logging.warning(f"Failed to load api_keys_config.json: {e}")
+
     return render_template(
         "dashboard.html",
         documents=documents,
         doc_types=DOC_TYPE_INTENTS.keys(),
         user_config=user_config,
-        llm_models_config=llm_models_config
+        llm_models_config=llm_models_config,
+        api_keys_config=api_keys_config
     )
 
 @app.route("/help/gemini-api")
@@ -276,13 +286,36 @@ def save_servers_config():
 
     data = load_user_data(session["user_id"])
     
+    # Load API keys config for auto-filling disabled fields
+    api_keys_config = {"api_keys_enabled": False, "llm_providers": [], "analysis_servers": []}
+    try:
+        if os.path.exists("api_keys_config.json"):
+            with open("api_keys_config.json", "r", encoding="utf-8") as f:
+                api_keys_config = json.load(f)
+    except Exception as e:
+        logging.warning(f"Failed to load api_keys_config.json for saving: {e}")
+
     # --- LLMサーバー設定の解析 ---
     llm_servers = {}
     roles = ["generation", "evaluation", "drafting"]
     for role in roles:
+        provider = request.form.get(f"llm_servers[{role}][provider]", "gemini")
+        api_key = request.form.get(f"llm_servers[{role}][api_key]", "")
+        
+        # If API key is empty and demo mode is enabled, try to find the pre-configured key
+        if api_keys_config.get("api_keys_enabled") and not api_key:
+            for p_config in api_keys_config.get("llm_providers", []):
+                if p_config.get("provider") == provider:
+                    # Check for multiple keys structure
+                    if "keys" in p_config and p_config["keys"]:
+                        api_key = p_config["keys"][0].get("api_key", "") # Default to first key if none provided
+                    else:
+                        api_key = p_config.get("api_key", "")
+                    break
+
         role_config = {
-            "provider": request.form.get(f"llm_servers[{role}][provider]", "gemini"),
-            "api_key": request.form.get(f"llm_servers[{role}][api_key]", ""),
+            "provider": provider,
+            "api_key": api_key,
             "model_name": request.form.get(f"llm_servers[{role}][model_name]", ""),
             "base_url": request.form.get(f"llm_servers[{role}][base_url]", ""),
             "temperature": request.form.get(f"llm_servers[{role}][temperature]", "0.7"),
@@ -301,8 +334,13 @@ def save_servers_config():
         llm_servers[role] = role_config
 
     # --- 量子サーバー設定の解析 ---
+    api_key = request.form.get("quantum_server[api_key]", "")
+    if api_keys_config.get("api_keys_enabled") and not api_key:
+        if api_keys_config.get("analysis_servers"):
+            api_key = api_keys_config["analysis_servers"][0].get("api_key", "")
+
     quantum_server = {
-        "api_key": request.form.get("quantum_server[api_key]", "")
+        "api_key": api_key
     }
 
     # --- 保存 ---
