@@ -364,6 +364,78 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // --- 設定の自動保存機能 ---
+    let autoSaveTimeout;
+    async function autoSaveSettings() {
+        const settings = {
+            llm_servers: {},
+            quantum_server: {
+                api_key: document.getElementById('quantum_server_api_key').value
+            }
+        };
+
+        roles.forEach(role => {
+            const providerSelect = document.getElementById(`llm_provider_${role}`);
+            const llmApiKeyField = document.getElementById(`llm_api_key_${role}`);
+            const llmBaseUrlField = document.getElementById(`llm_base_url_${role}`);
+            const llmTemperatureField = document.getElementById(`llm_temperature_${role}`);
+            const llmMaxTokensField = document.getElementById(`llm_max_tokens_${role}`);
+            const huggingfaceApiKeyField = document.getElementById(`llm_huggingface_api_key_${role}`);
+            const huggingfaceModelBaseEndpointField = document.getElementById(`llm_huggingface_model_base_endpoint_${role}`);
+            const huggingfaceModelIdField = document.getElementById(`llm_huggingface_model_id_${role}`);
+
+            let modelNameValue = '';
+            const modelNameInput = document.getElementById(`llm_model_name_input_${role}`);
+            const modelNameSelect = document.getElementById(`llm_model_name_select_${role}`);
+            if (modelNameSelect && !modelNameSelect.disabled) {
+                modelNameValue = modelNameSelect.value;
+            } else if (modelNameInput && !modelNameInput.disabled) {
+                modelNameValue = modelNameInput.value;
+            }
+
+            settings.llm_servers[role] = {
+                provider: providerSelect ? providerSelect.value : '',
+                api_key: llmApiKeyField ? llmApiKeyField.value : '',
+                model_name: modelNameValue,
+                base_url: llmBaseUrlField ? llmBaseUrlField.value : '',
+                temperature: llmTemperatureField ? llmTemperatureField.value : '0.7',
+                max_tokens: llmMaxTokensField ? llmMaxTokensField.value : '2048',
+                huggingface_api_key: huggingfaceApiKeyField ? huggingfaceApiKeyField.value : '',
+                huggingface_model_base_endpoint: huggingfaceModelBaseEndpointField ? huggingfaceModelBaseEndpointField.value : '',
+                huggingface_model_id: huggingfaceModelIdField ? huggingfaceModelIdField.value : '',
+            };
+        });
+
+        try {
+            const response = await fetch('/api/save_servers_config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(settings)
+            });
+            if (response.ok) {
+                console.log('Settings auto-saved successfully.');
+            }
+        } catch (error) {
+            console.error('Auto-save failed:', error);
+        }
+    }
+
+    function triggerAutoSave() {
+        clearTimeout(autoSaveTimeout);
+        autoSaveTimeout = setTimeout(autoSaveSettings, 1000); // 1秒間のデバウンス
+    }
+
+    // 全ての入力フィールドにイベントリスナーを追加
+    const llmInputs = document.querySelectorAll('input[name^="llm_servers"], select[name^="llm_servers"], #quantum_server_api_key');
+    llmInputs.forEach(input => {
+        input.addEventListener('change', triggerAutoSave);
+        if (input.tagName === 'INPUT') {
+            input.addEventListener('input', triggerAutoSave);
+        }
+    });
+
     // --- 設定のダウンロード/ロード機能 ---
     const downloadSettingsBtn = document.getElementById('download-settings-btn');
     const uploadSettingsBtn = document.getElementById('upload-settings-btn');

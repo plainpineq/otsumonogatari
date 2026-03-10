@@ -358,6 +358,37 @@ def save_servers_config():
     return redirect("/dashboard")
 
 
+@app.route("/api/save_servers_config", methods=["POST"])
+def api_save_servers_config():
+    if "user_id" not in session:
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+
+    try:
+        settings = request.get_json()
+        if not settings:
+            return jsonify({"success": False, "message": "No data received"}), 400
+
+        llm_servers = settings.get("llm_servers", {})
+        quantum_server = settings.get("quantum_server", {})
+
+        # セッションの更新
+        session["llm_servers"] = llm_servers
+        session["quantum_server"] = quantum_server
+
+        # working.json の更新
+        data = load_user_data(session["user_id"])
+        if "settings" not in data:
+            data["settings"] = {}
+        data["settings"]["llm_servers"] = llm_servers
+        data["settings"]["quantum_server"] = quantum_server
+        save_user_data(session["user_id"], data)
+
+        return jsonify({"success": True})
+    except Exception as e:
+        logging.error(f"Error in api_save_servers_config: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
 # ---------- ドキュメント ----------
 
 @app.route("/document/create", methods=["POST"])
