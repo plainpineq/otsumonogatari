@@ -650,7 +650,10 @@ def view_document(doc_id):
     document.setdefault("fit_results", [])
     document.setdefault("composition_elements", {})
     document.setdefault("intent", {"fields": {}}) # Add default for intent
-    document.setdefault("evaluation_config", {}) # Ensure evaluation_config exists
+    
+    # evaluation_config の初期化と interactions の取得
+    eval_config = document.setdefault("evaluation_config", {})
+    interactions = eval_config.get("interactions", [])
     
     # Load semantic label schema for dynamic UI generation
     semantic_label_schema = {}
