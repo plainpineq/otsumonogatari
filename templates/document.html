@@ -4,6 +4,9 @@
 <div class="card p-4 mb-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h1 class="h2 mb-0" id="document-title-heading">{{ document.title }}</h1>
+        <span id="auto-save-status" class="badge bg-secondary ms-3" style="display: none; opacity: 0.7;">
+            <i class="bi bi-cloud-check me-1"></i> 変更を保存中...
+        </span>
         <div id="document-data" data-doc='{{ document | tojson | default({}, true) }}'></div> {# documentデータをdata属性に埋め込む #}
         <div id="semantic-label-schema" 
              data-schema='{{ semantic_label_schema | tojson | default({}, true) }}'
@@ -782,6 +785,114 @@ document.addEventListener('DOMContentLoaded', function() {
     const fitResultsContainer = document.getElementById('fit-results-container');
     const fitResultsBodyV2 = document.getElementById('fit-results-body-v2');
 
+
+    // --- 自動保存機能 (Auto-save) ---
+    let autoSaveTimeout;
+    const autoSaveStatus = document.getElementById('auto-save-status');
+
+    async function autoSaveDocument() {
+        if (autoSaveStatus) autoSaveStatus.style.display = 'inline-block';
+        
+        const dataToSave = {};
+
+        // 1. Intent (基本設定)
+        const intentFields = {};
+        document.querySelectorAll('input[name^="intent_value_"]').forEach(input => {
+            const key = input.name.replace('intent_value_', '');
+            // 既存の documentData.intent.fields から label を取得
+            const fieldLabel = documentData.intent?.fields?.[key]?.label || key;
+            intentFields[key] = { label: fieldLabel, value: input.value };
+        });
+        if (Object.keys(intentFields).length > 0) {
+            dataToSave.intent = { fields: intentFields };
+        }
+
+        // 2. Genre Config
+        const mainGenre = document.querySelector('select[name="main_genre"]');
+        const subGenres = Array.from(document.querySelectorAll('input[name="sub_genres"]:checked')).map(cb => cb.value);
+        if (mainGenre) {
+            dataToSave.genre_config = {
+                main: mainGenre.value,
+                sub: subGenres
+            };
+        }
+
+        // 3. Composition Elements (構成要素)
+        if (documentData.composition_elements && documentData.composition_elements.categories) {
+            const updatedCategories = JSON.parse(JSON.stringify(documentData.composition_elements.categories));
+            updatedCategories.forEach(cat => {
+                // カテゴリラベルの取得
+                const catLabelInput = document.querySelector(`input[name="category_${cat.id}_label"]`);
+                if (catLabelInput) cat.label = catLabelInput.value;
+
+                // 追加指示の取得
+                const instructionTextarea = document.querySelector(`textarea[name="category_${cat.id}_additional_instruction"]`);
+                if (instructionTextarea) cat.additional_instruction = instructionTextarea.value;
+
+                // 各要素ラベルの取得
+                if (cat.elements) {
+                    cat.elements.forEach(el => {
+                        const elLabelInput = document.querySelector(`input[name="element_label_${cat.id}_${el.id}"]`);
+                        if (elLabelInput) el.label = elLabelInput.value;
+                    });
+                }
+            });
+            dataToSave.composition_elements = { categories: updatedCategories };
+        }
+
+        // 4. Manuscript (原稿)
+        const manuscriptEditor = document.getElementById('manuscript-editor');
+        if (manuscriptEditor) {
+            dataToSave.manuscript_full_text = manuscriptEditor.value;
+        }
+
+        try {
+            const response = await fetch(`/api/document/${docId}/save`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(dataToSave)
+            });
+            const result = await response.json();
+            if (result.success) {
+                console.log("Document auto-saved successfully.");
+                // メモリ上のデータを更新 (必要に応じて)
+                if (dataToSave.intent) documentData.intent = dataToSave.intent;
+                if (dataToSave.genre_config) documentData.genre_config = dataToSave.genre_config;
+                if (dataToSave.composition_elements) documentData.composition_elements = dataToSave.composition_elements;
+            }
+        } catch (error) {
+            console.error("Auto-save error:", error);
+        } finally {
+            if (autoSaveStatus) {
+                setTimeout(() => {
+                    autoSaveStatus.style.display = 'none';
+                }, 1000);
+            }
+        }
+    }
+
+    function triggerAutoSaveDocument() {
+        clearTimeout(autoSaveTimeout);
+        autoSaveTimeout = setTimeout(autoSaveDocument, 2000); // 2秒デバウンス
+    }
+
+    // 全ての主要な入力フィールドにリスナーを追加
+    const watchSelectors = [
+        'input[name^="intent_value_"]',
+        'select[name="main_genre"]',
+        'input[name="sub_genres"]',
+        '.category-input',
+        'textarea[name$="_additional_instruction"]',
+        'input[name^="element_label_"]',
+        '#manuscript-editor'
+    ];
+
+    document.querySelectorAll(watchSelectors.join(',')).forEach(el => {
+        el.addEventListener('change', triggerAutoSaveDocument);
+        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+            el.addEventListener('input', triggerAutoSaveDocument);
+        }
+    });
 
     // --- Functions ---
     function showAlert(message, type = 'danger') {

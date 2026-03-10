@@ -56,6 +56,20 @@ def _cleanup_old_generated_files(user_id: str):
             except OSError as e:
                 print(f"Error deleting file {file_path}: {e}")
 
+def strip_api_keys(data: Any) -> Any:
+    """
+    Recursively remove all keys that contain 'api_key' from a dictionary or list.
+    """
+    if isinstance(data, dict):
+        return {
+            k: strip_api_keys(v) 
+            for k, v in data.items() 
+            if "api_key" not in k.lower()
+        }
+    elif isinstance(data, list):
+        return [strip_api_keys(v) for v in data]
+    return data
+
 from services.services import (
     create_document,
     delete_document,
@@ -347,11 +361,11 @@ def save_servers_config():
     session["llm_servers"] = llm_servers
     session["quantum_server"] = quantum_server
     
-    # working.json にも永続化 (Draftingタブなどが参照するため)
+    # working.json にも永続化 (APIキーは除外して保存)
     if "settings" not in data:
         data["settings"] = {}
-    data["settings"]["llm_servers"] = llm_servers
-    data["settings"]["quantum_server"] = quantum_server
+    data["settings"]["llm_servers"] = strip_api_keys(llm_servers)
+    data["settings"]["quantum_server"] = strip_api_keys(quantum_server)
     save_user_data(session["user_id"], data)
     
     flash("サーバー設定を保存しました。", "success")
@@ -371,21 +385,78 @@ def api_save_servers_config():
         llm_servers = settings.get("llm_servers", {})
         quantum_server = settings.get("quantum_server", {})
 
-        # セッションの更新
+        # セッションの更新 (APIキーを含む全データ)
         session["llm_servers"] = llm_servers
         session["quantum_server"] = quantum_server
 
-        # working.json の更新
+        # working.json の更新 (APIキーを除外)
         data = load_user_data(session["user_id"])
         if "settings" not in data:
             data["settings"] = {}
-        data["settings"]["llm_servers"] = llm_servers
-        data["settings"]["quantum_server"] = quantum_server
+        data["settings"]["llm_servers"] = strip_api_keys(llm_servers)
+        data["settings"]["quantum_server"] = strip_api_keys(quantum_server)
         save_user_data(session["user_id"], data)
 
         return jsonify({"success": True})
     except Exception as e:
         logging.error(f"Error in api_save_servers_config: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/document/<doc_id>/save", methods=["POST"])
+def api_save_document(doc_id):
+    if "user_id" not in session:
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+
+    try:
+        data = load_user_data(session["user_id"])
+        document = find_document(data, doc_id)
+        if not document:
+            return jsonify({"success": False, "message": "Document not found"}), 404
+
+        req_data = request.get_json()
+        
+        # Determine what to update based on the keys in req_data
+        updated = False
+        
+        # 1. Intent (Basic Settings)
+        if "intent" in req_data:
+            document["intent"] = req_data["intent"]
+            updated = True
+            
+        # 2. Genre Config
+        if "genre_config" in req_data:
+            document["genre_config"] = req_data["genre_config"]
+            updated = True
+
+        # 3. Composition Elements
+        if "composition_elements" in req_data:
+            document["composition_elements"] = req_data["composition_elements"]
+            # Re-normalize to ensure consistency (e.g. updating document["units"])
+            normalize_composition_elements(document)
+            updated = True
+
+        # 4. Manuscript Full Text
+        if "manuscript_full_text" in req_data:
+            if "manuscript" not in document:
+                document["manuscript"] = {"chapters": [], "version": 0, "full_text": ""}
+            document["manuscript"]["full_text"] = req_data["manuscript_full_text"]
+            document["manuscript"]["last_saved"] = datetime.now().isoformat()
+            updated = True
+
+        # 5. Drafting Configs (Blueprint/Directing)
+        if "drafting_configs" in req_data:
+            document["drafting_configs"] = req_data["drafting_configs"]
+            updated = True
+
+        if updated:
+            save_user_data(session["user_id"], data)
+            return jsonify({"success": True})
+        else:
+            return jsonify({"success": False, "message": "No valid update data provided"}), 400
+
+    except Exception as e:
+        logging.error(f"Error in api_save_document: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
 
@@ -563,6 +634,7 @@ def view_document(doc_id):
     document.setdefault("fit_results", [])
     document.setdefault("composition_elements", {})
     document.setdefault("intent", {"fields": {}}) # Add default for intent
+    document.setdefault("evaluation_config", {}) # Ensure evaluation_config exists
     
     # Load semantic label schema for dynamic UI generation
     semantic_label_schema = {}
@@ -1115,7 +1187,15 @@ def evaluate_document(doc_id):
     if is_config_incomplete:
         return jsonify({"status": "error", "message": "評価を実行するには、まずダッシュボードで「構成要素評価 用 LLM」設定を完了してください。"}), 400
 
+    # interactionsが設定されていない場合は自動生成を試みる (フォールバック)
+    interactions = document.get("evaluation_config", {}).get("interactions", [])
+    if not interactions:
+        _synthesize_interactions(document)
+        save_user_data(session["user_id"], data)
+        interactions = document.get("evaluation_config", {}).get("interactions", [])
 
+    if not interactions:
+        return jsonify({"status": "error", "message": "評価を実行するには、「評価基準」タブで「ジャンルから自動設定」を行うか、手動で「要素間の相乗効果」を設定してください。"}), 400
 
     # ページをリロードし、クライアント側でストリーミングを開始させる
     return jsonify({"status": "success", "message": "評価処理を開始します。結果はリアルタイムで表示されます..."}), 200
@@ -1434,6 +1514,17 @@ def quantum_optimize(doc_id):
         # APIキーの取得
         quantum_server = session.get("quantum_server", {})
         api_key = quantum_server.get("api_key")
+
+        # interactionsが設定されていない場合は自動生成を試みる (フォールバック)
+        interactions = config.get("interactions", [])
+        if not interactions:
+            _synthesize_interactions(document)
+            save_user_data(session["user_id"], data)
+            config = document.get("evaluation_config", {}) # 再取得
+            interactions = config.get("interactions", [])
+
+        if not interactions:
+             return jsonify({"error": "最適化を実行するには、「評価基準」タブで「ジャンルから自動設定」を行うか、手動で「要素間の相乗効果」を設定してください。"}), 400
 
         # 2. QUBO生成
         Q, variables = generate_candidate_selection_qubo(semantic_labels, config, label_mapping)

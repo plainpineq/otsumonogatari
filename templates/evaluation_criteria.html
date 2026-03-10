@@ -181,9 +181,13 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // 現在の相互作用リスト (初期データ投入)
-    let currentInteractions = {{ interactions | tojson | safe }};
-    const labelSchema = {{ semantic_label_schema | tojson | safe }};
+    // スキーマと初期データの取得
+    const labelSchema = {{ semantic_label_schema | tojson | safe }} || {};
+    let currentInteractions = {{ interactions | tojson | safe }} || [];
+
+    console.log("Evaluation Criteria Initialized:");
+    console.log("- Schema loaded:", Object.keys(labelSchema).length, "categories");
+    console.log("- Interactions loaded:", currentInteractions.length, "items");
 
     function getJaLabel(fullEnKey) {
         if (!fullEnKey || !fullEnKey.includes('::')) return fullEnKey;
@@ -257,12 +261,16 @@ document.addEventListener('DOMContentLoaded', function() {
     // タブ表示時に空なら自動生成 (初回のみ、サイレント実行)
     const criteriaTab = document.getElementById('evaluation-criteria-tab');
     if (criteriaTab) {
-        // Bootstrapのイベントリスナー
         criteriaTab.addEventListener('shown.bs.tab', function() {
+            // 本当に1件も存在しない場合のみ、かつ手動追加もされていない場合のみ実行
             if (currentInteractions.length === 0) {
-                runAutoGenerate(true);
+                console.log("Interactions empty, triggering silent auto-generation.");
+                runAutoGenerate(true).then(() => {
+                    // 自動生成後はUIを更新
+                    renderInteractions();
+                });
             }
-        }, { once: true }); // 一度だけ実行
+        }, { once: true });
     }
 
     // 相互作用リストの描画
