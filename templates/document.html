@@ -1994,6 +1994,42 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     };
 
+    // --- 下書き設定の自動保存 (Auto-save Drafting) ---
+    let autoSaveDraftingTimeout;
+
+    const triggerAutoSaveDrafting = () => {
+        clearTimeout(autoSaveDraftingTimeout);
+        autoSaveDraftingTimeout = setTimeout(() => {
+            saveDraftingConfigs(true);
+        }, 2000); // 2秒デバウンス
+    };
+
+    // 追加設定フィールドにリスナーを追加
+    const draftingInputSelectors = [
+        '#draft-location', '#draft-time', '#draft-weather', 
+        '#draft-viewpoint', '#draft-style', '#draft-length', 
+        '#draft-additional-info'
+    ];
+    draftingInputSelectors.forEach(selector => {
+        const el = document.querySelector(selector);
+        if (el) {
+            el.addEventListener('input', triggerAutoSaveDrafting);
+            el.addEventListener('change', triggerAutoSaveDrafting);
+        }
+    });
+
+    // 動的要素（設計図）へのリスナー追加は、生成・更新時にも行う必要がある
+    const attachDraftingElementListeners = () => {
+        document.querySelectorAll('.element-use-check, .draft-element-textarea').forEach(el => {
+            // 重複登録を避けるため一度削除
+            el.removeEventListener('input', triggerAutoSaveDrafting);
+            el.removeEventListener('change', triggerAutoSaveDrafting);
+            
+            el.addEventListener('input', triggerAutoSaveDrafting);
+            el.addEventListener('change', triggerAutoSaveDrafting);
+        });
+    };
+
     const renderDynamicElements = (orderedStructure) => {
         dynamicContainer.innerHTML = '';
         
@@ -2035,6 +2071,9 @@ document.addEventListener('DOMContentLoaded', function() {
             `;
             dynamicContainer.appendChild(catCard);
         });
+
+        // 動的要素にリスナーをアタッチ
+        attachDraftingElementListeners();
 
         // ロック状態を反映
         applyLockState();

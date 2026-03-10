@@ -337,6 +337,7 @@ document.addEventListener('DOMContentLoaded', function() {
             presetSelect.addEventListener('change', function() {
                 if (this.value) {
                     llmApiKeyField.value = this.value;
+                    triggerAutoSave(); // 自動保存をトリガー
                 }
             });
         }
@@ -349,6 +350,7 @@ document.addEventListener('DOMContentLoaded', function() {
         quantumServerApiKeySelect.addEventListener('change', function() {
             if (this.value) {
                 quantumServerApiKeyInput.value = this.value;
+                triggerAutoSave(); // 自動保存をトリガー
             }
         });
     }

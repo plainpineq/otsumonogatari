@@ -344,11 +344,17 @@ def save_servers_config():
         elif role_config["provider"] == "chatgpt" and not role_config["model_name"]:
             role_config["model_name"] = "gpt-4o-mini"
         # No default for Hugging Face model endpoint/id, they must be provided by the user.
+
+        # APIキーのトリム
+        if role_config.get("api_key"):
+            role_config["api_key"] = role_config["api_key"].strip()
+        if role_config.get("huggingface_api_key"):
+            role_config["huggingface_api_key"] = role_config["huggingface_api_key"].strip()
             
         llm_servers[role] = role_config
 
     # --- 量子サーバー設定の解析 ---
-    api_key = request.form.get("quantum_server[api_key]", "")
+    api_key = request.form.get("quantum_server[api_key]", "").strip()
     if api_keys_config.get("api_keys_enabled") and not api_key:
         if api_keys_config.get("analysis_servers"):
             api_key = api_keys_config["analysis_servers"][0].get("api_key", "")
@@ -384,6 +390,16 @@ def api_save_servers_config():
 
         llm_servers = settings.get("llm_servers", {})
         quantum_server = settings.get("quantum_server", {})
+
+        # APIキーのトリム (全ロール分)
+        for role in llm_servers:
+            if "api_key" in llm_servers[role]:
+                llm_servers[role]["api_key"] = llm_servers[role]["api_key"].strip()
+            if "huggingface_api_key" in llm_servers[role]:
+                llm_servers[role]["huggingface_api_key"] = llm_servers[role]["huggingface_api_key"].strip()
+
+        if "api_key" in quantum_server:
+            quantum_server["api_key"] = quantum_server["api_key"].strip()
 
         # セッションの更新 (APIキーを含む全データ)
         session["llm_servers"] = llm_servers
@@ -1514,6 +1530,8 @@ def quantum_optimize(doc_id):
         # APIキーの取得
         quantum_server = session.get("quantum_server", {})
         api_key = quantum_server.get("api_key")
+        if api_key:
+            api_key = api_key.strip()
 
         # interactionsが設定されていない場合は自動生成を試みる (フォールバック)
         interactions = config.get("interactions", [])
