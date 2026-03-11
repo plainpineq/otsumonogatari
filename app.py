@@ -218,6 +218,10 @@ def help_gemini_api():
 def help_amplify_api():
     return render_template("help_amplify_api.html")
 
+@app.route("/usage")
+def usage():
+    return render_template("usage.html")
+
 @app.route("/upload", methods=["POST"])
 def upload():
     if "user_id" not in session: # Removed data_loaded check
